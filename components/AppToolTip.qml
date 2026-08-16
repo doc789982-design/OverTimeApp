@@ -39,14 +39,8 @@ Item {
             radius: AppTheme.radiusMedium
             border.color: AppTheme.borderDivider
             border.width: 1
-            layer.enabled: true
-            layer.effect: DropShadow {
-                transparentBorder: true
-                color: AppTheme.shadowColor
-                radius: AppTheme.shadowL3Blur
-                verticalOffset: AppTheme.shadowL3Y
-                samples: 17
-            }
+            // Тень-картинка вместо вычисляемой (Level 3)
+            AppShadow { level: 3 }
         }
 
         contentItem: Column {

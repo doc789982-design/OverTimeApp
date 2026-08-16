@@ -324,13 +324,16 @@ Item {
 
                             Loader {
                                 anchors.fill: parent
-                                active: isValid && dayInfo.is_holiday
+                                // ОПТИМИЗАЦИЯ: искры только в видимых ячейках текущего
+                                // месяца (раньше крутились и в прозрачных ячейках соседних)
+                                active: isValid && dayInfo.is_holiday && dayInfo.is_current_month
                                 sourceComponent: Component { HolidaySparkles {} }
                             }
 
                             Loader {
                                 anchors.fill: parent
                                 active: isValid
+                                        && dayInfo.is_current_month
                                         && !dayInfo.is_holiday
                                         && !dayInfo.is_weekend
                                         && (dayInfo.is_pre_holiday === true)
@@ -584,14 +587,8 @@ Item {
                         radius: AppTheme.radiusMedium
                         border.color: AppTheme.borderDivider
                         border.width: 1 
-                        layer.enabled: true
-                        layer.effect: DropShadow {
-                            transparentBorder: true
-                            color: AppTheme.shadowColor
-                            radius: AppTheme.shadowL2Blur
-                            verticalOffset: AppTheme.shadowL2Y
-                            samples: 25
-                        }
+                        // Тень-картинка вместо вычисляемой (Level 2)
+                        AppShadow { level: 2 }
                     }
                 }
                 

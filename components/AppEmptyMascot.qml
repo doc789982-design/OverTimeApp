@@ -15,14 +15,23 @@ Item {
     property real glowPulse: 0.6
     property real tiltAngle: 0.0
 
+    // ОПТИМИЗАЦИЯ: анимации маскота живут только когда он реально
+    // на экране. Раньше 5 вечных анимаций крутились даже когда
+    // маскот был скрыт или окно свернуто — видеокарта работала впустую.
+    readonly property bool animsAlive: root.visible && root.opacity > 0
+                                       && root.Window.window !== null
+                                       && root.Window.window.visible
+
     // ── Дыхание ───────────────────────────────────────
     SequentialAnimation on breathY {
         loops: Animation.Infinite
+        running: root.animsAlive
         NumberAnimation { to: -6; duration: 3000; easing.type: Easing.InOutSine }
         NumberAnimation { to:  0; duration: 3000; easing.type: Easing.InOutSine }
     }
     SequentialAnimation on breathS {
         loops: Animation.Infinite
+        running: root.animsAlive
         NumberAnimation { to: 1.025; duration: 3000; easing.type: Easing.InOutSine }
         NumberAnimation { to: 1.000; duration: 3000; easing.type: Easing.InOutSine }
     }
@@ -30,6 +39,7 @@ Item {
     // ── Покачивание ───────────────────────────────────
     SequentialAnimation on tiltAngle {
         loops: Animation.Infinite
+        running: root.animsAlive
         NumberAnimation { to: -2.5; duration: 4000; easing.type: Easing.InOutSine }
         NumberAnimation { to:  2.5; duration: 4000; easing.type: Easing.InOutSine }
     }
@@ -37,6 +47,7 @@ Item {
     // ── Пульсация свечения ────────────────────────────
     SequentialAnimation on glowPulse {
         loops: Animation.Infinite
+        running: root.animsAlive
         NumberAnimation { to: 1.0; duration: 2000; easing.type: Easing.InOutSine }
         NumberAnimation { to: 0.5; duration: 2000; easing.type: Easing.InOutSine }
     }
@@ -44,6 +55,7 @@ Item {
     // ── Сканер ────────────────────────────────────────
     SequentialAnimation on scanX {
         loops: Animation.Infinite
+        running: root.animsAlive
         NumberAnimation { to:  7; duration: 900; easing.type: Easing.InOutSine }
         NumberAnimation { to: -7; duration: 900; easing.type: Easing.InOutSine }
     }
@@ -348,7 +360,7 @@ Item {
 
     Timer {
         interval: 3600
-        running: true
+        running: root.animsAlive
         repeat: true
         onTriggered: {
             interval = 2600 + Math.random() * 3400
@@ -383,7 +395,7 @@ Item {
 
     Timer {
         interval: 4000
-        running: true
+        running: root.animsAlive
         repeat: true
         onTriggered: {
             interval = 3200 + Math.random() * 4200
@@ -403,7 +415,7 @@ Item {
 
     Timer {
         interval: 9000
-        running: true
+        running: root.animsAlive
         repeat: true
         onTriggered: {
             interval = 7000 + Math.random() * 7000
@@ -433,7 +445,7 @@ Item {
 
     Timer {
         interval: 13000
-        running: true
+        running: root.animsAlive
         repeat: true
         onTriggered: {
             interval = 10000 + Math.random() * 9000

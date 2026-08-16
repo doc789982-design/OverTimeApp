@@ -36,8 +36,8 @@ AppSidePanel {
                 border.width: 1                  
                 radius: AppTheme.radiusMedium
                 
-                layer.enabled: true
-                layer.effect: DropShadow { transparentBorder: true; color: AppTheme.shadowColor; radius: AppTheme.shadowL1Blur; verticalOffset: AppTheme.shadowL1Y; samples: 9 }
+                // Тень-картинка вместо вычисляемой (Level 1)
+                AppShadow { level: 1 }
                 
                 ColumnLayout {
                     anchors.fill: parent; anchors.margins: AppTheme.spaceM; anchors.rightMargin: 80; spacing: 4

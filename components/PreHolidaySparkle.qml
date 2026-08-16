@@ -32,7 +32,8 @@ Item {
 
         SequentialAnimation {
             loops: Animation.Infinite
-            running: root.visible
+            // ОПТИМИЗАЦИЯ: спим, когда окно свернуто/скрыто в трее
+            running: root.visible && root.Window.window !== null && root.Window.window.visible
 
             PauseAnimation { duration: sparkRef.delay }
 

@@ -64,15 +64,8 @@ Popup {
         border.width: 1
         clip: true 
         
-        // Отключаем тень в темной теме, включаем в светлой
-        layer.enabled: !AppTheme.isDark
-        layer.effect: DropShadow {
-            transparentBorder: true
-            color: AppTheme.shadowColor
-            radius: AppTheme.shadowL4Blur
-            verticalOffset: AppTheme.shadowL4Y
-            samples: 25
-        }
+        // Тень-картинка вместо вычисляемой; в темной теме отключена (как и было)
+        AppShadow { level: 4; visible: !AppTheme.isDark }
     }
 
     // ==========================================

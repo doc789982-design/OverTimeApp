@@ -34,14 +34,8 @@ Popup {
             anchors.bottom: parent.bottom; width: parent.width; height: AppTheme.radiusModal; color: AppTheme.bgModal 
         } 
         
-        layer.enabled: true
-        layer.effect: DropShadow {
-            transparentBorder: true
-            color: AppTheme.shadowColor
-            radius: AppTheme.shadowL4Blur
-            verticalOffset: -AppTheme.shadowL4Y // Тень падает ВВЕРХ
-            samples: 25
-        }
+        // Тень-картинка вместо вычисляемой; сдвиг вверх (как и было)
+        AppShadow { level: 4; yOffset: -8 }
     }
 
     contentItem: ColumnLayout {

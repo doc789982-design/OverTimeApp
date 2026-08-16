@@ -34,13 +34,7 @@ Menu {
         border.color: AppTheme.borderDivider
         border.width: 1
 
-        layer.enabled: true
-        layer.effect: DropShadow {
-            transparentBorder: true
-            color: AppTheme.shadowColor
-            radius: AppTheme.shadowL2Blur
-            verticalOffset: AppTheme.shadowL2Y
-            samples: 25 // Хорошее сглаживание
-        }
+        // Тень-картинка вместо вычисляемой (Level 2)
+        AppShadow { level: 2 }
     }
 }

@@ -262,7 +262,7 @@ Rectangle {
                         border.color: AppTheme.accentBrand; border.width: 1; opacity: 0.95     
                         property int empId: modelData.id; property bool isShiftPressed: false
                         Drag.active: empMouseArea.drag.active; Drag.keys: ["employee"]; Drag.hotSpot.x: width / 2; Drag.hotSpot.y: height / 2; visible: empMouseArea.drag.active
-                        layer.enabled: true; layer.effect: DropShadow { transparentBorder: true; color: AppTheme.shadowColor; radius: 12; verticalOffset: 6; samples: 17 }
+                        AppShadow { level: 4 }
                         Text { anchors.left: parent.left; anchors.leftMargin: AppTheme.spaceM; anchors.verticalCenter: parent.verticalCenter; text: modelData.name; color: AppTheme.textPrimary; font.pixelSize: AppTheme.sizeBody; font.weight: AppTheme.weightBold }
                     }
                 }

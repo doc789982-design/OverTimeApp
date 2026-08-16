@@ -40,8 +40,8 @@ Item {
             border.width: 1
             radius: AppTheme.radiusLarge
             
-            layer.enabled: true
-            layer.effect: DropShadow { transparentBorder: true; color: AppTheme.shadowColor; radius: AppTheme.shadowL1Blur; verticalOffset: AppTheme.shadowL1Y; samples: 9 }
+            // Тень-картинка вместо вычисляемой (Level 1)
+            AppShadow { level: 1 }
 
             ColumnLayout {
                 id: newHkLayout

@@ -283,18 +283,17 @@ class TemplateExporter:
         m1 = date(ny, nm, 1)
         
         # МАГИЯ: Мы добавили в запрос event_date, чтобы понять, "прошлый" это год или нет
+        # Фильтруем ВСЕ записи (включая "за пред. год") строго по месяцу приказа,
+        # чтобы компенсация показывалась только в том месяце, где её поставили
         rows = db.conn.execute(
             """
             SELECT unit, amount_minutes, amount_days, order_no, order_date, event_date 
             FROM compensation 
             WHERE employee_id=? AND method='money' 
-              AND (
-                  (substr(order_date, 1, 7) = ?) -- Поиск по дате приказа
-                  OR (event_date = '1900-01-01' AND substr(order_date, 1, 4) = ?) -- Или по спец. метке
-              )
+              AND substr(order_date, 1, 7) = ? -- Поиск по дате приказа
             ORDER BY order_date, order_no, id
             """,
-            (employee_id, f"{year:04d}-{month:02d}", str(year)),
+            (employee_id, f"{year:04d}-{month:02d}"),
         ).fetchall()
 
         # Группируем, добавляя в ключ признак "прошлого года" (is_prev)
