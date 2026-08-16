@@ -1,0 +1,810 @@
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Controls.impl
+import QtQuick.Window
+import QtQuick.Dialogs
+import QtQuick.Layouts
+import Qt5Compat.GraphicalEffects
+import "components" as AppUI 
+
+
+ApplicationWindow {
+    id: mainWindow 
+    visible: !backend.startHidden
+    width: 1200  
+    height: 800
+    title: "OVERTIMETAB 2.0.0-ALPHA.19"
+
+    // Прозрачный фон самого окна
+    color: AppUI.AppTheme.bgBase
+    flags: Qt.Window | Qt.FramelessWindowHint
+
+    property Item activeSpotlightCell: null
+
+    Connections {
+        target: backend
+        function onDatabaseOpened() { 
+            stackView.replace(mainWorkspacePage) 
+        }
+        function onShowToast(message, type) { 
+            toastPopup.show(message, type) 
+        }
+        function onItemDeleted(dateStr, colorHex) {
+            let workspace = stackView.currentItem
+            if (workspace && workspace.calendarPanel) {
+                workspace.calendarPanel.explodeDay(dateStr, colorHex)
+            }
+        }
+    }
+
+    // СЛОЙ 2: Основной визуальный корень
+    // Item с clip: false — просто контейнер для позиционирования
+    // СЛОЙ: Основной визуальный корень
+    Item {
+        id: visualRoot
+        anchors.fill: parent
+
+        Rectangle {
+            id: mainBackground
+            anchors.fill: parent
+
+            color: AppUI.AppTheme.bgBase
+
+            // Бордер поверх всего содержимого
+            Rectangle {
+                anchors.fill: parent
+                color: "transparent"
+                border.color: AppUI.AppTheme.isDark ? "#333333" : "#DDDDDD"
+                border.width: 1
+                z: 999
+            }
+
+            Rectangle {
+                id: customTitleBar
+                anchors.top: parent.top
+                anchors.left: parent.left
+                anchors.right: parent.right
+                height: 36
+                color: AppUI.AppTheme.bgBase
+                z: 100
+
+                MouseArea {
+                    anchors.fill: parent
+                    anchors.rightMargin: 150
+                    onPressed: mainWindow.startSystemMove()
+                    onDoubleClicked: {
+                        if (mainWindow.visibility === Window.Maximized) {
+                            mainWindow.showNormal()
+                        } else {
+                            mainWindow.showMaximized()
+                        }
+                    }
+                }
+
+                Text {
+                    anchors.left: parent.left
+                    anchors.leftMargin: AppUI.AppTheme.spaceM
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "OVERTIMETAB 2.0.0-ALPHA.19"
+                    color: AppUI.AppTheme.textTertiary
+                    font.family: AppUI.AppTheme.fontFamily
+                    font.pixelSize: AppUI.AppTheme.sizeSmall
+                    font.weight: AppUI.AppTheme.weightBold
+                    font.letterSpacing: 2
+                }
+
+                Row {
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+
+                    Rectangle {
+                        width: 46
+                        height: parent.height
+                        color: helpHov.pressed ? AppUI.AppTheme.statePress : (helpHov.containsMouse ? AppUI.AppTheme.stateHover : "transparent")
+                        
+                        MouseArea {
+                            id: helpHov
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                        }
+                        
+                        IconImage {
+                            anchors.centerIn: parent
+                            source: "icons/help.svg"
+                            width: AppUI.AppTheme.iconMedium
+                            height: AppUI.AppTheme.iconMedium
+                            color: helpHov.containsMouse ? AppUI.AppTheme.textPrimary : AppUI.AppTheme.textSecondary
+                        }
+                        
+                        AppUI.AppToolTip {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            anchors.top: parent.bottom 
+                            anchors.topMargin: AppUI.AppTheme.spaceXXS       
+                            dropDown: true             
+                            isVisible: helpHov.containsMouse
+    
+                            Text {
+                                width: parent.width
+                                text: "Справка (Горячие клавиши)"
+                                color: AppUI.AppTheme.textPrimary
+                                font.family: AppUI.AppTheme.fontFamily
+                                font.pixelSize: AppUI.AppTheme.sizeBody
+                                font.weight: AppUI.AppTheme.weightBold
+                                horizontalAlignment: Text.AlignHCenter
+                                bottomPadding: AppUI.AppTheme.spaceXS
+                            }
+
+                            Column {
+                                spacing: AppUI.AppTheme.spaceXS
+        
+                                Repeater {
+                                    model: backend.hotkeysList
+            
+                                    Row {
+                                        spacing: AppUI.AppTheme.spaceM
+                
+                                        Rectangle {
+                                            width: Math.max(32, keyText.implicitWidth + 12)
+                                            height: 24
+                                            radius: 4
+                                            color: AppUI.AppTheme.bgBase
+                                            border.color: AppUI.AppTheme.borderInput
+                                            border.width: 1
+                    
+                                            Text {
+                                                id: keyText
+                                                anchors.centerIn: parent
+                                                text: modelData.key
+                                                color: AppUI.AppTheme.accentBrand
+                                                font.family: AppUI.AppTheme.fontFamily
+                                                font.pixelSize: AppUI.AppTheme.sizeSmall
+                                                font.weight: AppUI.AppTheme.weightBold
+                                            }
+                                        }
+
+                                        Text {
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            color: AppUI.AppTheme.textSecondary
+                                            font.family: AppUI.AppTheme.fontFamily
+                                            font.pixelSize: AppUI.AppTheme.sizeSmall
+                    
+                                            text: {
+                                                let hk = modelData
+                                                
+                                                // ═══════════════════════════════════════════════
+                                                // ЕСЛИ ЕСТЬ НАЗВАНИЕ — ПОКАЗЫВАЕМ ЕГО
+                                                // ═══════════════════════════════════════════════
+                                                if (hk.name && hk.name !== "") {
+                                                    return hk.name;
+                                                }
+                                                
+                                                // ═══════════════════════════════════════════════
+                                                // ИНАЧЕ — СТАРЫЙ АЛГОРИТМ ГЕНЕРАЦИИ
+                                                // ═══════════════════════════════════════════════
+                                                function getPlural(n, f1, f2, f5) { 
+                                                    let n10 = Math.abs(n)%10; let n100 = Math.abs(n)%100;
+                                                    if (n100>=11 && n100<=14) return f5;
+                                                    if (n10===1) return f1; if (n10>=2 && n10<=4) return f2;
+                                                    return f5;
+                                                }
+
+                                                if (hk.type === "duty") {
+                                                    let sType = hk.duty_shift ? "(в смене)" : "(вне графика)"
+                                                    let res = "Дежурство " + sType + " с " + hk.duty_start + " до " + hk.duty_end
+                                                    if (hk.duty_breaks && hk.duty_breaks.length > 0) {
+                                                        let b = hk.duty_breaks.map(item => "с " + item.start + " до " + item.end).join(", ")
+                                                        res += " с перерывом " + b
+                                                    }
+                                                    return res
+                                                } 
+                        
+                                                if (hk.type === "comp") {
+                                                    let unit = hk.comp_unit === "days" ? getPlural(hk.comp_amount, "день", "дня", "дней") : getPlural(hk.comp_amount, "час", "часа", "часов")
+                                                    return "Компенсация " + hk.comp_amount + " " + unit
+                                                }
+                        
+                                                if (hk.type === "status") {
+                                                    let sNames = {"Б": "Больничный", "О": "Отпуск", "К": "Командировка"}
+                                                    return sNames[hk.status_val] || hk.status_val
+                                                }
+                                                return ""
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            Text {
+                                visible: backend.hotkeysList.length === 0
+                                text: "Горячие клавиши не настроены"
+                                color: AppUI.AppTheme.textTertiary
+                                font.family: AppUI.AppTheme.fontFamily
+                                font.pixelSize: AppUI.AppTheme.sizeSmall
+                                horizontalAlignment: Text.AlignHCenter
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        width: 46
+                        height: parent.height
+                        color: minHov.pressed ? AppUI.AppTheme.statePress : (minHov.containsMouse ? AppUI.AppTheme.stateHover : "transparent")
+                        Rectangle {
+                            anchors.centerIn: parent
+                            width: 10; height: 1
+                            color: AppUI.AppTheme.textSecondary
+                        }
+                        MouseArea {
+                            id: minHov
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            onClicked: mainWindow.showMinimized()
+                        }
+                    }
+
+                    Rectangle {
+                        width: 46
+                        height: parent.height
+                        color: maxHov.pressed ? AppUI.AppTheme.statePress : (maxHov.containsMouse ? AppUI.AppTheme.stateHover : "transparent")
+                        Rectangle {
+                            anchors.centerIn: parent
+                            width: 10; height: 10
+                            color: "transparent"
+                            border.color: AppUI.AppTheme.textSecondary
+                            border.width: 1
+                        }
+                        MouseArea {
+                            id: maxHov
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            onClicked: {
+                                if (mainWindow.visibility === Window.Maximized) {
+                                    mainWindow.showNormal()
+                                } else {
+                                    mainWindow.showMaximized()
+                                }
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        width: 46
+                        height: parent.height
+                        color: closeHov.pressed ? Qt.darker(AppUI.AppTheme.accentDanger, 1.2) : (closeHov.containsMouse ? AppUI.AppTheme.accentDanger : "transparent")
+                        Text {
+                            anchors.centerIn: parent
+                            text: "✕"
+                            color: closeHov.containsMouse ? AppUI.AppTheme.textOnAccent : AppUI.AppTheme.textSecondary
+                            font.pixelSize: 12
+                            font.weight: AppUI.AppTheme.weightBold
+                        }
+                        MouseArea {
+                            id: closeHov
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            onClicked: mainWindow.hide()
+                        }
+                    }
+                }
+            }
+
+            MouseArea {
+                z: 200; width: 8
+                anchors.left: parent.left
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                cursorShape: Qt.SizeHorCursor
+                visible: mainWindow.visibility !== Window.Maximized
+                onPressed: mainWindow.startSystemResize(Qt.LeftEdge)
+            }
+            MouseArea {
+                z: 200; width: 8
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                cursorShape: Qt.SizeHorCursor
+                visible: mainWindow.visibility !== Window.Maximized
+                onPressed: mainWindow.startSystemResize(Qt.RightEdge)
+            }
+            MouseArea {
+                z: 200; height: 8
+                anchors.top: parent.top
+                anchors.left: parent.left
+                anchors.right: parent.right
+                cursorShape: Qt.SizeVerCursor
+                visible: mainWindow.visibility !== Window.Maximized
+                onPressed: mainWindow.startSystemResize(Qt.TopEdge)
+            }
+            MouseArea {
+                z: 200; height: 8
+                anchors.bottom: parent.bottom
+                anchors.left: parent.left
+                anchors.right: parent.right
+                cursorShape: Qt.SizeVerCursor
+                visible: mainWindow.visibility !== Window.Maximized
+                onPressed: mainWindow.startSystemResize(Qt.BottomEdge)
+            }
+
+            StackView {
+                id: stackView
+                anchors.top: customTitleBar.bottom
+                anchors.bottom: parent.bottom
+                anchors.left: parent.left
+                anchors.right: parent.right
+                initialItem: dbSelectionPage
+
+                replaceEnter: Transition {
+                    NumberAnimation {
+                        property: "opacity"
+                        from: 0.0; to: 1.0
+                        duration: 400
+                        easing.type: Easing.OutSine
+                    }
+                }
+                replaceExit: Transition {
+                    NumberAnimation {
+                        property: "opacity"
+                        from: 1.0; to: 0.0
+                        duration: 400
+                        easing.type: Easing.OutSine
+                    }
+                }
+            }
+        }
+    }
+
+    // ==========================================
+    // СТРАНИЦА ВЫБОРА БД
+    // ==========================================
+    Component {
+        id: dbSelectionPage
+        Item {
+            id: dbPageRoot
+            property string targetDbPath: ""
+            Component.onCompleted: { 
+                if (backend.dbList.length === 1) { 
+                    targetDbPath = backend.dbList[0].path
+                    autoStartTimer.start() 
+                } 
+            }
+            Timer { 
+                id: autoStartTimer
+                interval: 100
+                onTriggered: { 
+                    rightContentArea.opacity = 0
+                    expandAnim.start() 
+                } 
+            }
+            function openDbAnimated(path) { 
+                if (expandAnim.running) return
+                targetDbPath = path
+                rightContentArea.opacity = 0
+                expandAnim.start() 
+            }
+            
+            Item {
+                id: rightContentArea
+                anchors.fill: parent
+                anchors.leftMargin: 300 
+                Behavior on opacity { 
+                    NumberAnimation { duration: 250; easing.type: Easing.OutQuad } 
+                }
+                Text { 
+                    id: titleText
+                    text: "Выберите подразделение"
+                    color: AppUI.AppTheme.textPrimary
+                    font.pixelSize: AppUI.AppTheme.sizeH1
+                    font.weight: AppUI.AppTheme.weightBold
+                    anchors.top: parent.top
+                    anchors.topMargin: AppUI.AppTheme.spaceXXL
+                    anchors.left: parent.left
+                    anchors.leftMargin: AppUI.AppTheme.spaceXXL 
+                }
+                ListView {
+                    id: dbListView
+                    anchors.top: titleText.bottom
+                    anchors.topMargin: AppUI.AppTheme.spaceXL
+                    anchors.bottom: bottomBar.top
+                    anchors.bottomMargin: AppUI.AppTheme.spaceL
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.leftMargin: AppUI.AppTheme.spaceXXL
+                    anchors.rightMargin: AppUI.AppTheme.spaceXXL
+                    spacing: AppUI.AppTheme.spaceM
+                    clip: true
+                    model: backend.dbList
+                    delegate: Rectangle {
+                        width: ListView.view.width
+                        height: 72
+                        radius: AppUI.AppTheme.radiusLarge
+                        color: AppUI.AppTheme.bgSurface
+                        border.color: AppUI.AppTheme.borderDivider
+                        border.width: 1
+                        Rectangle { 
+                            anchors.fill: parent
+                            radius: parent.radius
+                            color: mouseArea.pressed
+                                   ? AppUI.AppTheme.statePress
+                                   : (mouseArea.containsMouse ? AppUI.AppTheme.stateHover : "transparent")
+                        }
+                        Rectangle { 
+                            id: iconRect
+                            width: 44; height: 44
+                            radius: AppUI.AppTheme.radiusPill
+                            color: AppUI.AppTheme.bgBrandSoft
+                            anchors.left: parent.left
+                            anchors.leftMargin: AppUI.AppTheme.spaceM
+                            anchors.verticalCenter: parent.verticalCenter
+                            Text { 
+                                anchors.centerIn: parent
+                                text: modelData.name.charAt(0).toUpperCase()
+                                color: AppUI.AppTheme.accentBrand
+                                font.weight: AppUI.AppTheme.weightBold
+                                font.pixelSize: AppUI.AppTheme.sizeH2 
+                            } 
+                        }
+                        Text { 
+                            anchors.left: iconRect.right
+                            anchors.leftMargin: AppUI.AppTheme.spaceM
+                            anchors.top: parent.top
+                            anchors.topMargin: 16
+                            text: modelData.name
+                            color: AppUI.AppTheme.textPrimary
+                            font.pixelSize: AppUI.AppTheme.sizeBodyLarge
+                            font.weight: AppUI.AppTheme.weightBold 
+                        }
+                        Text { 
+                            anchors.left: iconRect.right
+                            anchors.leftMargin: AppUI.AppTheme.spaceM
+                            anchors.bottom: parent.bottom
+                            anchors.bottomMargin: 16
+                            text: modelData.path
+                            color: AppUI.AppTheme.textSecondary
+                            font.pixelSize: AppUI.AppTheme.sizeSmall 
+                        }
+                        Rectangle { 
+                            width: 36; height: 36
+                            radius: AppUI.AppTheme.radiusPill
+                            anchors.right: parent.right
+                            anchors.rightMargin: AppUI.AppTheme.spaceM
+                            anchors.verticalCenter: parent.verticalCenter
+                            color: folderHov.pressed
+                                   ? AppUI.AppTheme.statePress
+                                   : (folderHov.containsMouse ? AppUI.AppTheme.stateHover : "transparent")
+                            IconImage { 
+                                anchors.centerIn: parent
+                                source: "icons/folder.svg"
+                                width: AppUI.AppTheme.iconMedium
+                                height: AppUI.AppTheme.iconMedium
+                                color: AppUI.AppTheme.textSecondary 
+                            }
+                            MouseArea { 
+                                id: folderHov
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                onClicked: backend.openDbFolder(modelData.path) 
+                            } 
+                        }
+                        MouseArea { 
+                            id: mouseArea
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: dbPageRoot.openDbAnimated(modelData.path) 
+                        }
+                    }
+                }
+                Item {
+                    id: bottomBar
+                    height: 80
+                    anchors.bottom: parent.bottom
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.leftMargin: AppUI.AppTheme.spaceXXL
+                    anchors.rightMargin: AppUI.AppTheme.spaceXXL
+                    Row { 
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: AppUI.AppTheme.spaceM
+                        AppUI.AppButton { 
+                            width: 200; variant: "primary"
+                            text: "Создать подразделение"
+                            onClicked: createDbDialog.showCentered() 
+                        }
+                        AppUI.AppButton { 
+                            width: 330; variant: "secondary"
+                            text: "Подключить базу данных"
+                            onClicked: fileDialog.open() 
+                        }
+                        AppUI.AppButton { 
+                            width: 330; variant: "secondary"
+                            text: "Изменить путь сохранения"
+                            onClicked: globalFolderDialog.open() 
+                        }
+                    }
+                }
+                FolderDialog {
+                    id: globalFolderDialog
+                    title: "Выберите новую папку для баз"
+                    onAccepted: backend.changeDbDirectory(globalFolderDialog.selectedFolder)
+                }
+                FileDialog {
+                    id: fileDialog
+                    title: "Выберите базу"
+                    nameFilters: ["SQLite файлы (*.sqlite *.db)", "Все файлы (*)"]
+                    onAccepted: backend.attachDatabase(fileDialog.selectedFile)
+                }
+            }
+
+            Rectangle { 
+                id: leftPanel
+                width: 300
+                anchors.left: parent.left
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                color: AppUI.AppTheme.bgPanel
+                z: 10
+                Rectangle {
+                    anchors.right: parent.right
+                    width: 1; height: parent.height
+                    color: AppUI.AppTheme.borderDivider
+                }
+                Column {
+                    anchors.centerIn: parent
+                    width: 260
+                    spacing: AppUI.AppTheme.spaceL
+                    AppUI.AppEmptyMascot {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        width: 180; height: 180
+                    }
+                    Text {
+                        id: logoText
+                        width: parent.width
+                        text: "OVERTIMETAB 2.0.0-ALPHA.19"
+                        color: AppUI.AppTheme.accentBrand
+                        font.family: AppUI.AppTheme.fontFamily
+                        font.pixelSize: AppUI.AppTheme.sizeH4
+                        font.weight: AppUI.AppTheme.weightBold
+                        font.letterSpacing: 1
+                        horizontalAlignment: Text.AlignHCenter
+                        wrapMode: Text.WordWrap
+                        lineHeight: 1.2
+                    }
+                }
+            }
+
+            SequentialAnimation {
+                id: expandAnim
+                PauseAnimation { duration: 150 }
+                NumberAnimation {
+                    target: leftPanel; property: "width"
+                    to: dbPageRoot.width; duration: 600
+                    easing.type: Easing.InOutExpo
+                }
+                ScriptAction { script: backend.openDatabase(dbPageRoot.targetDbPath) }
+            }
+        }
+    }
+
+    // ==========================================
+    // ГЛАВНАЯ СТРАНИЦА РАБОЧЕГО ПРОСТРАНСТВА
+    // ==========================================
+    Component {
+        id: mainWorkspacePage
+        Item {
+            id: workspaceRoot
+            property alias calendarPanel: calendarPanelId
+            SplitView {
+                anchors.fill: parent
+                orientation: Qt.Horizontal
+                handle: Rectangle { 
+                    implicitWidth: 1
+                    color: SplitHandle.hovered || SplitHandle.pressed
+                           ? AppUI.AppTheme.accentBrand
+                           : AppUI.AppTheme.borderDivider
+                }
+                Item {
+                    SplitView.preferredWidth: 350
+                    SplitView.minimumWidth: 250
+                    SplitView.maximumWidth: 600
+                    SplitView {
+                        anchors.fill: parent
+                        orientation: Qt.Horizontal
+                        handle: Rectangle {
+                            implicitWidth: 1
+                            color: AppUI.AppTheme.borderDivider
+                        }
+                        AppUI.GroupSidebar {
+                            SplitView.preferredWidth: 72
+                            SplitView.minimumWidth: 72
+                            SplitView.maximumWidth: 72
+                            workspace: workspaceRoot
+                        }
+                        AppUI.EmployeeListPanel {
+                            SplitView.fillWidth: true
+                            workspace: workspaceRoot
+                        }
+                    }
+                    AppUI.LeftControlPanel {
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.bottom: parent.bottom
+                        z: AppUI.AppTheme.zSticky
+                    }
+                }
+                AppUI.CalendarWorkspace {
+                    id: calendarPanelId
+                    SplitView.fillWidth: true
+                }
+            }
+        }
+    }
+
+    // ==========================================
+    // ОВЕРЕИ И ЭФФЕКТЫ
+    // ==========================================
+    AppUI.SpotlightOverlay {
+        id: spotlightOverlay
+        backgroundSource: visualRoot
+        targetItem: mainWindow.activeSpotlightCell
+        isActive: dayEventDialog.opened
+    }
+    AppUI.ThemeTransition { id: themeTransition; targetItem: visualRoot }
+
+    property var pendingBackendCall: null
+
+    Item {
+        id: thanosContainer
+        anchors.fill: parent
+        z: AppUI.AppTheme.zEffect
+        Repeater { 
+            id: thanosPool
+            model: 10
+            AppUI.ThanosEffect { 
+                onSnapshotTaken: { 
+                    if (mainWindow.pendingBackendCall) { 
+                        mainWindow.pendingBackendCall()
+                        mainWindow.pendingBackendCall = null 
+                    } 
+                } 
+            } 
+        }
+    }
+
+    function explodeMulti(itemsArray, backendCall) {
+        if (!itemsArray || itemsArray.length === 0) { 
+            backendCall()
+            return 
+        }
+        mainWindow.pendingBackendCall = backendCall
+        let explodedAny = false
+        for (let i = 0; i < itemsArray.length; i++) {
+            let item = itemsArray[i]
+            if (item && item.visible && item.opacity > 0) {
+                let t = null
+                for (let j = 0; j < thanosPool.count; j++) { 
+                    if (!thanosPool.itemAt(j).isExploding) { 
+                        t = thanosPool.itemAt(j)
+                        break 
+                    } 
+                }
+                if (t) { 
+                    t.explode(item)
+                    explodedAny = true 
+                }
+            }
+        }
+        if (!explodedAny) { 
+            mainWindow.pendingBackendCall = null
+            backendCall() 
+        }
+    }
+
+    function explodeAndDelete(dateStr, targetType, specificId, backendCall) {
+        let workspace = stackView.currentItem
+        if (!workspace || !workspace.calendarPanel) { 
+            backendCall()
+            return 
+        }
+        let itemsToExplode = []
+        let cell = workspace.calendarPanel.findDayCell(dateStr)
+        if (targetType === "duty") {
+            let idsToExplode = []
+            if (specificId !== null && specificId !== undefined) { 
+                idsToExplode.push(specificId) 
+            } else { 
+                idsToExplode = workspace.calendarPanel.getDutyIdsInDay(dateStr) 
+            }
+            itemsToExplode = workspace.calendarPanel.findDutyRectsByIds(idsToExplode)
+        } else if (targetType === "all") {
+            let idsToExplode = workspace.calendarPanel.getDutyIdsInDay(dateStr)
+            itemsToExplode = workspace.calendarPanel.findDutyRectsByIds(idsToExplode)
+            if (cell) {
+                if (cell.statusBarItemRef && cell.statusBarItemRef.visible)
+                    itemsToExplode.push(cell.statusBarItemRef)
+                if (cell.compBadgeItemRef && cell.compBadgeItemRef.visible)
+                    itemsToExplode.push(cell.compBadgeItemRef)
+            }
+        } else {
+            if (cell) {
+                if (targetType === "status") itemsToExplode.push(cell.statusBarItemRef)
+                else if (targetType === "comp") itemsToExplode.push(cell.compBadgeItemRef)
+            }
+        }
+        explodeMulti(itemsToExplode, backendCall)
+    }
+
+    // ==========================================
+    // ДИАЛОГИ
+    // ==========================================
+    AppUI.HelpDialog        { id: helpDialog }
+    AppUI.DayInspector      { id: dayInspector }
+    AppUI.MoneyInspector    { 
+        id: moneyInspector
+        onRequestAddMoneyDialog: moneyDialog.openNew(moneyInspector.contentItem, 20, 20) 
+    }
+    AppUI.DayEventDialog    { id: dayEventDialog }
+    AppUI.EmpDialog         { id: empDialog }
+    AppUI.EndStatusDialog   { id: endStatusDialog }
+    AppUI.TransferDialog    { id: transferDialog }
+    AppUI.MoneyDialog       { id: moneyDialog }
+    AppUI.AppToast          { id: toastPopup }
+    AppUI.SettingsDialog    { id: settingsDialog; onRequestFileAttach: fileDialog.open() }
+    AppUI.AddGroupDialog    { id: addGroupDialog }
+    AppUI.HistoryDialog     { id: historyDialog }
+    AppUI.CreateDbDialog    { id: createDbDialog }
+
+FileDialog { 
+    id: exportDialog
+    title: "Сохранить табель в Excel"
+    fileMode: FileDialog.SaveFile
+    nameFilters: ["Excel файлы (*.xlsx)"]
+    currentFile: {
+        let months = ["январь", "февраль", "март", "апрель", "май", "июнь", 
+                      "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь"]
+        
+        // Парсим backend.currentPeriodText (формат: "Январь 2026")
+        let parts = backend.currentPeriodText.split(" ")
+        let monthName = parts[0].toLowerCase() // "январь"
+        let year = parts[1] // "2026"
+        
+        let deptName = backend.activeDepartmentName || "подразделение"
+        
+        return "Табель " + deptName + " за " + monthName + " " + year + ".xlsx"
+    }
+    onAccepted: backend.exportToExcel(exportDialog.selectedFile) 
+}
+
+    Shortcut { sequence: "Ctrl+Z";       onActivated: backend.undoAction() }
+    Shortcut { sequence: "Ctrl+Y";       onActivated: backend.redoAction() }
+    Shortcut { sequence: "Ctrl+Shift+Z"; onActivated: backend.redoAction() }
+
+    AppUI.AppPrintDialog { 
+        id: customPrintDialog
+        onPrintRequested: function(printerName, copies, pageFrom, pageTo, orientation, paperSize, collate) { 
+            backend.quickPrint(printerName, copies, pageFrom, pageTo, orientation, paperSize, collate) 
+        } 
+    }
+
+    AppUI.AppDesktopNotification { id: systemAlert }
+
+    Timer {
+        id: notificationTimer
+        interval: 10800000; running: true; repeat: true
+        onTriggered: checkAndNotify()
+    }
+    Timer {
+        id: startupNotificationTimer
+        interval: 5000; running: true; repeat: false
+        onTriggered: checkAndNotify()
+    }
+
+    function checkAndNotify() {
+        let d = new Date()
+        let day = d.getDate()
+        if (day >= 28 || day <= 5) {
+            systemAlert.showNotification()
+        }
+    }
+} 

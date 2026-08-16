@@ -1,0 +1,5 @@
+module components
+singleton AppTheme AppTheme.qml
+AppContextMenu 1.0 AppContextMenu.qml
+AppDatabaseMenu 1.0 AppDatabaseMenu.qml
+AppSummaryPanel 1.0 AppSummaryPanel.qml
