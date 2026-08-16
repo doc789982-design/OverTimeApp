@@ -1,32 +1,26 @@
 // ========================================
 // НАЧАЛО ФАЙЛА: IconImage.qml
 // ========================================
+//
+// ИСТОРИЯ БАГА: раньше корнем здесь был Image { visible: false },
+// а внутри него лежал ColorOverlay. В QML visible:false скрывает
+// и всех детей, поэтому ColorOverlay никогда не отрисовывался —
+// иконка была невидимой. Это ломало иконки (корзину и др.) в тех
+// файлах, где 'import "."' перекрывал системный IconImage из
+// QtQuick.Controls.impl этим локальным файлом
+// (CalendarWorkspace.qml, EmployeeListPanel.qml).
+//
+// ТЕПЕРЬ: это тонкая обёртка над тем же системным IconImage,
+// который используется во всех остальных файлах проекта.
+// Поведение везде становится одинаковым.
 
 import QtQuick
-import Qt5Compat.GraphicalEffects
+import QtQuick.Controls.impl as Impl
 
-Image {
-    id: root
-
-    // Цвет заливки иконки (по умолчанию черный)
-    property color color: "#000000"
-
-    // Источник должен быть один и тот же, но он дублируется
-    // для маски и для самой иконки
-    source: ""
-
-    // Делаем саму картинку невидимой
-    visible: false
-
-    // Компонент, который реально отображается на экране
-    ColorOverlay {
-        anchors.fill: parent
-        color: root.color // Цвет берется из свойства 'color'
-
-        // В качестве "маски" используется та же самая картинка
-        source: Image {
-            source: root.source
-            sourceSize: Qt.size(root.width, root.height)
-        }
-    }
+Impl.IconImage {
+    // Совместимость со старым API: свойство 'color' задаёт цвет иконки.
+    // У системного IconImage цвет тоже называется 'color', так что
+    // все существующие вызовы работают без изменений.
+    fillMode: Image.PreserveAspectFit
+    sourceSize: Qt.size(width, height)
 }

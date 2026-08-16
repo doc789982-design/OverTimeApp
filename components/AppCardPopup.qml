@@ -61,14 +61,8 @@ Popup {
         border.color: AppTheme.borderDivider
         border.width: 1
 
-        layer.enabled: true
-        layer.effect: DropShadow {
-            transparentBorder: true
-            color: AppTheme.shadowColor
-            radius: AppTheme.shadowL4Blur
-            verticalOffset: AppTheme.shadowL4Y
-            samples: 25
-        }
+        // Тень-картинка вместо вычисляемой (Level 4)
+        AppShadow { level: 4 }
     }
 
     default property alias cardContent: innerContainer.data

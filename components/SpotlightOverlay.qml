@@ -18,12 +18,42 @@ Item {
         NumberAnimation { duration: AppTheme.speedStandard; easing.type: AppTheme.speedStandard } 
     }
 
-    // 1. Сильное размытие заднего фона
+    // ═══════════════════════════════════════════════════════════
+    // ОПТИМИЗАЦИЯ ДЛЯ СЛАБЫХ ВИДЕОКАРТ:
+    // Раньше размытие пересчитывалось КАЖДЫЙ КАДР (live: true),
+    // т.е. видеокарта размывала весь экран 60 раз в секунду.
+    // Теперь мы делаем "фотографию" фона ОДИН РАЗ в момент
+    // открытия диалога и размываем только её. Фон за диалогом
+    // всё равно неподвижен — глазом разницы нет, а нагрузка
+    // падает в десятки раз.
+    // ═══════════════════════════════════════════════════════════
+
+    // 0. Замороженный снимок фона (обновляется только при открытии)
+    ShaderEffectSource {
+        id: frozenBackground
+        anchors.fill: parent
+        sourceItem: root.backgroundSource
+        live: false          // НЕ обновлять каждый кадр!
+        visible: false       // сам снимок не показываем, он нужен размытию
+    }
+
+    onIsActiveChanged: {
+        if (isActive) {
+            // Обновляем "фотографию" фона ровно один раз при открытии
+            frozenBackground.scheduleUpdate()
+        }
+    }
+
+    // 1. Сильное размытие снимка (вычисляется один раз, не каждый кадр)
     FastBlur {
         anchors.fill: parent
-        source: root.backgroundSource
+        source: frozenBackground
         radius: 48
         transparentBorder: false
+        // Кэшируем результат размытия как обычную картинку:
+        // пока диалог открыт, видеокарта просто показывает готовый кадр
+        layer.enabled: true
+        layer.smooth: true
     }
 
     // 2. Темная пленка
@@ -32,14 +62,15 @@ Item {
         color: AppTheme.isDark ? Qt.rgba(0, 0, 0, 0) : Qt.rgba(0, 0, 0, 0.1)
     }
 
-    // 3. Контейнер для голограммы
+    // 3. Контейнер для голограммы (подсвеченная ячейка поверх размытия)
     Item {
         id: cloneWrapper
         
         ShaderEffectSource {
             anchors.fill: parent
             sourceItem: root.targetItem
-            live: true 
+            // Живая копия только пока эффект реально виден
+            live: root.isActive
         }
     }
 

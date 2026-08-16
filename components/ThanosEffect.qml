@@ -91,11 +91,19 @@ Item {
             root.waveProgress = 0.0;
             canvas.frame = 0;
             
-            root.targetItem.opacity = 0.0;
+            // Защита: элемент могли уже уничтожить (обновление модели)
+            if (root.targetItem) root.targetItem.opacity = 0.0;
             ctx.clearRect(0, 0, width, height); 
 
             root.snapshotTaken();
-            
+
+            // ВАЖНО: возвращаем прозрачность обратно!
+            // К этому моменту бэкенд уже удалил данные и обновил модель,
+            // поэтому у удалённого элемента visible=false и его не видно.
+            // Если этого не сделать, постоянные элементы (значок "В", статус дня)
+            // навсегда останутся с opacity=0 и не появятся при повторном добавлении.
+            if (root.targetItem) root.targetItem.opacity = 1.0;
+
             waveAnim.restart();
             renderTimer.start();
         }

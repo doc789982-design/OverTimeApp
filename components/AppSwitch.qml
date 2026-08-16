@@ -61,14 +61,16 @@ Switch {
             // Размер (20 → 24)
             scale: control.checked ? 1.0 : 20 / 24
 
-            // Тень — очень важный момент баланса
-            layer.enabled: true
-            layer.effect: DropShadow {
-                transparentBorder: true
-                color: Qt.rgba(0, 0, 0, control.checked ? 0.26 : 0.20)
-                radius: control.checked ? 7 : 5
-                verticalOffset: control.checked ? 2.2 : 1.8
-                samples: 14
+            // Тень-картинка для кружка (легко для видеокарты)
+            Image {
+                z: -1
+                anchors.centerIn: parent
+                anchors.verticalCenterOffset: control.checked ? 2 : 2
+                width: parent.width + 20
+                height: parent.height + 20
+                source: "../shadows/shadow_knob.png"
+                opacity: control.checked ? 0.26 : 0.20
+                smooth: true
             }
 
             // Анимации

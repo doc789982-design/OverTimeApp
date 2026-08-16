@@ -34,14 +34,8 @@ Popup {
         border.color: root.toastType === "error" ? AppTheme.accentDanger : AppTheme.accentSuccess
         border.width: 1
         
-        layer.enabled: true 
-        layer.effect: DropShadow {
-            transparentBorder: true
-            color: AppTheme.shadowColor
-            radius: AppTheme.shadowL5Blur
-            verticalOffset: AppTheme.shadowL5Y
-            samples: 25
-        }
+        // Тень-картинка вместо вычисляемой (Level 5)
+        AppShadow { level: 5 }
         
         // Тонкая цветная полоска слева (Фишка профессиональных тоастов)
         Rectangle {

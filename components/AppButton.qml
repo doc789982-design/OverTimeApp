@@ -77,15 +77,8 @@ Button {
             Behavior on color { ColorAnimation { duration: AppTheme.durFast } }
             Behavior on border.color { ColorAnimation { duration: AppTheme.durFast } }
 
-            // МАГИЯ 2: Отключаем тень и для Ghost, и для Secondary кнопок!
-            layer.enabled: control.variant !== "ghost" && control.variant !== "secondary"
-            layer.effect: DropShadow {
-                transparentBorder: true
-                color: AppTheme.shadowColor
-                radius: AppTheme.shadowL1Blur
-                verticalOffset: AppTheme.shadowL1Y
-                samples: 9
-            }
+            // МАГИЯ 2: Тень-картинка; для Ghost и Secondary кнопок отключена!
+            AppShadow { level: 1; visible: control.variant !== "ghost" && control.variant !== "secondary" }
 
             // МАГИЯ: Слой состояния (Hover / Press)
             // Он ложится поверх базового цвета, делая синий - темно-синим, а зеленый - темно-зеленым!

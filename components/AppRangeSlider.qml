@@ -89,14 +89,8 @@ Item {
             Behavior on opacity { NumberAnimation { duration: AppTheme.durFast; easing.type: AppTheme.easeColor } }
             Behavior on anchors.bottomMargin { NumberAnimation { duration: AppTheme.durFast; easing.type: AppTheme.easeEnter } }
 
-            layer.enabled: true
-            layer.effect: DropShadow {
-                transparentBorder: true
-                color: AppTheme.shadowColor
-                radius: AppTheme.shadowL5Blur
-                verticalOffset: AppTheme.shadowL5Y
-                samples: 17
-            }
+            // Тень-картинка вместо вычисляемой (Level 5)
+            AppShadow { level: 5 }
 
             Text {
                 id: timeTextStart
@@ -149,14 +143,8 @@ Item {
             Behavior on opacity { NumberAnimation { duration: AppTheme.durFast; easing.type: AppTheme.easeColor } }
             Behavior on anchors.bottomMargin { NumberAnimation { duration: AppTheme.durFast; easing.type: AppTheme.easeEnter } }
 
-            layer.enabled: true
-            layer.effect: DropShadow {
-                transparentBorder: true
-                color: AppTheme.shadowColor
-                radius: AppTheme.shadowL5Blur
-                verticalOffset: AppTheme.shadowL5Y
-                samples: 17
-            }
+            // Тень-картинка вместо вычисляемой (Level 5)
+            AppShadow { level: 5 }
 
             Text {
                 id: timeTextEnd

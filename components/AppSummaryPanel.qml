@@ -186,11 +186,8 @@ Item {
         color: AppTheme.bgSurface
         border.color: AppTheme.borderDivider; border.width: 1
 
-        layer.enabled: true
-        layer.effect: DropShadow {
-            transparentBorder: true; color: AppTheme.shadowColor
-            radius: AppTheme.shadowL1Blur; verticalOffset: AppTheme.shadowL1Y; samples: 9
-        }
+        // Тень-картинка вместо вычисляемой (Level 1)
+        AppShadow { level: 1 }
 
         Item {
             id: contentArea

@@ -30,14 +30,8 @@ Window {
         border.color: AppTheme.borderDivider
         border.width: 1
 
-        layer.enabled: true
-        layer.effect: DropShadow {
-            transparentBorder: true
-            color: AppTheme.shadowColor
-            radius: AppTheme.shadowL5Blur
-            verticalOffset: AppTheme.shadowL3Y
-            samples: 25
-        }
+        // Тень-картинка вместо вычисляемой (Level 5, сдвиг как L3)
+        AppShadow { level: 5; yOffset: 4 }
 
         RowLayout {
             id: contentLayout
