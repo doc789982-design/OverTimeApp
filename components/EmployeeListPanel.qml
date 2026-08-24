@@ -241,7 +241,19 @@ Rectangle {
                         AppMenuItem { text: "Уволен"; iconSource: "../icons/user_minus.svg"; onClicked: { endStatusDialog.targetEmpId = modelData.id; endStatusDialog.targetReason = "dismissal"; endStatusDialog.showAt(cardContainer, cardContainer.width / 2, cardContainer.height / 2) } }
                         AppMenuItem { visible: !modelData.is_active; text: "Отменить статус"; iconSource: "../icons/x_circle.svg"; onClicked: backend.clearEmployeeEndDate(modelData.id) }
                         AppMenuSeparator {}
-                        AppMenuItem { text: "Удалить"; iconSource: "../icons/trash.svg"; isDanger: true; onClicked: backend.deleteEmployee(modelData.id) }
+                        AppMenuItem {
+                            text: "Удалить"
+                            iconSource: "../icons/trash.svg"
+                            isDanger: true
+                            onClicked: {
+                                mainWindow.askConfirm(
+                                    "Удалить сотрудника?",
+                                    "«" + modelData.name + "» будет удалён вместе со всеми дежурствами и компенсациями.\nЕсли передумаете — нажмите Ctrl+Z.",
+                                    "Удалить",
+                                    function() { backend.deleteEmployee(modelData.id) }
+                                )
+                            }
+                        }
                     }
 
                     MouseArea { 

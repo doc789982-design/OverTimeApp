@@ -204,7 +204,17 @@ AppLargeModal {
                 FolderDialog {
                     id: changeStorageDialog
                     title: "Выберите новую папку хранения"
-                    onAccepted: backend.changeDbDirectory(changeStorageDialog.selectedFolder)
+                    property string pendingFolder: ""
+                    onAccepted: {
+                        pendingFolder = changeStorageDialog.selectedFolder
+                        mainWindow.askConfirm(
+                            "Перенести все базы?",
+                            "Файлы всех подразделений будут физически перенесены в выбранную папку.",
+                            "Перенести",
+                            function() { backend.changeDbDirectory(changeStorageDialog.pendingFolder) },
+                            false
+                        )
+                    }
                 }
                 FolderDialog {
                     id: exportFolderDialog
@@ -411,7 +421,15 @@ AppLargeModal {
                                         text: "Убрать"
                                         width: 76
                                         variant: "danger"
-                                        onClicked: backend.removeDatabaseFromList(modelData.path)
+                                        onClicked: {
+                                            let dbPath = modelData.path
+                                            mainWindow.askConfirm(
+                                                "Убрать базу из списка?",
+                                                "Подразделение «" + modelData.name + "» исчезнет из списка выбора.\nСам файл на диске удалён НЕ будет — его можно подключить обратно.",
+                                                "Убрать",
+                                                function() { backend.removeDatabaseFromList(dbPath) }
+                                            )
+                                        }
                                     }
                                 }
 

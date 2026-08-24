@@ -16,9 +16,10 @@ Popup {
     // Z-Index: Поверх окон и тултипов
     z: AppTheme.zToast
     
-    // Ширина подстраивается под текст, плюс ровные системные отступы
-    width: toastText.implicitWidth + (AppTheme.spaceL * 2)
-    height: 50
+    // Ширина подстраивается под текст, но не шире окна программы
+    width: Math.min(toastText.implicitWidth + (AppTheme.spaceL * 2),
+                    parent ? parent.width - AppTheme.spaceL * 2 : 600)
+    height: Math.max(50, toastText.implicitHeight + AppTheme.spaceM)
     
     property string toastType: "success"
     property string message: ""
@@ -54,6 +55,13 @@ Popup {
             }
             color: root.toastType === "error" ? AppTheme.accentDanger : AppTheme.accentSuccess
         }
+
+        // Клик по уведомлению — закрыть его вручную
+        MouseArea {
+            anchors.fill: parent
+            cursorShape: Qt.PointingHandCursor
+            onClicked: root.close()
+        }
     }
 
     // ==========================================
@@ -62,11 +70,14 @@ Popup {
     contentItem: Text {
         id: toastText
         anchors.centerIn: parent
+        width: root.width - (AppTheme.spaceL * 2)
         text: root.message
         color: AppTheme.textPrimary
         font.family: AppTheme.fontFamily
         font.pixelSize: AppTheme.sizeBody
         font.weight: AppTheme.weightMedium
+        wrapMode: Text.WordWrap
+        horizontalAlignment: Text.AlignHCenter
     }
 
     // ==========================================
@@ -74,9 +85,18 @@ Popup {
     // ==========================================
     Timer {
         id: toastTimer
-        interval: 3000 // 3 секунды до закрытия
+        interval: 3200
         repeat: false
         onTriggered: root.close()
+    }
+
+    // Пауза при наведении: пока сообщение читают — оно не исчезает
+    HoverHandler {
+        id: toastHover
+        onHoveredChanged: {
+            if (toastHover.hovered) toastTimer.stop()
+            else if (root.opened) toastTimer.restart()
+        }
     }
 
     // Анимация выпрыгивания: Slide Up + Fade
@@ -114,7 +134,10 @@ Popup {
     function show(msg, type) {
         root.message = msg
         root.toastType = type || "success"
-        
+
+        // Ошибки читают дольше, чем «Сохранено» — держим их на экране дольше
+        toastTimer.interval = root.toastType === "error" ? 8000 : 3200
+
         if (root.opened) {
             toastTimer.restart()
         } else {

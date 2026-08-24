@@ -21,6 +21,20 @@ ApplicationWindow {
 
     property Item activeSpotlightCell: null
 
+    // Колбэк для диалога подтверждения (хранится, пока пользователь думает)
+    property var confirmCallback: null
+
+    // ЕДИНАЯ ТОЧКА ВХОДА ДЛЯ ВСЕХ ПОДТВЕРЖДЕНИЙ В ПРОГРАММЕ.
+    // Пример: mainWindow.askConfirm("Удалить?", "Точно?", "Удалить", function() { ... })
+    function askConfirm(titleText, messageText, confirmText, callback, isDanger) {
+        confirmDialog.dialogTitle = titleText
+        confirmDialog.dialogMessage = messageText
+        confirmDialog.confirmLabel = (confirmText && confirmText !== "") ? confirmText : "Подтвердить"
+        confirmDialog.dangerMode = (isDanger === undefined) ? true : isDanger
+        mainWindow.confirmCallback = callback
+        confirmDialog.open()
+    }
+
     Connections {
         target: backend
         function onDatabaseOpened() { 
@@ -517,17 +531,27 @@ ApplicationWindow {
                             text: "Подключить базу данных"
                             onClicked: fileDialog.open() 
                         }
-                        AppUI.AppButton { 
+                        AppUI.AppButton {
                             width: 330; variant: "secondary"
-                            text: "Изменить путь сохранения"
-                            onClicked: globalFolderDialog.open() 
+                            text: "Перенести базы в другую папку"
+                            onClicked: globalFolderDialog.open()
                         }
                     }
                 }
                 FolderDialog {
                     id: globalFolderDialog
                     title: "Выберите новую папку для баз"
-                    onAccepted: backend.changeDbDirectory(globalFolderDialog.selectedFolder)
+                    property string pendingFolder: ""
+                    onAccepted: {
+                        pendingFolder = globalFolderDialog.selectedFolder
+                        mainWindow.askConfirm(
+                            "Перенести все базы?",
+                            "Файлы всех подразделений будут физически перенесены в выбранную папку. Пара секунд — и готово.",
+                            "Перенести",
+                            function() { backend.changeDbDirectory(globalFolderDialog.pendingFolder) },
+                            false
+                        )
+                    }
                 }
                 FileDialog {
                     id: fileDialog
@@ -750,6 +774,15 @@ ApplicationWindow {
     AppUI.TransferDialog    { id: transferDialog }
     AppUI.MoneyDialog       { id: moneyDialog }
     AppUI.AppToast          { id: toastPopup }
+    AppUI.AppConfirmDialog  {
+        id: confirmDialog
+        onAccepted: {
+            let cb = mainWindow.confirmCallback
+            mainWindow.confirmCallback = null
+            if (cb) cb()
+        }
+        onRejected: mainWindow.confirmCallback = null
+    }
     AppUI.SettingsDialog    { id: settingsDialog; onRequestFileAttach: fileDialog.open() }
     AppUI.AddGroupDialog    { id: addGroupDialog }
     AppUI.HistoryDialog     { id: historyDialog }
