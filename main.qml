@@ -122,6 +122,7 @@ ApplicationWindow {
                             anchors.fill: parent
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
+                            onClicked: helpDialog.show()
                         }
                         
                         IconImage {
@@ -138,106 +139,7 @@ ApplicationWindow {
                             anchors.topMargin: AppUI.AppTheme.spaceXXS       
                             dropDown: true             
                             isVisible: helpHov.containsMouse
-    
-                            Text {
-                                width: parent.width
-                                text: "Справка (Горячие клавиши)"
-                                color: AppUI.AppTheme.textPrimary
-                                font.family: AppUI.AppTheme.fontFamily
-                                font.pixelSize: AppUI.AppTheme.sizeBody
-                                font.weight: AppUI.AppTheme.weightBold
-                                horizontalAlignment: Text.AlignHCenter
-                                bottomPadding: AppUI.AppTheme.spaceXS
-                            }
-
-                            Column {
-                                spacing: AppUI.AppTheme.spaceXS
-        
-                                Repeater {
-                                    model: backend.hotkeysList
-            
-                                    Row {
-                                        spacing: AppUI.AppTheme.spaceM
-                
-                                        Rectangle {
-                                            width: Math.max(32, keyText.implicitWidth + 12)
-                                            height: 24
-                                            radius: 4
-                                            color: AppUI.AppTheme.bgBase
-                                            border.color: AppUI.AppTheme.borderInput
-                                            border.width: 1
-                    
-                                            Text {
-                                                id: keyText
-                                                anchors.centerIn: parent
-                                                text: modelData.key
-                                                color: AppUI.AppTheme.accentBrand
-                                                font.family: AppUI.AppTheme.fontFamily
-                                                font.pixelSize: AppUI.AppTheme.sizeSmall
-                                                font.weight: AppUI.AppTheme.weightBold
-                                            }
-                                        }
-
-                                        Text {
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            color: AppUI.AppTheme.textSecondary
-                                            font.family: AppUI.AppTheme.fontFamily
-                                            font.pixelSize: AppUI.AppTheme.sizeSmall
-                    
-                                            text: {
-                                                let hk = modelData
-                                                
-                                                // ═══════════════════════════════════════════════
-                                                // ЕСЛИ ЕСТЬ НАЗВАНИЕ — ПОКАЗЫВАЕМ ЕГО
-                                                // ═══════════════════════════════════════════════
-                                                if (hk.name && hk.name !== "") {
-                                                    return hk.name;
-                                                }
-                                                
-                                                // ═══════════════════════════════════════════════
-                                                // ИНАЧЕ — СТАРЫЙ АЛГОРИТМ ГЕНЕРАЦИИ
-                                                // ═══════════════════════════════════════════════
-                                                function getPlural(n, f1, f2, f5) { 
-                                                    let n10 = Math.abs(n)%10; let n100 = Math.abs(n)%100;
-                                                    if (n100>=11 && n100<=14) return f5;
-                                                    if (n10===1) return f1; if (n10>=2 && n10<=4) return f2;
-                                                    return f5;
-                                                }
-
-                                                if (hk.type === "duty") {
-                                                    let sType = hk.duty_shift ? "(в смене)" : "(вне графика)"
-                                                    let res = "Дежурство " + sType + " с " + hk.duty_start + " до " + hk.duty_end
-                                                    if (hk.duty_breaks && hk.duty_breaks.length > 0) {
-                                                        let b = hk.duty_breaks.map(item => "с " + item.start + " до " + item.end).join(", ")
-                                                        res += " с перерывом " + b
-                                                    }
-                                                    return res
-                                                } 
-                        
-                                                if (hk.type === "comp") {
-                                                    let unit = hk.comp_unit === "days" ? getPlural(hk.comp_amount, "день", "дня", "дней") : getPlural(hk.comp_amount, "час", "часа", "часов")
-                                                    return "Компенсация " + hk.comp_amount + " " + unit
-                                                }
-                        
-                                                if (hk.type === "status") {
-                                                    let sNames = {"Б": "Больничный", "О": "Отпуск", "К": "Командировка"}
-                                                    return sNames[hk.status_val] || hk.status_val
-                                                }
-                                                return ""
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            Text {
-                                visible: backend.hotkeysList.length === 0
-                                text: "Горячие клавиши не настроены"
-                                color: AppUI.AppTheme.textTertiary
-                                font.family: AppUI.AppTheme.fontFamily
-                                font.pixelSize: AppUI.AppTheme.sizeSmall
-                                horizontalAlignment: Text.AlignHCenter
-                            }
+                            text: "Справка и горячие клавиши (F1)"
                         }
                     }
 
@@ -812,6 +714,7 @@ FileDialog {
     Shortcut { sequence: "Ctrl+Z";       onActivated: backend.undoAction() }
     Shortcut { sequence: "Ctrl+Y";       onActivated: backend.redoAction() }
     Shortcut { sequence: "Ctrl+Shift+Z"; onActivated: backend.redoAction() }
+    Shortcut { sequence: "F1";           onActivated: helpDialog.show() }
 
     AppUI.AppPrintDialog { 
         id: customPrintDialog
