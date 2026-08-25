@@ -194,6 +194,23 @@ class UpdateStageWorker(QThread):
         except Exception as e:
             self.finished_signal.emit(False, str(e), "")
 
+
+class UpdateScanWorker(QThread):
+    """Ищет zip/папку новой версии, не блокируя окно."""
+    finished_signal = Signal(object)
+
+    def __init__(self, app_dir, current_version):
+        super().__init__()
+        self.app_dir = app_dir
+        self.current_version = current_version
+
+    def run(self):
+        try:
+            found = app_update.pick_best_update(Path(self.app_dir), self.current_version or "")
+            self.finished_signal.emit(found)
+        except Exception:
+            self.finished_signal.emit(None)
+
 # ====================================================
 
 class Backend(QObject):
@@ -227,6 +244,7 @@ class Backend(QObject):
     updateVersionChanged = Signal()
     updateStatusTextChanged = Signal()
     appVersionChanged = Signal()
+    whatsNewChanged = Signal()
 
     def __init__(self, start_hidden=False):
         super().__init__()
@@ -284,6 +302,8 @@ class Backend(QObject):
         self._update_version = ""
         self._update_status = ""
         self._update_source = ""
+        self._whats_new = []
+        self._scan_running = False
         self._app_version = app_update.current_app_version(self.app_dir)
         self._init_updates()
 
@@ -2822,6 +2842,7 @@ class Backend(QObject):
             app_update.cleanup_obsolete_zips(self.app_dir, self._app_version)
         except Exception:
             pass
+        self._prepare_whats_new()
         self.scanForUpdates()
 
     @Property(str, notify=appVersionChanged)
@@ -2844,6 +2865,10 @@ class Backend(QObject):
     def updateStatusText(self):
         return self._update_status
 
+    @Property(list, notify=whatsNewChanged)
+    def whatsNew(self):
+        return self._whats_new
+
     @Property(int, notify=updateReadyChanged)
     def updateChromeExtra(self):
         return 52 if (self._update_ready or self._update_busy) else 0
@@ -2862,30 +2887,91 @@ class Backend(QObject):
             self.updateVersionChanged.emit()
         self.updateReadyChanged.emit()
 
+    def _read_changelog_text(self) -> str:
+        try:
+            from PySide6.QtCore import QFile, QIODevice
+            f = QFile(":/CHANGELOG.md")
+            if f.open(QIODevice.ReadOnly):
+                text = bytes(f.readAll()).decode("utf-8", errors="replace")
+                f.close()
+                if text.strip():
+                    return text
+        except Exception:
+            pass
+        here = Path(__file__).resolve().parent
+        for cand in (
+            here / "CHANGELOG.md",
+            app_update.install_root(self.app_dir) / "CHANGELOG.md",
+            Path(self.app_dir) / "CHANGELOG.md",
+        ):
+            try:
+                if cand.is_file():
+                    return cand.read_text(encoding="utf-8")
+            except Exception:
+                continue
+        return ""
+
+    def _prepare_whats_new(self):
+        last = ""
+        try:
+            if self.config_path.exists():
+                data = json.loads(self.config_path.read_text(encoding="utf-8"))
+                last = str(data.get("ui", {}).get("last_changelog_version") or "")
+        except Exception:
+            last = ""
+        if last and last == (self._app_version or ""):
+            self._whats_new = []
+            return
+        text = self._read_changelog_text()
+        blocks = app_update.changelog_since(text, last, self._app_version or "")
+        self._whats_new = app_update.changelog_for_qml(blocks)
+
+    @Slot()
+    def ackWhatsNew(self):
+        """Закрыли «Что нового» — больше не показываем эту версию."""
+        try:
+            self.config_path.parent.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
+        if self._app_version:
+            self._write_ui_config("last_changelog_version", self._app_version)
+        self._whats_new = []
+        self.whatsNewChanged.emit()
+
     @Slot()
     def scanForUpdates(self):
         """Ищет zip/папку новой версии рядом с программой и на флешках."""
-        if self._update_busy:
+        if self._update_busy or self._scan_running:
             return
-        try:
-            dismissed = ""
-            if self.config_path.exists():
-                data = json.loads(self.config_path.read_text(encoding="utf-8"))
-                dismissed = str(data.get("ui", {}).get("dismissed_update_version") or "")
-        except Exception:
-            dismissed = ""
-
         staged = app_update.staged_info(self.app_dir)
         if staged and staged.get("version") and app_update.is_newer(staged["version"], self._app_version):
+            dismissed = self._dismissed_update_version()
             if staged["version"] != dismissed:
                 self._update_source = staged["root"]
                 self._set_update_ready(True, staged["version"])
             return
+        self._scan_running = True
+        self._scan_thread = UpdateScanWorker(str(self.app_dir), self._app_version)
+        self._scan_thread.finished_signal.connect(self._on_update_scanned)
+        self._scan_thread.start()
 
-        found = app_update.pick_best_update(self.app_dir, self._app_version)
+    def _dismissed_update_version(self) -> str:
+        try:
+            if self.config_path.exists():
+                data = json.loads(self.config_path.read_text(encoding="utf-8"))
+                return str(data.get("ui", {}).get("dismissed_update_version") or "")
+        except Exception:
+            return ""
+        return ""
+
+    def _on_update_scanned(self, found):
+        self._scan_running = False
+        if self._update_busy:
+            return
         if not found:
             return
-        if found["version"] and found["version"] == dismissed:
+        dismissed = self._dismissed_update_version()
+        if found.get("version") and found["version"] == dismissed:
             return
         if found.get("already_staged"):
             self._update_source = found["root"]

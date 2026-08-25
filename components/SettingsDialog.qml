@@ -730,7 +730,7 @@ AppLargeModal {
                     }
                     Text {
                         width: parent.width
-                        text: "Положите zip или папку новой версии на флешку — программа сама её заметит и покажет кнопку внизу слева. Либо укажите файл вручную."
+                        text: "Положите zip рядом с OVERTIMETAB.exe или на флешку — программа сама её заметит (имя файла не важно, смотрим содержимое) и покажет кнопку внизу слева. Либо укажите файл вручную."
                         color: AppTheme.textSecondary
                         font.family: AppTheme.fontFamily
                         font.pixelSize: AppTheme.sizeBody

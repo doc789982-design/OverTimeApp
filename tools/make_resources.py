@@ -24,7 +24,7 @@ ROOT = Path(__file__).resolve().parent.parent
 # Что кладём внутрь exe. Папки берутся целиком (кроме мусора),
 # отдельные файлы — поимённо.
 DIRS = ["components", "icons", "fonts", "shadows"]
-ROOT_FILES = ["main.qml", "Template.xlsx", "app_icon.png"]
+ROOT_FILES = ["main.qml", "Template.xlsx", "app_icon.png", "CHANGELOG.md", "version.json"]
 
 # Какие расширения из папок забираем (всё остальное — мимо кассы:
 # скрипты и заготовки для ИИ в exe не попадают)

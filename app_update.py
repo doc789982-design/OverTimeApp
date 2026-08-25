@@ -228,34 +228,130 @@ def _version_from_zip_bytes(raw: bytes, as_json: bool) -> str:
     return _read_version_from_text(text)
 
 
+# GitHub zip (сборка --collect-all) часто без loose version.json:
+# номер живёт внутри resources_rc (QML AppTheme). Имя файла zip не смотрим.
+_JSON_VERSION_RE = re.compile(r'"version"\s*:\s*"([^"]+)"')
+_ZIP_VERSION_CACHE: dict[str, tuple[int, int, str]] = {}
+_VERSION_MEMBER_HINTS = (
+    "version.json",
+    "apptheme.qml",
+    "changelog.md",
+    "resources_rc.py",
+    "resources_rc.pyc",
+    "version_info.py",
+)
+
+
+def _looks_like_app_version(ver: str) -> bool:
+    ver = (ver or "").strip()
+    if not ver:
+        return False
+    return bool(re.match(r"\d+\.\d+", ver))
+
+
+def _extract_version_from_bytes(raw: bytes) -> str:
+    if not raw:
+        return ""
+    text = raw.decode("utf-8", errors="replace")
+    ver = _read_version_from_text(text)
+    if _looks_like_app_version(ver):
+        return ver
+    try:
+        data = json.loads(text)
+        ver = str(data.get("version") or "").strip()
+        if _looks_like_app_version(ver):
+            return ver
+    except Exception:
+        pass
+    m = _JSON_VERSION_RE.search(text)
+    if m and _looks_like_app_version(m.group(1)):
+        return m.group(1).strip()
+    m = re.search(r"(?m)^##\s+(\d+\.\d+\S*)", text)
+    if m and _looks_like_app_version(m.group(1)):
+        return m.group(1).strip()
+    return ""
+
+
+def _zip_member_priority(name: str) -> tuple:
+    low = name.lower()
+    if low.endswith("version.json") and "/data/" not in ("/" + low):
+        return (0, low.count("/"), len(low))
+    if low.endswith("apptheme.qml"):
+        return (1, low.count("/"), len(low))
+    if "resources_rc" in Path(low).name:
+        return (2, low.count("/"), len(low))
+    if low.endswith("changelog.md"):
+        return (3, low.count("/"), len(low))
+    return (9, low.count("/"), len(low))
+
+
+def _iter_version_members(names: list[str]) -> list[str]:
+    hits = []
+    for n in names:
+        low = n.lower()
+        if "/data/" in ("/" + low):
+            continue
+        base = Path(low).name
+        if any(base.endswith(h) or h in base for h in _VERSION_MEMBER_HINTS):
+            hits.append(n)
+            continue
+        if "resources_rc" in base or base.endswith(".pyz") or "pyz-" in base:
+            hits.append(n)
+    hits.sort(key=_zip_member_priority)
+    return hits
+
+
+def _version_from_zipfile(zf: zipfile.ZipFile, names: list[str]) -> str:
+    for n in _iter_version_members(names):
+        try:
+            info = zf.getinfo(n)
+        except KeyError:
+            # namelist was normalised; find original
+            info = None
+            for cand in zf.infolist():
+                if _norm_zip_name(cand.filename) == n:
+                    info = cand
+                    break
+            if info is None:
+                continue
+        base = Path(n).name.lower()
+        limit = 40 * 1024 * 1024 if ("pyz" in base or "resources_rc" in base) else 12 * 1024 * 1024
+        if info.file_size > limit:
+            continue
+        try:
+            with zf.open(info) as fh:
+                raw = fh.read()
+            ver = _extract_version_from_bytes(raw)
+            if ver:
+                return ver
+        except Exception:
+            continue
+    return ""
+
+
 def version_of_package(package: Path) -> str:
     """Номер версии изнутри посылки. Имя файла zip не смотрим."""
     package = Path(package)
     if package.is_file() and package.suffix.lower() == ".zip":
-        with zipfile.ZipFile(package, "r") as zf:
-            names = [_norm_zip_name(n) for n in _zip_namelist_safe(zf)]
-            jsons = [n for n in names if n.lower().endswith("/" + VERSION_JSON) or n.lower() == VERSION_JSON]
-            jsons.sort(key=lambda n: ("/data/" in ("/" + n.lower()), n.count("/"), len(n)))
-            for n in jsons:
-                if "/data/" in ("/" + n.lower()):
-                    continue
-                try:
-                    with zf.open(n) as fh:
-                        ver = _version_from_zip_bytes(fh.read(), True)
-                    if ver:
-                        return ver
-                except Exception:
-                    continue
-            for n in names:
-                if n.lower().endswith("apptheme.qml"):
-                    try:
-                        with zf.open(n) as fh:
-                            ver = _version_from_zip_bytes(fh.read(), False)
-                        if ver:
-                            return ver
-                    except Exception:
-                        continue
-        return ""
+        try:
+            st = package.stat()
+            key = str(package.resolve())
+            cached = _ZIP_VERSION_CACHE.get(key)
+            if cached and cached[0] == st.st_mtime_ns and cached[1] == st.st_size:
+                return cached[2]
+        except Exception:
+            key = ""
+            st = None
+        ver = ""
+        try:
+            with zipfile.ZipFile(package, "r") as zf:
+                names = [_norm_zip_name(n) for n in _zip_namelist_safe(zf)]
+                ver = _version_from_zipfile(zf, names)
+        except Exception:
+            ver = ""
+        if key and st is not None:
+            _ZIP_VERSION_CACHE[key] = (st.st_mtime_ns, st.st_size, ver)
+        return ver
 
     if package.is_dir():
         for cand in (
@@ -267,6 +363,30 @@ def version_of_package(package: Path) -> str:
             if not cand.exists():
                 continue
             ver = read_version_json(cand) if cand.suffix.lower() == ".json" else read_version_from_theme_file(cand)
+            if ver:
+                return ver
+        # Сборка без version.json: номер внутри resources_rc (как в zip с GitHub).
+        extra: list[Path] = []
+        for base in (package, package / "_internal"):
+            try:
+                if not base.is_dir():
+                    continue
+                for child in base.iterdir():
+                    if not child.is_file():
+                        continue
+                    low = child.name.lower()
+                    if low in ("changelog.md", "version.json") or "resources_rc" in low or "pyz" in low:
+                        extra.append(child)
+            except Exception:
+                continue
+        for cand in extra:
+            try:
+                limit = 40 * 1024 * 1024 if "pyz" in cand.name.lower() or "resources_rc" in cand.name.lower() else 12 * 1024 * 1024
+                if cand.stat().st_size > limit:
+                    continue
+                ver = _extract_version_from_bytes(cand.read_bytes())
+            except Exception:
+                continue
             if ver:
                 return ver
     return ""
@@ -496,6 +616,39 @@ def _iter_removable_roots() -> list[Path]:
     return roots
 
 
+def _is_drive_root(path: Path) -> bool:
+    try:
+        path = Path(path).resolve()
+        return path.parent == path
+    except Exception:
+        return False
+
+
+def _user_drop_dirs() -> list[Path]:
+    """Рабочий стол и Загрузки: zip часто кладут рядом с ярлыком, а не с настоящим exe."""
+    dirs: list[Path] = []
+    try:
+        home = Path.home()
+    except Exception:
+        return dirs
+    names = (
+        "Desktop",
+        "Downloads",
+        "OneDrive/Desktop",
+        "OneDrive/Downloads",
+        "Рабочий стол",
+        "Загрузки",
+    )
+    for name in names:
+        p = home / name
+        try:
+            if p.is_dir():
+                dirs.append(p)
+        except Exception:
+            continue
+    return dirs
+
+
 def scan_update_sources(app_dir: Path) -> list[Path]:
     """Кандидаты рядом с exe и на флешках. Имя файла не важно — смотрим содержимое."""
     found: list[Path] = []
@@ -507,7 +660,17 @@ def scan_update_sources(app_dir: Path) -> list[Path]:
 
     root = install_root(app_dir)
     skip_roots = {app_dir.resolve(), root.resolve(), pending_dir(app_dir).resolve()}
-    search_dirs = [root, root.parent, app_dir, app_dir.parent]
+    search_dirs = [root, app_dir]
+    if not _is_drive_root(root.parent):
+        search_dirs.append(root.parent)
+    if not _is_drive_root(app_dir.parent):
+        search_dirs.append(app_dir.parent)
+    if getattr(sys, "frozen", False):
+        try:
+            search_dirs.append(Path(sys.executable).resolve().parent)
+        except Exception:
+            pass
+    search_dirs.extend(_user_drop_dirs())
     search_dirs.extend(_iter_removable_roots())
 
     seen = {p.resolve() for p in found}
@@ -746,6 +909,118 @@ def _pid_alive(pid: int) -> bool:
         return True
     except OSError:
         return False
+
+
+# ---------------------------------------------------------------------------
+# Журнал изменений (показываем после установки)
+# ---------------------------------------------------------------------------
+
+_CHANGELOG_HEADER_RE = re.compile(r"^##\s+(\S+)(?:\s+[—–-]\s+(.+))?\s*$")
+_CHANGELOG_SECTION_RE = re.compile(r"^###\s+(.+?)\s*$")
+_CHANGELOG_SECTION_MAP = {
+    "добавили": "added",
+    "поменяли": "changed",
+    "починили": "fixed",
+    "удалили": "removed",
+    "сборка": "build",
+}
+
+
+def parse_changelog(text: str) -> list[dict]:
+    """Разбирает CHANGELOG.md. Сверху файла — самое новое."""
+    blocks: list[dict] = []
+    current = None
+    section = None
+    for raw_line in (text or "").splitlines():
+        line = raw_line.rstrip()
+        m = _CHANGELOG_HEADER_RE.match(line)
+        if m:
+            if current:
+                blocks.append(current)
+            current = {
+                "version": m.group(1).strip(),
+                "date": (m.group(2) or "").strip(),
+                "added": [],
+                "changed": [],
+                "fixed": [],
+                "removed": [],
+                "build": [],
+            }
+            section = None
+            continue
+        if not current:
+            continue
+        sm = _CHANGELOG_SECTION_RE.match(line)
+        if sm:
+            section = _CHANGELOG_SECTION_MAP.get(sm.group(1).strip().lower())
+            continue
+        if line.startswith("---") or not line.strip():
+            continue
+        if not section:
+            continue
+        if line.startswith("- "):
+            current[section].append(line[2:].strip())
+        elif line.startswith("  "):
+            if current[section]:
+                current[section][-1] += " " + line.strip()
+        elif not line.startswith("#"):
+            if current[section]:
+                current[section][-1] += " " + line.strip()
+            else:
+                current[section].append(line.strip())
+    if current:
+        blocks.append(current)
+    return blocks
+
+
+def changelog_since(text: str, from_version: str, to_version: str) -> list[dict]:
+    """
+    Записи новее from_version, не новее to_version.
+    Если from_version пустой — только текущая (чтобы не вывалить всю историю).
+    """
+    out: list[dict] = []
+    for b in parse_changelog(text):
+        ver = (b.get("version") or "").strip()
+        if not ver:
+            continue
+        if to_version and ver != to_version and not is_newer(to_version, ver):
+            continue
+        if from_version:
+            if not is_newer(ver, from_version):
+                continue
+        elif to_version and ver != to_version:
+            continue
+        if not (b["added"] or b["changed"] or b["fixed"] or b["removed"]):
+            continue
+        out.append(b)
+    return out
+
+
+def _bullets(items: list[str]) -> str:
+    return "\n".join("• " + x for x in items if x)
+
+
+def changelog_for_qml(blocks: list[dict]) -> list[dict]:
+    """Плоские словари для QML Repeater."""
+    out = []
+    for b in blocks:
+        added = list(b.get("added") or [])
+        changed = list(b.get("changed") or [])
+        fixed = list(b.get("fixed") or [])
+        removed = list(b.get("removed") or [])
+        out.append({
+            "version": b.get("version") or "",
+            "date": b.get("date") or "",
+            "hasAdded": bool(added),
+            "hasChanged": bool(changed),
+            "hasFixed": bool(fixed),
+            "hasRemoved": bool(removed),
+            "addedText": _bullets(added),
+            "changedText": _bullets(changed),
+            "fixedText": _bullets(fixed),
+            "removedText": _bullets(removed),
+        })
+    return out
 
 
 def parse_apply_argv(argv: list[str]) -> Optional[dict]:

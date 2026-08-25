@@ -726,6 +726,7 @@ ApplicationWindow {
     // ==========================================
     // ДИАЛОГИ
     // ==========================================
+    AppUI.WhatsNewDialog    { id: whatsNewDialog }
     AppUI.HelpDialog        { id: helpDialog }
     AppUI.DayInspector      { id: dayInspector }
     AppUI.MoneyInspector    { 
@@ -805,6 +806,11 @@ FileDialog {
         id: updateScanTimer
         interval: 5000; running: true; repeat: true
         onTriggered: backend.scanForUpdates()
+    }
+    Timer {
+        id: whatsNewTimer
+        interval: 700; running: true; repeat: false
+        onTriggered: whatsNewDialog.showIfNeeded()
     }
 
     function checkAndNotify() {
