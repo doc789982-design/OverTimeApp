@@ -5,8 +5,14 @@ PyInstaller для иконки exe на Windows хочет именно .ico.
 
 Запуск:  python tools/make_icon.py   (нужен пакет Pillow)
 """
+import sys
 from pathlib import Path
 from PIL import Image
+
+# Кириллица в консоли сборочной машины (cp1252) — принудительный UTF-8
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8", errors="replace")
 
 ROOT = Path(__file__).resolve().parent.parent
 

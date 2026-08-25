@@ -13,6 +13,12 @@ import subprocess
 import sys
 from pathlib import Path
 
+# ВАЖНО: на сборочной машине Windows консоль может быть в cp1252,
+# которая не умеет кириллицу — принудительно переводим вывод в UTF-8
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+
 ROOT = Path(__file__).resolve().parent.parent
 
 # Что кладём внутрь exe. Папки берутся целиком (кроме мусора),
@@ -58,17 +64,20 @@ def main():
     qrc_path.write_text("\n".join(lines), encoding="utf-8")
     print(f"resources.qrc: {len(files)} файлов, {total_kb:.0f} КБ")
 
-    # Ищем pyside6-rcc (ставится вместе с PySide6)
+    # Ищем pyside6-rcc в нескольких местах (Windows/Linux совместимость)
     import shutil
-    rcc = shutil.which("pyside6-rcc")
-    if rcc is None:
-        # запасной вариант: лежит рядом с питоном
-        candidate = Path(sys.executable).parent / "pyside6-rcc"
-        if candidate.exists():
-            rcc = str(candidate)
-        else:
-            print("ОШИБКА: не найден pyside6-rcc. Установите: pip install PySide6")
-            sys.exit(1)
+    candidates = []
+    found = shutil.which("pyside6-rcc")
+    if found:
+        candidates.append(found)
+    exe_dir = Path(sys.executable).parent
+    for name in ("pyside6-rcc", "pyside6-rcc.exe"):
+        candidates.append(str(exe_dir / name))
+        candidates.append(str(exe_dir / "Scripts" / name))
+    rcc = next((c for c in candidates if Path(c).exists()), None)
+    if not rcc:
+        print("ERROR: pyside6-rcc not found. Run: pip install PySide6")
+        sys.exit(1)
 
     out = ROOT / "resources_rc.py"
     result = subprocess.run([rcc, "-o", str(out), str(qrc_path)])
