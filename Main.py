@@ -2818,6 +2818,10 @@ class Backend(QObject):
             ver = staged.get("version") or ""
             if ver and not app_update.is_newer(ver, self._app_version):
                 app_update.cleanup_pending(self.app_dir)
+        try:
+            app_update.cleanup_obsolete_zips(self.app_dir, self._app_version)
+        except Exception:
+            pass
         self.scanForUpdates()
 
     @Property(str, notify=appVersionChanged)

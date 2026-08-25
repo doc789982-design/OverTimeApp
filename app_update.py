@@ -421,6 +421,49 @@ def cleanup_pending(app_dir: Path) -> None:
         shutil.rmtree(dest, ignore_errors=True)
 
 
+def cleanup_obsolete_zips(app_dir: Path, current_version: str) -> list[str]:
+    """
+    После установки: рядом с exe удаляем zip самой программы,
+    если внутри уже не новая версия. Чужие архивы не трогаем.
+    Флешку не чистим — только папка с программой.
+    """
+    removed: list[str] = []
+    if not current_version:
+        return removed
+    root = install_root(app_dir)
+    folders = {root}
+    try:
+        folders.add(Path(app_dir).resolve())
+    except Exception:
+        pass
+    for folder in folders:
+        try:
+            if not folder.is_dir():
+                continue
+        except Exception:
+            continue
+        try:
+            children = list(folder.iterdir())
+        except Exception:
+            continue
+        for child in children:
+            try:
+                if not child.is_file() or child.suffix.lower() != ".zip":
+                    continue
+                if find_package_root(child) is None:
+                    continue
+                ver = version_of_package(child)
+                if not ver:
+                    continue
+                if is_newer(ver, current_version):
+                    continue
+                child.unlink()
+                removed.append(str(child))
+            except Exception:
+                continue
+    return removed
+
+
 # ---------------------------------------------------------------------------
 # Поиск посылки (флешка, рядом с программой)
 # ---------------------------------------------------------------------------
