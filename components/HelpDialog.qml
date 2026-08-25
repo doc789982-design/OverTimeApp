@@ -45,6 +45,17 @@ AppSidePanel {
         width: parent.width
         spacing: AppTheme.spaceL
 
+        // Версия программы (единственный источник — AppTheme.appVersion)
+        Text {
+            width: parent.width
+            text: "OVERTIMETAB · версия " + AppTheme.appVersion
+            color: AppTheme.textTertiary
+            font.family: AppTheme.fontFamily
+            font.pixelSize: AppTheme.sizeSmall
+            font.weight: AppTheme.weightMedium
+            horizontalAlignment: Text.AlignHCenter
+        }
+
         // ==========================================
         // БЛОК 1: ЮРИДИЧЕСКАЯ ИНФОРМАЦИЯ
         // ==========================================

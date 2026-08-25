@@ -8,6 +8,7 @@ Item {
     property string text: ""
     property bool isVisible: false
     property bool dropDown: false
+    property int delayMs: 350   // Задержка появления: тултип не мигает при проводе мыши
     
     // МАГИЯ: Позволяет вставлять список клавиш внутрь тултипа
     default property alias content: container.data
@@ -16,9 +17,21 @@ Item {
     height: popup.height
     z: AppTheme.zTooltip
 
+    // Показ с задержкой: наведение должно быть осознанным.
+    // Ушли с кнопки — исчезло мгновенно, без таймера.
+    onIsVisibleChanged: {
+        if (root.isVisible) showDelayTimer.restart()
+        else { showDelayTimer.stop(); popup.close() }
+    }
+    Timer {
+        id: showDelayTimer
+        interval: Math.max(0, root.delayMs)
+        onTriggered: popup.open()
+    }
+
     ToolTip {
         id: popup
-        visible: root.isVisible
+        visible: false
         x: 0
         y: 0
         

@@ -13,7 +13,11 @@ ApplicationWindow {
     visible: !backend.startHidden
     width: 1200  
     height: 800
-    title: "OVERTIMETAB 2.0.0-ALPHA.19"
+    // Посуда не бьётся: меньше этого размера окно не сожмёшь,
+    // интерфейс не превратится в кашу
+    minimumWidth: 940
+    minimumHeight: 620
+    title: "OVERTIMETAB " + AppUI.AppTheme.appVersion
 
     // Прозрачный фон самого окна
     color: AppUI.AppTheme.bgBase
@@ -119,7 +123,7 @@ ApplicationWindow {
                     anchors.left: parent.left
                     anchors.leftMargin: AppUI.AppTheme.spaceM
                     anchors.verticalCenter: parent.verticalCenter
-                    text: "OVERTIMETAB 2.0.0-ALPHA.19"
+                    text: "OVERTIMETAB " + AppUI.AppTheme.appVersion
                     color: AppUI.AppTheme.textTertiary
                     font.family: AppUI.AppTheme.fontFamily
                     font.pixelSize: AppUI.AppTheme.sizeSmall
@@ -261,6 +265,36 @@ ApplicationWindow {
                 cursorShape: Qt.SizeVerCursor
                 visible: mainWindow.visibility !== Window.Maximized
                 onPressed: mainWindow.startSystemResize(Qt.BottomEdge)
+            }
+
+            // УГЛЫ: тянуть окно можно и за углы, как в обычных программах
+            MouseArea {
+                z: 201; width: 16; height: 16
+                anchors.top: parent.top; anchors.left: parent.left
+                cursorShape: Qt.SizeFDiagCursor
+                visible: mainWindow.visibility !== Window.Maximized
+                onPressed: mainWindow.startSystemResize(Qt.TopEdge | Qt.LeftEdge)
+            }
+            MouseArea {
+                z: 201; width: 16; height: 16
+                anchors.top: parent.top; anchors.right: parent.right
+                cursorShape: Qt.SizeBDiagCursor
+                visible: mainWindow.visibility !== Window.Maximized
+                onPressed: mainWindow.startSystemResize(Qt.TopEdge | Qt.RightEdge)
+            }
+            MouseArea {
+                z: 201; width: 16; height: 16
+                anchors.bottom: parent.bottom; anchors.left: parent.left
+                cursorShape: Qt.SizeBDiagCursor
+                visible: mainWindow.visibility !== Window.Maximized
+                onPressed: mainWindow.startSystemResize(Qt.BottomEdge | Qt.LeftEdge)
+            }
+            MouseArea {
+                z: 201; width: 16; height: 16
+                anchors.bottom: parent.bottom; anchors.right: parent.right
+                cursorShape: Qt.SizeFDiagCursor
+                visible: mainWindow.visibility !== Window.Maximized
+                onPressed: mainWindow.startSystemResize(Qt.BottomEdge | Qt.RightEdge)
             }
 
             StackView {
@@ -507,7 +541,7 @@ ApplicationWindow {
                     Text {
                         id: logoText
                         width: parent.width
-                        text: "OVERTIMETAB 2.0.0-ALPHA.19"
+                        text: "OVERTIMETAB " + AppUI.AppTheme.appVersion
                         color: AppUI.AppTheme.accentBrand
                         font.family: AppUI.AppTheme.fontFamily
                         font.pixelSize: AppUI.AppTheme.sizeH4

@@ -169,7 +169,15 @@ AppLargeModal {
             // ── 1. Внешний вид ────────────────────────
             SettingsPage {
                 title: "Внешний вид"
-                description: "Настройте внешний вид элементов программы под себя."
+                description: "Тема оформления и режим ввода времени."
+
+                AppSwitch {
+                    text: "Тёмная тема"
+                    checked: backend.isDarkTheme
+                    // onToggled срабатывает только от клика человека —
+                    // обновление от программы не зациклит переключение
+                    onToggled: backend.toggleTheme()
+                }
 
                 AppComboBox {
                     width: 340
