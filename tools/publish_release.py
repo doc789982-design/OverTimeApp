@@ -136,6 +136,7 @@ def main() -> int:
             cmd.append("--prerelease" if pre else "--latest")
             r = run_gh(cmd, check=False)
             action = "обновили"
+        else:
             cmd = [
                 "release", "create", tag,
                 "--title", title,
