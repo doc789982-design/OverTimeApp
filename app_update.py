@@ -493,8 +493,11 @@ def pick_best_update(app_dir: Path, current_version: str) -> Optional[dict]:
 # у канала cmd errorlevel берётся от tasklist (всегда 0), а не от findstr.
 # ---------------------------------------------------------------------------
 
-_VBS_TEMPLATE = r"""Option Explicit
-Dim src, dst, pid, exe, sh, fso, logFile, t0, rc
+# Одинарные тройные кавычки: в VBS " и "" обычные, а """ внутри
+# r"""...""" обрывает строку Python и получается NameError: src.
+_VBS_TEMPLATE = r'''Option Explicit
+Dim src, dst, pid, exe, sh, fso, logFile, t0, rc, q
+q = Chr(34)
 src = WScript.Arguments(0)
 dst = WScript.Arguments(1)
 pid = WScript.Arguments(2)
@@ -520,17 +523,17 @@ If Not fso.FileExists(src & "\OVERTIMETAB.exe") Then
   WScript.Quit 1
 End If
 
-rc = sh.Run("robocopy """ & src & """ """ & dst & """ /E /XD data pending_update /XF *.sqlite *.sqlite-wal *.sqlite-shm /NFL /NDL /NJH /NJS /NC /NS /NP /R:3 /W:1", 0, True)
+rc = sh.Run("robocopy " & q & src & q & " " & q & dst & q & " /E /XD data pending_update /XF *.sqlite *.sqlite-wal *.sqlite-shm /NFL /NDL /NJH /NJS /NC /NS /NP /R:3 /W:1", 0, True)
 WriteLog "robocopy=" & rc
 
 If rc >= 8 Then
   WriteLog "robocopy failed"
-  If fso.FileExists(exe) Then sh.Run """" & exe & """", 1, False
+  If fso.FileExists(exe) Then sh.Run q & exe & q, 1, False
   WScript.Quit 1
 End If
 
 If fso.FileExists(exe) Then
-  sh.Run """" & exe & """", 1, False
+  sh.Run q & exe & q, 1, False
   WriteLog "restarted"
 End If
 
@@ -565,7 +568,7 @@ Sub WriteLog(msg)
   ts.WriteLine Now & " " & msg
   ts.Close
 End Sub
-"""
+'''
 
 
 def launch_file_swap(source: Path, dest: Path, pid: int) -> Path:
