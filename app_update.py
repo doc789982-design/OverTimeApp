@@ -24,6 +24,7 @@ import sys
 import tempfile
 import time
 import zipfile
+import zlib
 from pathlib import Path
 from typing import Optional
 
@@ -249,7 +250,7 @@ def _looks_like_app_version(ver: str) -> bool:
     return bool(re.match(r"\d+\.\d+", ver))
 
 
-def _extract_version_from_bytes(raw: bytes) -> str:
+def _extract_version_from_plain(raw: bytes) -> str:
     if not raw:
         return ""
     text = raw.decode("utf-8", errors="replace")
@@ -265,10 +266,54 @@ def _extract_version_from_bytes(raw: bytes) -> str:
         pass
     m = _JSON_VERSION_RE.search(text)
     if m and _looks_like_app_version(m.group(1)):
-        return m.group(1).strip()
+        cand = m.group(1).strip()
+        if _looks_like_app_version(cand) and "pyside" not in cand.lower():
+            return cand
     m = re.search(r"(?m)^##\s+(\d+\.\d+\S*)", text)
     if m and _looks_like_app_version(m.group(1)):
         return m.group(1).strip()
+    m = re.search(r"OVERTIMETAB_APP_VERSION\s*=\s*[\"']([^\"']+)[\"']", text)
+    if m and _looks_like_app_version(m.group(1)):
+        return m.group(1).strip()
+    return ""
+
+
+def _extract_version_from_bytes(raw: bytes) -> str:
+    if not raw:
+        return ""
+    ver = _extract_version_from_plain(raw)
+    if ver:
+        return ver
+    # pyside6-rcc пишет байты как \x7b\x22version\x22 — снимаем экранирование
+    try:
+        src = raw.decode("latin-1", errors="replace")
+        if "\\x" in src:
+            unescaped = re.sub(
+                r"\\x([0-9a-fA-F]{2})",
+                lambda m: chr(int(m.group(1), 16)),
+                src,
+            )
+            ver = _extract_version_from_plain(unescaped.encode("latin-1", errors="replace"))
+            if ver:
+                return ver
+    except Exception:
+        pass
+    # PYZ / qCompress: zlib-потоки внутри файла
+    tries = 0
+    for m in re.finditer(b"\\x78[\\x01\\x5e\\x9c\\xda]", raw):
+        i = m.start()
+        if i > 8 * 1024 * 1024:
+            break
+        try:
+            dec = zlib.decompress(raw[i : i + 2 * 1024 * 1024])
+        except Exception:
+            continue
+        ver = _extract_version_from_plain(dec)
+        if ver:
+            return ver
+        tries += 1
+        if tries >= 24:
+            break
     return ""
 
 
@@ -297,6 +342,9 @@ def _iter_version_members(names: list[str]) -> list[str]:
             continue
         if "resources_rc" in base or base.endswith(".pyz") or "pyz-" in base:
             hits.append(n)
+            continue
+        if base == "overtimetab.exe":
+            hits.append(n)
     hits.sort(key=_zip_member_priority)
     return hits
 
@@ -315,7 +363,7 @@ def _version_from_zipfile(zf: zipfile.ZipFile, names: list[str]) -> str:
             if info is None:
                 continue
         base = Path(n).name.lower()
-        limit = 40 * 1024 * 1024 if ("pyz" in base or "resources_rc" in base) else 12 * 1024 * 1024
+        limit = 40 * 1024 * 1024 if ("pyz" in base or "resources_rc" in base or base.endswith(".exe")) else 12 * 1024 * 1024
         if info.file_size > limit:
             continue
         try:
