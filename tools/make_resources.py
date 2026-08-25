@@ -30,6 +30,17 @@ ROOT_FILES = ["main.qml", "Template.xlsx", "app_icon.png"]
 # скрипты и заготовки для ИИ в exe не попадают)
 INCLUDE_EXT = {".qml", ".svg", ".png", ".jpg", ".ttf", ".otf"}
 
+# Шрифты, которые программа реально открывает (см. AppTheme.qml).
+# Остальные файлы в fonts/ — запасные, в exe их не кладём:
+# один только GoogleSans.ttf весит почти 5 МБ.
+FONT_ALLOW = {
+    "Roboto-Regular.ttf",
+    "Roboto-Medium.ttf",
+    "Roboto-Bold.ttf",
+    "RobotoCondensed-Regular.ttf",
+    "RobotoCondensed-Bold.ttf",
+}
+
 def collect_files():
     files = []
     for name in ROOT_FILES:
@@ -43,7 +54,12 @@ def collect_files():
         if not base.exists():
             continue
         for p in sorted(base.rglob("*")):
-            if p.is_file() and (p.suffix.lower() in INCLUDE_EXT or p.name == "qmldir"):
+            if not p.is_file():
+                continue
+            if p.suffix.lower() in {".ttf", ".otf"} and p.name not in FONT_ALLOW:
+                print(f"пропуск шрифта (программа его не открывает): {p.name}")
+                continue
+            if p.suffix.lower() in INCLUDE_EXT or p.name == "qmldir":
                 files.append(p)
     return files
 

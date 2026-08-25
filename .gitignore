@@ -8,3 +8,4 @@ app_icon.ico
 dist/
 build/
 *.spec
+!tools/overtimetab.spec
