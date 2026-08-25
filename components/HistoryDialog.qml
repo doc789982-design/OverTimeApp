@@ -52,7 +52,7 @@ AppSidePanel {
 
             Rectangle {
                 width: parent.width
-                height: 50
+                height: AppTheme.rowHeight
                 radius: AppTheme.radiusMedium
                 color: AppTheme.bgSurface 
                 border.color: AppTheme.borderDivider
@@ -64,7 +64,7 @@ AppSidePanel {
                 RowLayout {
                     anchors.fill: parent
                     anchors.margins: AppTheme.spaceM
-                    anchors.rightMargin: 80 
+                    anchors.rightMargin: AppTheme.cardActionReserve 
                     spacing: AppTheme.spaceL
                     
                     Text { 

@@ -48,7 +48,7 @@ AppSidePanel {
         // Версия программы (единственный источник — AppTheme.appVersion)
         Text {
             width: parent.width
-            text: "OVERTIMETAB · версия " + AppTheme.appVersion
+            text: "OVERTIMETAB · " + AppTheme.appVersionFull
             color: AppTheme.textTertiary
             font.family: AppTheme.fontFamily
             font.pixelSize: AppTheme.sizeSmall

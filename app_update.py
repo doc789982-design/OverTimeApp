@@ -84,8 +84,8 @@ def parse_version(raw: str) -> tuple:
     return (tuple(nums[:3]), pre_name, pre_num)
 
 
-def is_newer(candidate: str, current: str) -> bool:
-    """candidate новее current?"""
+def is_newer(candidate: str, current: str, candidate_build: int = 0, current_build: int = 0) -> bool:
+    """candidate новее current? При той же версии смотрим номер сборки."""
     if not candidate:
         return False
     if not current:
@@ -93,14 +93,15 @@ def is_newer(candidate: str, current: str) -> bool:
     c, v = parse_version(candidate), parse_version(current)
     if c[0] != v[0]:
         return c[0] > v[0]
-    # одинаковая тройка: релиз (без хвоста) новее любой альфы
     if not c[1] and v[1]:
         return True
     if c[1] and not v[1]:
         return False
     if c[1] != v[1]:
         return c[1] > v[1]
-    return c[2] > v[2]
+    if c[2] != v[2]:
+        return c[2] > v[2]
+    return int(candidate_build or 0) > int(current_build or 0)
 
 
 def _read_version_from_text(text: str) -> str:
@@ -123,11 +124,29 @@ def read_version_json(path: Path) -> str:
         return ""
 
 
-def write_version_json(path: Path, version: str) -> None:
+def write_version_json(path: Path, version: str, build: int = 0) -> None:
+    payload = {"name": "OVERTIMETAB", "version": version}
+    if int(build or 0) > 0:
+        payload["build"] = int(build)
     path.write_text(
-        json.dumps({"name": "OVERTIMETAB", "version": version}, ensure_ascii=False, indent=2) + "\n",
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
+
+
+def read_build_json(path: Path) -> int:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return int(data.get("build") or 0)
+    except Exception:
+        return 0
+
+
+def format_version_label(version: str, build: int = 0) -> str:
+    ver = (version or "").strip()
+    if int(build or 0) > 0:
+        return f"{ver} · сборка {int(build)}"
+    return ver
 
 
 def current_app_version(app_dir: Path) -> str:
@@ -150,6 +169,35 @@ def current_app_version(app_dir: Path) -> str:
         if ver:
             return ver
     return ""
+
+
+def current_app_build(app_dir: Path) -> int:
+    here = Path(__file__).resolve().parent
+    root = install_root(app_dir)
+    for p in (
+        root / VERSION_JSON,
+        root / "_internal" / VERSION_JSON,
+        Path(app_dir) / VERSION_JSON,
+        here / VERSION_JSON,
+    ):
+        if p.exists():
+            b = read_build_json(p)
+            if b:
+                return b
+    for p in (here / THEME_REL, Path(app_dir) / THEME_REL):
+        if p.exists():
+            b = _read_build_from_theme_file(p)
+            if b:
+                return b
+    return 0
+
+
+def _read_build_from_theme_file(path: Path) -> int:
+    try:
+        m = re.search(r"appBuild:\s*(\d+)", path.read_text(encoding="utf-8"))
+        return int(m.group(1)) if m else 0
+    except Exception:
+        return 0
 
 
 # ---------------------------------------------------------------------------
@@ -440,12 +488,47 @@ def version_of_package(package: Path) -> str:
     return ""
 
 
+def build_of_package(package: Path) -> int:
+    """Номер сборки из version.json внутри посылки."""
+    package = Path(package)
+    if package.is_file() and package.suffix.lower() == ".zip":
+        try:
+            with zipfile.ZipFile(package, "r") as zf:
+                for n in zf.namelist():
+                    if Path(n).name.lower() != "version.json":
+                        continue
+                    if "/data/" in ("/" + n.replace("\\", "/").lower()):
+                        continue
+                    return _extract_build_from_bytes(zf.read(n))
+        except Exception:
+            return 0
+        return 0
+    if package.is_dir():
+        for cand in (package / VERSION_JSON, package / "_internal" / VERSION_JSON):
+            if cand.exists():
+                b = read_build_json(cand)
+                if b:
+                    return b
+    return 0
+
+
+def _extract_build_from_bytes(raw: bytes) -> int:
+    if not raw:
+        return 0
+    try:
+        data = json.loads(raw.decode("utf-8", errors="replace"))
+        return int(data.get("build") or 0)
+    except Exception:
+        return 0
+
+
 def describe_package(package: Path) -> dict:
     root = find_package_root(package)
     if not root:
         raise UpdateError("Это не папка и не архив OVERTIMETAB")
     ver = version_of_package(root)
-    return {"root": str(root), "version": ver, "is_zip": root.is_file()}
+    bld = build_of_package(root)
+    return {"root": str(root), "version": ver, "build": bld, "is_zip": root.is_file()}
 
 
 # ---------------------------------------------------------------------------
@@ -540,6 +623,7 @@ def stage_package(package: Path, app_dir: Path) -> str:
         pass
 
     ver = version_of_package(root)
+    bld = build_of_package(root)
     dest = pending_dir(app_dir)
     tmp = dest.with_name(dest.name + ".__tmp")
     _clear_dir(tmp)
@@ -554,8 +638,8 @@ def stage_package(package: Path, app_dir: Path) -> str:
         if not _exe_in(tmp):
             raise UpdateError("После распаковки не оказалось OVERTIMETAB.exe")
 
-        write_version_json(tmp / VERSION_JSON, ver) if ver else None
-        meta = {"version": ver, "source": str(root)}
+        write_version_json(tmp / VERSION_JSON, ver, bld) if ver else None
+        meta = {"version": ver, "build": bld, "source": str(root)}
         (tmp / META_NAME).write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
 
         _clear_dir(dest)
@@ -572,15 +656,21 @@ def staged_info(app_dir: Path) -> Optional[dict]:
     if not dest.is_dir() or not _exe_in(dest):
         return None
     ver = ""
+    bld = 0
     meta = dest / META_NAME
     if meta.exists():
         try:
-            ver = str(json.loads(meta.read_text(encoding="utf-8")).get("version") or "")
+            data = json.loads(meta.read_text(encoding="utf-8"))
+            ver = str(data.get("version") or "")
+            bld = int(data.get("build") or 0)
         except Exception:
             ver = ""
+            bld = 0
     if not ver:
         ver = version_of_package(dest)
-    return {"root": str(dest), "version": ver}
+    if not bld:
+        bld = build_of_package(dest)
+    return {"root": str(dest), "version": ver, "build": bld}
 
 
 def cleanup_pending(app_dir: Path) -> None:
@@ -589,7 +679,7 @@ def cleanup_pending(app_dir: Path) -> None:
         shutil.rmtree(dest, ignore_errors=True)
 
 
-def cleanup_obsolete_zips(app_dir: Path, current_version: str) -> list[str]:
+def cleanup_obsolete_zips(app_dir: Path, current_version: str, current_build: int = 0) -> list[str]:
     """
     После установки: рядом с exe удаляем zip самой программы,
     если внутри уже не новая версия. Чужие архивы не трогаем.
@@ -623,7 +713,8 @@ def cleanup_obsolete_zips(app_dir: Path, current_version: str) -> list[str]:
                 ver = version_of_package(child)
                 if not ver:
                     continue
-                if is_newer(ver, current_version):
+                bld = build_of_package(child)
+                if is_newer(ver, current_version, bld, current_build):
                     continue
                 child.unlink()
                 removed.append(str(child))
@@ -761,10 +852,11 @@ def scan_update_sources(app_dir: Path) -> list[Path]:
     return found
 
 
-def pick_best_update(app_dir: Path, current_version: str) -> Optional[dict]:
+def pick_best_update(app_dir: Path, current_version: str, current_build: int = 0) -> Optional[dict]:
     """Самая новая посылка, которая новее текущей. Без версии — пропускаем при автопоиске."""
     best = None
     best_ver = current_version
+    best_bld = current_build
     for src in scan_update_sources(app_dir):
         try:
             if src.resolve() == pending_dir(app_dir).resolve():
@@ -772,15 +864,18 @@ def pick_best_update(app_dir: Path, current_version: str) -> Optional[dict]:
                 if not info:
                     continue
                 ver = info["version"]
-                if ver and is_newer(ver, current_version):
-                    return {"root": info["root"], "version": ver, "already_staged": True}
+                bld = int(info.get("build") or 0)
+                if ver and is_newer(ver, current_version, bld, current_build):
+                    return {"root": info["root"], "version": ver, "build": bld, "already_staged": True}
                 continue
             ver = version_of_package(src)
             if not ver:
                 continue
-            if is_newer(ver, best_ver if best else current_version):
-                best = {"root": str(src), "version": ver, "already_staged": False}
+            bld = build_of_package(src)
+            if is_newer(ver, best_ver if best else current_version, bld, best_bld if best else current_build):
+                best = {"root": str(src), "version": ver, "build": bld, "already_staged": False}
                 best_ver = ver
+                best_bld = bld
         except Exception:
             continue
     return best
@@ -985,9 +1080,16 @@ def parse_changelog(text: str) -> list[dict]:
         if m:
             if current:
                 blocks.append(current)
+            rest = (m.group(2) or "").strip()
+            bm = re.search(r"сборка\s+(\d+)", rest, flags=re.IGNORECASE)
+            build_num = int(bm.group(1)) if bm else 0
+            date = rest
+            if bm:
+                date = re.sub(r"сборка\s+\d+\s*[—–-]?\s*", "", rest, flags=re.IGNORECASE).strip(" —–-")
             current = {
                 "version": m.group(1).strip(),
-                "date": (m.group(2) or "").strip(),
+                "build_num": build_num,
+                "date": date,
                 "added": [],
                 "changed": [],
                 "fixed": [],
@@ -1021,22 +1123,37 @@ def parse_changelog(text: str) -> list[dict]:
     return blocks
 
 
-def changelog_since(text: str, from_version: str, to_version: str) -> list[dict]:
+def split_version_key(raw: str) -> tuple[str, int]:
+    s = (raw or "").strip()
+    if "+" in s:
+        ver, _, tail = s.partition("+")
+        try:
+            return ver, int(tail)
+        except ValueError:
+            return ver, 0
+    return s, 0
+
+
+def changelog_since(text: str, from_version: str, to_version: str, to_build: int = 0) -> list[dict]:
     """
-    Записи новее from_version, не новее to_version.
+    Записи новее from_version, не новее to_version (+ сборка).
     Если from_version пустой — только текущая (чтобы не вывалить всю историю).
     """
+    from_ver, from_bld = split_version_key(from_version)
     out: list[dict] = []
     for b in parse_changelog(text):
         ver = (b.get("version") or "").strip()
+        bld = int(b.get("build_num") or 0)
         if not ver:
             continue
-        if to_version and ver != to_version and not is_newer(to_version, ver):
+        if to_version and is_newer(ver, to_version, bld, to_build):
             continue
         if from_version:
-            if not is_newer(ver, from_version):
+            if not is_newer(ver, from_ver, bld, from_bld):
                 continue
         elif to_version and ver != to_version:
+            continue
+        elif to_build and bld != to_build:
             continue
         if not (b["added"] or b["changed"] or b["fixed"] or b["removed"]):
             continue
@@ -1057,7 +1174,7 @@ def changelog_for_qml(blocks: list[dict]) -> list[dict]:
         fixed = list(b.get("fixed") or [])
         removed = list(b.get("removed") or [])
         out.append({
-            "version": b.get("version") or "",
+            "version": format_version_label(b.get("version") or "", int(b.get("build_num") or 0)),
             "date": b.get("date") or "",
             "hasAdded": bool(added),
             "hasChanged": bool(changed),

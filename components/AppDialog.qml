@@ -89,7 +89,7 @@ Popup {
                 text: root.title
                 color: AppTheme.textPrimary
                 font.family: AppTheme.fontFamily
-                font.pixelSize: AppTheme.sizeH2 
+                font.pixelSize: AppTheme.sizeH4 
                 font.weight: AppTheme.weightBold
                 visible: text !== ""
                 elide: Text.ElideRight

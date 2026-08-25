@@ -22,12 +22,17 @@ THEME = ROOT / "components" / "AppTheme.qml"
 CHANGELOG = ROOT / "CHANGELOG.md"
 
 
-def read_version() -> str:
+def read_identity() -> tuple[str, int]:
     text = THEME.read_text(encoding="utf-8")
     m = re.search(r'appVersion:\s*"([^"]+)"', text)
     if not m:
         sys.exit("Не нашли appVersion в AppTheme.qml")
-    return m.group(1)
+    bm = re.search(r"appBuild:\s*(\d+)", text)
+    return m.group(1), int(bm.group(1)) if bm else 0
+
+
+def read_version() -> str:
+    return read_identity()[0]
 
 
 def changelog_section(version: str) -> str:
@@ -112,6 +117,17 @@ def main() -> int:
     notes_file.write_text(notes, encoding="utf-8")
     try:
         if release_exists(tag):
+            # Та же версия, новая сборка: тег переносим на этот коммит, zip потом заменит Actions.
+            subprocess.run(["git", "tag", "-f", tag], cwd=str(ROOT), check=True)
+            push = subprocess.run(
+                ["git", "push", "origin", tag, "--force"],
+                cwd=str(ROOT),
+                text=True,
+                capture_output=True,
+            )
+            if push.returncode != 0:
+                sys.stderr.write(push.stderr or push.stdout or "не смогли сдвинуть тег\n")
+                return push.returncode
             cmd = [
                 "release", "edit", tag,
                 "--title", title,
@@ -120,7 +136,6 @@ def main() -> int:
             cmd.append("--prerelease" if pre else "--latest")
             r = run_gh(cmd, check=False)
             action = "обновили"
-        else:
             cmd = [
                 "release", "create", tag,
                 "--title", title,

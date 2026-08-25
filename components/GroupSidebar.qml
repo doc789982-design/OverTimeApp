@@ -15,7 +15,7 @@ Rectangle {
     // ==========================================
     Rectangle {
         id: headerArea
-        height: 60 
+        height: AppTheme.barHeight 
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right

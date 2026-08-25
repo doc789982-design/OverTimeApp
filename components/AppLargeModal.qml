@@ -59,13 +59,10 @@ Popup {
         color: AppTheme.bgModal 
         radius: AppTheme.radiusModal
         
-        // В темной теме делаем обводку #4A4A4A, в светлой оставляем как было
-        border.color: AppTheme.isDark ? "#4A4A4A" : AppTheme.borderDivider
+        border.color: AppTheme.borderDivider
         border.width: 1
-        clip: true 
-        
-        // Тень-картинка вместо вычисляемой; в темной теме отключена (как и было)
-        AppShadow { level: 4; visible: !AppTheme.isDark }
+        clip: true
+        AppShadow { level: 4 }
     }
 
     // ==========================================

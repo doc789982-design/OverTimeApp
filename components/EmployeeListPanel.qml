@@ -25,7 +25,7 @@ Rectangle {
     // ==========================================
     Rectangle {
         id: headerArea
-        height: 60 
+        height: AppTheme.barHeight 
         anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right
         color: "transparent"
 
@@ -37,7 +37,7 @@ Rectangle {
             Rectangle {
                 Layout.fillWidth: true; Layout.fillHeight: true
                 radius: AppTheme.radiusMedium
-                color: searchInput.activeFocus ? AppTheme.bgInput : AppTheme.bgDisabled
+                color: searchInput.activeFocus ? AppTheme.bgElevated : AppTheme.bgBase
                 border.color: searchInput.activeFocus ? AppTheme.borderFocus : "transparent"
                 border.width: searchInput.activeFocus ? AppTheme.focusWidth : 1
                 
@@ -72,7 +72,7 @@ Rectangle {
         delegate: Item {
             id: empDelegateItem
             width: ListView.view.width
-            height: (modelData.is_header ? 40 : 64) + gapRect.height
+            height: (modelData.is_header ? 40 : AppTheme.rowHeight) + gapRect.height
 
             DropArea {
                 id: empDropArea
@@ -112,7 +112,7 @@ Rectangle {
                     id: cardContainer
                     visible: !modelData.is_header
                     width: parent.width
-                    height: 64
+                    height: AppTheme.rowHeight
 
                     property bool isSelected: backend.selectedEmployeeId === modelData.id
 
@@ -144,7 +144,7 @@ Rectangle {
                         id: empName
                         anchors.left: parent.left; anchors.leftMargin: AppTheme.spaceL
                         anchors.right: parent.right; anchors.rightMargin: AppTheme.spaceL
-                        anchors.top: parent.top; anchors.topMargin: 12
+                        anchors.top: parent.top; anchors.topMargin: AppTheme.spaceS
                         text: modelData.name
                         color: cardContainer.isSelected ? AppTheme.accentBrand : (modelData.is_active ? AppTheme.textPrimary : AppTheme.textDisabled)
                         font.family: AppTheme.fontFamily; font.pixelSize: AppTheme.sizeBody; font.weight: cardContainer.isSelected ? AppTheme.weightBold : AppTheme.weightMedium
@@ -169,11 +169,11 @@ Rectangle {
                         visible: modelData.has_overtime
                         width: 3
                         anchors.right: parent.right
-                        anchors.rightMargin: 10
+                        anchors.rightMargin: AppTheme.spaceS
                         anchors.top: parent.top
-                        anchors.topMargin: 10
+                        anchors.topMargin: AppTheme.spaceS
                         anchors.bottom: parent.bottom
-                        anchors.bottomMargin: 10
+                        anchors.bottomMargin: AppTheme.spaceS
 
                         property real ratio: cardContainer.isSelected
                             ? backend.selectedEmployeeRatio

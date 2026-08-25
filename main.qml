@@ -17,7 +17,7 @@ ApplicationWindow {
     // интерфейс не превратится в кашу
     minimumWidth: 940
     minimumHeight: 620
-    title: "OVERTIMETAB " + AppUI.AppTheme.appVersion
+    title: "OVERTIMETAB " + AppUI.AppTheme.appVersionFull
 
     // Прозрачный фон самого окна
     color: AppUI.AppTheme.bgBase
@@ -92,7 +92,7 @@ ApplicationWindow {
             Rectangle {
                 anchors.fill: parent
                 color: "transparent"
-                border.color: AppUI.AppTheme.isDark ? "#333333" : "#DDDDDD"
+                border.color: AppUI.AppTheme.borderDivider
                 border.width: 1
                 z: 999
             }
@@ -123,7 +123,7 @@ ApplicationWindow {
                     anchors.left: parent.left
                     anchors.leftMargin: AppUI.AppTheme.spaceM
                     anchors.verticalCenter: parent.verticalCenter
-                    text: "OVERTIMETAB " + AppUI.AppTheme.appVersion
+                    text: "OVERTIMETAB " + AppUI.AppTheme.appVersionFull
                     color: AppUI.AppTheme.textTertiary
                     font.family: AppUI.AppTheme.fontFamily
                     font.pixelSize: AppUI.AppTheme.sizeSmall
@@ -217,7 +217,7 @@ ApplicationWindow {
                             anchors.centerIn: parent
                             text: "✕"
                             color: closeHov.containsMouse ? AppUI.AppTheme.textOnAccent : AppUI.AppTheme.textSecondary
-                            font.pixelSize: 12
+                            font.pixelSize: AppUI.AppTheme.sizeSmall
                             font.weight: AppUI.AppTheme.weightBold
                         }
                         MouseArea {
@@ -387,7 +387,7 @@ ApplicationWindow {
                     model: backend.dbList
                     delegate: Rectangle {
                         width: ListView.view.width
-                        height: 72
+                        height: AppUI.AppTheme.rowHeight + AppUI.AppTheme.spaceM
                         radius: AppUI.AppTheme.radiusLarge
                         color: AppUI.AppTheme.bgSurface
                         border.color: AppUI.AppTheme.borderDivider
@@ -474,21 +474,26 @@ ApplicationWindow {
                     anchors.right: parent.right
                     anchors.leftMargin: AppUI.AppTheme.spaceXXL
                     anchors.rightMargin: AppUI.AppTheme.spaceXXL
-                    Row { 
+                    RowLayout {
                         anchors.verticalCenter: parent.verticalCenter
+                        anchors.left: parent.left
+                        anchors.right: parent.right
                         spacing: AppUI.AppTheme.spaceM
-                        AppUI.AppButton { 
-                            width: 200; variant: "primary"
+                        AppUI.AppButton {
+                            Layout.fillWidth: true
+                            variant: "primary"
                             text: "Создать подразделение"
-                            onClicked: createDbDialog.showCentered() 
-                        }
-                        AppUI.AppButton { 
-                            width: 330; variant: "secondary"
-                            text: "Подключить базу данных"
-                            onClicked: fileDialog.open() 
+                            onClicked: createDbDialog.showCentered()
                         }
                         AppUI.AppButton {
-                            width: 330; variant: "secondary"
+                            Layout.fillWidth: true
+                            variant: "secondary"
+                            text: "Подключить базу данных"
+                            onClicked: fileDialog.open()
+                        }
+                        AppUI.AppButton {
+                            Layout.fillWidth: true
+                            variant: "secondary"
                             text: "Перенести базы в другую папку"
                             onClicked: globalFolderDialog.open()
                         }
@@ -541,7 +546,7 @@ ApplicationWindow {
                     Text {
                         id: logoText
                         width: parent.width
-                        text: "OVERTIMETAB " + AppUI.AppTheme.appVersion
+                        text: "OVERTIMETAB " + AppUI.AppTheme.appVersionFull
                         color: AppUI.AppTheme.accentBrand
                         font.family: AppUI.AppTheme.fontFamily
                         font.pixelSize: AppUI.AppTheme.sizeH4

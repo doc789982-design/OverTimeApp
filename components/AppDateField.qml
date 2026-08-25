@@ -156,7 +156,7 @@ TextField {
             width: parent.width
             
             Rectangle {
-                width: 28; height: 28; radius: AppTheme.radiusSmall
+                width: 32; height: 32; radius: AppTheme.radiusSmall
                 color: prevHover.pressed ? AppTheme.statePress : (prevHover.containsMouse ? AppTheme.stateHover : "transparent")
                 Text { anchors.centerIn: parent; text: "‹"; color: AppTheme.textSecondary; font.pixelSize: AppTheme.sizeH2 }
                 MouseArea { id: prevHover; anchors.fill: parent; hoverEnabled: true; onClicked: root.changeMonth(-1) }

@@ -45,18 +45,24 @@ def write_version_json():
     """Кладём version.json рядом с exe, чтобы обновлятор понял номер сборки."""
     theme = ROOT / "components" / "AppTheme.qml"
     text = theme.read_text(encoding="utf-8") if theme.exists() else ""
-    m = __import__("re").search(r'appVersion:\s*"([^"]+)"', text)
+    import re
+    m = re.search(r'appVersion:\s*"([^"]+)"', text)
     version = m.group(1) if m else "dev"
+    bm = re.search(r"appBuild:\s*(\d+)", text)
+    build = int(bm.group(1)) if bm else 0
+    payload = {"name": "OVERTIMETAB", "version": version}
+    if build:
+        payload["build"] = build
     out = ROOT / "version.json"
     out.write_text(
-        '{\n  "name": "OVERTIMETAB",\n  "version": "%s"\n}\n' % version,
+        __import__("json").dumps(payload, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
-    print(f"version.json: {version}")
-    return version
+    print(f"version.json: {version}" + (f" · сборка {build}" if build else ""))
+    return version, build
 
 
-def plant_version_in_collected_packages(version: str):
+def plant_version_in_collected_packages(version: str, build: int = 0):
     """
     Сборка на GitHub идёт через --collect-all PySide6 без --add-data.
     Уже установленная программа ищет в zip файлы version.json / AppTheme.qml.
@@ -87,7 +93,10 @@ def plant_version_in_collected_packages(version: str):
         try:
             dest.parent.mkdir(parents=True, exist_ok=True)
             if dest.name == "AppTheme.qml":
-                dest.write_text(f'appVersion: "{version}"\n', encoding="utf-8")
+                lines = [f'appVersion: "{version}"']
+                if int(build or 0) > 0:
+                    lines.append(f"appBuild: {int(build)}")
+                dest.write_text("\n".join(lines) + "\n", encoding="utf-8")
             elif dest.name.lower() == "changelog.md":
                 dest.write_bytes(changelog.read_bytes())
             else:
@@ -120,8 +129,8 @@ def collect_files():
     return files
 
 def main():
-    version = write_version_json()
-    plant_version_in_collected_packages(version)
+    version, build = write_version_json()
+    plant_version_in_collected_packages(version, build)
     files = collect_files()
     if not files:
         print("ОШИБКА: не найдено ни одного файла ресурсов")

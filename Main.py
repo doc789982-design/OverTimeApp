@@ -199,14 +199,19 @@ class UpdateScanWorker(QThread):
     """Ищет zip/папку новой версии, не блокируя окно."""
     finished_signal = Signal(object)
 
-    def __init__(self, app_dir, current_version):
+    def __init__(self, app_dir, current_version, current_build=0):
         super().__init__()
         self.app_dir = app_dir
         self.current_version = current_version
+        self.current_build = current_build
 
     def run(self):
         try:
-            found = app_update.pick_best_update(Path(self.app_dir), self.current_version or "")
+            found = app_update.pick_best_update(
+                Path(self.app_dir),
+                self.current_version or "",
+                int(self.current_build or 0),
+            )
             self.finished_signal.emit(found)
         except Exception:
             self.finished_signal.emit(None)
@@ -2808,38 +2813,63 @@ class Backend(QObject):
     # data/ не трогаем: базы, хоткеи и тема остаются на месте.
     # ====================================================
 
-    def _read_qrc_version(self) -> str:
+    def _read_qrc_theme(self) -> str:
         try:
             from PySide6.QtCore import QFile, QIODevice
             f = QFile(":/components/AppTheme.qml")
             if f.open(QIODevice.ReadOnly):
                 text = bytes(f.readAll()).decode("utf-8", errors="replace")
                 f.close()
-                return app_update._read_version_from_text(text)
+                return text
         except Exception:
             return ""
         return ""
 
+    def _read_qrc_version(self) -> str:
+        return app_update._read_version_from_text(self._read_qrc_theme())
+
+    def _read_qrc_build(self) -> int:
+        try:
+            m = __import__("re").search(r"appBuild:\s*(\d+)", self._read_qrc_theme())
+            return int(m.group(1)) if m else 0
+        except Exception:
+            return 0
+
+    def _version_key(self) -> str:
+        ver = self._app_version or ""
+        bld = int(self._app_build or 0)
+        return f"{ver}+{bld}" if ver and bld else ver
+
+    def _version_label(self, version: str = "", build: int = 0) -> str:
+        return app_update.format_version_label(
+            version or self._app_version or "",
+            int(build or self._app_build or 0),
+        )
+
     def _init_updates(self):
         qrc_ver = self._read_qrc_version()
+        qrc_bld = self._read_qrc_build()
         if qrc_ver:
             self._app_version = qrc_ver
+        if qrc_bld:
+            self._app_build = qrc_bld
         if self._app_version:
             try:
                 root = app_update.install_root(self.app_dir)
-                app_update.write_version_json(root / "version.json", self._app_version)
+                app_update.write_version_json(root / "version.json", self._app_version, self._app_build)
                 if root != Path(self.app_dir):
-                    app_update.write_version_json(Path(self.app_dir) / "version.json", self._app_version)
+                    app_update.write_version_json(Path(self.app_dir) / "version.json", self._app_version, self._app_build)
             except Exception:
                 pass
         # Если прошлый раз уже обновились — подчистить хвосты
         staged = app_update.staged_info(self.app_dir)
         if staged:
             ver = staged.get("version") or ""
-            if ver and not app_update.is_newer(ver, self._app_version):
+            bld = int(staged.get("build") or 0)
+            if ver and not app_update.is_newer(ver, self._app_version, bld, self._app_build):
                 app_update.cleanup_pending(self.app_dir)
         try:
-            app_update.cleanup_obsolete_zips(self.app_dir, self._app_version)
+            app_update.cleanup_obsolete_zips(self.app_dir, self._app_version, self._app_build)
         except Exception:
             pass
         self._prepare_whats_new()
@@ -2848,6 +2878,10 @@ class Backend(QObject):
     @Property(str, notify=appVersionChanged)
     def appVersion(self):
         return self._app_version or ""
+
+    @Property(int, notify=appVersionChanged)
+    def appBuild(self):
+        return int(self._app_build or 0)
 
     @Property(bool, notify=updateReadyChanged)
     def updateReady(self):
@@ -2919,22 +2953,28 @@ class Backend(QObject):
                 last = str(data.get("ui", {}).get("last_changelog_version") or "")
         except Exception:
             last = ""
-        if last and last == (self._app_version or ""):
+        current_key = self._version_key()
+        if last and last == current_key:
             self._whats_new = []
             return
         text = self._read_changelog_text()
-        blocks = app_update.changelog_since(text, last, self._app_version or "")
+        last_ver, last_bld = app_update.split_version_key(last)
+        if last and app_update.is_newer(self._app_version or "", last_ver, self._app_build, last_bld):
+            blocks = app_update.changelog_since(text, last, self._app_version or "", self._app_build)
+        else:
+            # Первая постановка 20 поверх 29 или пустой last — только текущий блок.
+            blocks = app_update.changelog_since(text, "", self._app_version or "", self._app_build)
         self._whats_new = app_update.changelog_for_qml(blocks)
 
     @Slot()
     def ackWhatsNew(self):
-        """Закрыли «Что нового» — больше не показываем эту версию."""
+        """Закрыли «Что нового» — больше не показываем эту сборку."""
         try:
             self.config_path.parent.mkdir(parents=True, exist_ok=True)
         except Exception:
             pass
         if self._app_version:
-            self._write_ui_config("last_changelog_version", self._app_version)
+            self._write_ui_config("last_changelog_version", self._version_key())
         self._whats_new = []
         self.whatsNewChanged.emit()
 
@@ -2944,14 +2984,17 @@ class Backend(QObject):
         if self._update_busy or self._scan_running:
             return
         staged = app_update.staged_info(self.app_dir)
-        if staged and staged.get("version") and app_update.is_newer(staged["version"], self._app_version):
+        staged_ver = (staged or {}).get("version") or ""
+        staged_bld = int((staged or {}).get("build") or 0)
+        if staged and staged_ver and app_update.is_newer(staged_ver, self._app_version, staged_bld, self._app_build):
             dismissed = self._dismissed_update_version()
-            if staged["version"] != dismissed:
+            label = self._version_label(staged_ver, staged_bld)
+            if label != dismissed:
                 self._update_source = staged["root"]
-                self._set_update_ready(True, staged["version"])
+                self._set_update_ready(True, label)
             return
         self._scan_running = True
-        self._scan_thread = UpdateScanWorker(str(self.app_dir), self._app_version)
+        self._scan_thread = UpdateScanWorker(str(self.app_dir), self._app_version, self._app_build)
         self._scan_thread.finished_signal.connect(self._on_update_scanned)
         self._scan_thread.start()
 
@@ -2971,11 +3014,12 @@ class Backend(QObject):
         if not found:
             return
         dismissed = self._dismissed_update_version()
-        if found.get("version") and found["version"] == dismissed:
+        label = self._version_label(found.get("version") or "", int(found.get("build") or 0))
+        if label and label == dismissed:
             return
         if found.get("already_staged"):
             self._update_source = found["root"]
-            self._set_update_ready(True, found["version"])
+            self._set_update_ready(True, label or found.get("version") or "")
             return
         self.prepareUpdateFromPath(found["root"])
 
@@ -3017,9 +3061,12 @@ class Backend(QObject):
             return
         staged = app_update.staged_info(self.app_dir)
         self._update_source = staged["root"] if staged else ""
-        self._set_update_ready(True, version or (staged or {}).get("version") or "")
-        label = self._update_version or "новой версии"
-        self.showToast.emit(f"Готово. Можно обновить до {label}", "success")
+        label = self._version_label(
+            version or (staged or {}).get("version") or "",
+            int((staged or {}).get("build") or 0),
+        )
+        self._set_update_ready(True, label)
+        self.showToast.emit(f"Готово. Можно обновить до {label or 'новой версии'}", "success")
 
     @Slot()
     def applyReadyUpdate(self):
@@ -3029,7 +3076,8 @@ class Backend(QObject):
             self.showToast.emit("Сначала укажите файл или папку новой версии", "error")
             return
         staged_ver = staged.get("version") or ""
-        if not staged_ver or not app_update.is_newer(staged_ver, self._app_version):
+        staged_bld = int(staged.get("build") or 0)
+        if not staged_ver or not app_update.is_newer(staged_ver, self._app_version, staged_bld, self._app_build):
             self.showToast.emit("Откат на старую версию запрещён", "error")
             return
         dest_root = app_update.install_root(self.app_dir)

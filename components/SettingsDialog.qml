@@ -121,7 +121,7 @@ AppLargeModal {
                                     source: modelData.icon
                                     width: AppTheme.iconMedium
                                     height: AppTheme.iconMedium
-                                    color: isSelected ? "#FFFFFF" : AppTheme.textSecondary
+                                    color: isSelected ? AppTheme.textOnAccent : AppTheme.textSecondary
                                 }
                             }
 
@@ -343,7 +343,7 @@ AppLargeModal {
                                             source: "../icons/database.svg"
                                             width: AppTheme.iconMedium
                                             height: AppTheme.iconMedium
-                                            color: isActive ? "#FFFFFF" : AppTheme.textSecondary
+                                            color: isActive ? AppTheme.textOnAccent : AppTheme.textSecondary
                                         }
                                     }
 
@@ -374,7 +374,7 @@ AppLargeModal {
                                                     id: activeLabel
                                                     anchors.centerIn: parent
                                                     text: "Активна"
-                                                    color: "#FFFFFF"
+                                                    color: AppTheme.textOnAccent
                                                     font.family: AppTheme.fontFamily
                                                     font.pixelSize: AppTheme.sizeMicro
                                                     font.weight: AppTheme.weightBold
@@ -402,13 +402,13 @@ AppLargeModal {
 
                                     AppButton {
                                         text: "Папка"
-                                        width: 76
+                                        width: 80
                                         variant: "secondary"
                                         onClicked: backend.openDbFolder(modelData.path)
                                     }
                                     AppButton {
                                         text: "Экспорт"
-                                        width: 76
+                                        width: 80
                                         variant: "secondary"
                                         onClicked: {
                                             exportFolderDialog.pathToExport = modelData.path
@@ -417,7 +417,7 @@ AppLargeModal {
                                     }
                                     AppButton {
                                         text: "Открыть"
-                                        width: 84
+                                        width: 80
                                         variant: "primary"
                                         onClicked: {
                                             backend.openDatabase(modelData.path)
@@ -426,7 +426,7 @@ AppLargeModal {
                                     }
                                     AppButton {
                                         text: "Убрать"
-                                        width: 76
+                                        width: 80
                                         variant: "danger"
                                         onClicked: {
                                             let dbPath = modelData.path
@@ -722,7 +722,7 @@ AppLargeModal {
 
                     Text {
                         width: parent.width
-                        text: "Сейчас стоит " + (backend.appVersion || AppTheme.appVersion)
+                        text: "Сейчас стоит " + AppTheme.appVersionFull
                         color: AppTheme.textPrimary
                         font.family: AppTheme.fontFamily
                         font.pixelSize: AppTheme.sizeBodyLarge

@@ -26,28 +26,33 @@ THEME = ROOT / "components" / "AppTheme.qml"
 CHANGELOG = ROOT / "CHANGELOG.md"
 
 
-def read_version() -> str:
+def read_identity() -> tuple[str, int]:
     text = THEME.read_text(encoding="utf-8")
     m = re.search(r'appVersion:\s*"([^"]+)"', text)
     if not m:
         sys.exit("Не нашли appVersion в AppTheme.qml")
-    return m.group(1)
+    bm = re.search(r"appBuild:\s*(\d+)", text)
+    return m.group(1), int(bm.group(1)) if bm else 0
 
 
-def version_payload(version: str) -> bytes:
-    return (
-        json.dumps({"name": "OVERTIMETAB", "version": version}, ensure_ascii=False, indent=2)
-        + "\n"
-    ).encode("utf-8")
+def read_version() -> str:
+    return read_identity()[0]
+
+
+def version_payload(version: str, build: int = 0) -> bytes:
+    payload = {"name": "OVERTIMETAB", "version": version}
+    if int(build or 0) > 0:
+        payload["build"] = int(build)
+    return (json.dumps(payload, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
 
 
 def _norm(name: str) -> str:
     return name.replace("\\", "/").lstrip("/").lower()
 
 
-def stamp_zip(zip_path: Path, version: str) -> list[str]:
+def stamp_zip(zip_path: Path, version: str, build: int = 0) -> list[str]:
     """Добавляет version.json в корень архива и в _internal/, если их ещё нет."""
-    payload = version_payload(version)
+    payload = version_payload(version, build)
     added: list[str] = []
     with zipfile.ZipFile(zip_path, "r") as zf:
         names = {_norm(n) for n in zf.namelist()}
@@ -96,16 +101,17 @@ def main() -> int:
         zip_path = Path(sys.argv[2])
         if not zip_path.is_file():
             sys.exit(f"Нет файла {zip_path}")
-        added = stamp_zip(zip_path, read_version())
+        ver, bld = read_identity()
+        added = stamp_zip(zip_path, ver, bld)
         if added:
             print("дописали:", ", ".join(added))
         else:
             print("version.json уже был в архиве")
         return 0
-    tag = sys.argv[1] if len(sys.argv) > 1 else f"v{read_version()}"
-    version = read_version()
+    version, build = read_identity()
+    tag = sys.argv[1] if len(sys.argv) > 1 else f"v{version}"
     print(f"релиз:  {tag}")
-    print(f"версия: {version}")
+    print(f"версия: {version}" + (f" · сборка {build}" if build else ""))
 
     view = run_gh(["release", "view", tag, "--json", "assets"], check=False)
     if view.returncode != 0:
@@ -133,7 +139,7 @@ def main() -> int:
             if not found:
                 sys.exit("Скачали релиз, но zip не нашли")
             zip_path = found[0]
-        added = stamp_zip(zip_path, version)
+        added = stamp_zip(zip_path, version, build)
         if not added:
             print("version.json уже был в архиве — ничего не меняли")
             return 0

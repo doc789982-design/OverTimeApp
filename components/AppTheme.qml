@@ -9,7 +9,9 @@ QtObject {
     // Меняем здесь: заголовок окна, шапка и логотип
     // подхватят автоматически.
     // ==========================================
-    readonly property string appVersion: "2.0.0-ALPHA.29"
+    readonly property string appVersion: "2.0.0-ALPHA.20"
+    readonly property int appBuild: 67
+    readonly property string appVersionFull: appVersion + " · сборка " + appBuild
 
     // ==========================================
     // ЗАГРУЗКА ШРИФТОВ (ГАРАНТИЯ ПРАВИЛЬНЫХ ИМЕН)
@@ -30,20 +32,14 @@ QtObject {
     // 1. ПОВЕРХНОСТИ (Surfaces)
     // ==========================================
     // Главный фон (Календарь) - ярче в темной (#1C1C1E), чисто белый в светлой
-    property color bgBase:     isDark ? "#1C1C1E" : "#FFFFFF" 
-    
-    // Боковые панели (Группы, Сотрудники) - темнее главного фона
-    property color bgPanel:    isDark ? "#121212" : "#F3F4F6" 
-    
-    // Панель итогов (Внизу) - чуть темнее календаря
-    property color bgSurface:  isDark ? "#161618" : "#F8F9FA" 
-    
-    // Подложка для рабочих дней в календаре (чтобы не были прозрачными)
-    property color bgCell:     isDark ? "#242426" : "#F4F5F7" 
-
-    property color bgElevated: isDark ? "#2C2C2C" : "#FFFFFF" 
-    property color bgModal:    isDark ? "#333333" : "#FFFFFF" 
-    property color bgInput:    "transparent" 
+    // Три уровня: окно, панель/углубление, карточка/модалка.
+    property color bgBase:     isDark ? "#1C1C1E" : "#FFFFFF"
+    property color bgPanel:    isDark ? "#141416" : "#F3F4F6"
+    property color bgSurface:  bgPanel
+    property color bgCell:     bgPanel
+    property color bgElevated: isDark ? "#2A2A2C" : "#FFFFFF"
+    property color bgModal:    bgElevated
+    property color bgInput:    "transparent"
 
     property color bgDisabled:       isDark ? "#212529" : "#E9ECEF" 
     property color bgSkeletonBase:   isDark ? "#2B3035" : "#E2E8F0" 

@@ -7,9 +7,9 @@ Switch {
 
     // Цвета
     property color trackActiveColor: AppTheme.accentBrand
-    property color trackInactiveColor: AppTheme.isDark ? "#3F3F3F" : "#E2E2E2"
+    property color trackInactiveColor: AppTheme.bgDisabled
     property color knobActiveColor: AppTheme.textOnAccent
-    property color knobInactiveColor: AppTheme.isDark ? "#E8E8E8" : "#FFFFFF"
+    property color knobInactiveColor: AppTheme.bgElevated
 
     implicitHeight: 36
     focusPolicy: Qt.StrongFocus
