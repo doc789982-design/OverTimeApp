@@ -58,6 +58,7 @@ HIDDENIMPORTS = [
     "win32com.client",         # печать через установленный Excel
     "pythoncom",
     "pywintypes",
+    "app_update",
 ]
 
 EXCLUDES = list(UNUSED_STDLIB) + list(UNUSED_PYSIDE_MODULES)
@@ -66,11 +67,14 @@ EXCLUDES = list(UNUSED_STDLIB) + list(UNUSED_PYSIDE_MODULES)
 # выше хватает, чтобы подтянуть QML и плагины окон. Лишнее режем ниже.
 
 
+_version_json = ROOT / "version.json"
+_datas = [(str(_version_json), ".")] if _version_json.exists() else []
+
 a = Analysis(
     [str(ROOT / "Main.py")],
     pathex=[str(ROOT)],
     binaries=[],
-    datas=[],
+    datas=_datas,
     hiddenimports=HIDDENIMPORTS,
     hookspath=[],
     hooksconfig={},

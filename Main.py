@@ -12,11 +12,12 @@ from pathlib import Path
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
 from PySide6.QtGui import QIcon, QAction
 from PySide6.QtQml import QQmlApplicationEngine
-from PySide6.QtCore import QObject, Slot, Signal, Property, QUrl, QThread
+from PySide6.QtCore import QObject, Slot, Signal, Property, QUrl, QThread, QTimer
 
 from database import DB
 from utils import fmt_date_iso, fmt_dt_iso, d_iso, d_parse, dt_parse, dt_iso, parse_hhmm, subtract_intervals, intersect, merge_intervals, fmt_minutes_ru_words
 from logic import compute_month_summary, is_employee_shift, validate_non_negative_over_year
+import app_update
 
 # ====================================================
 # УМНЫЙ ПЕРЕКЛЮЧАТЕЛЬ РЕЖИМОВ (DEV / PROD)
@@ -177,6 +178,24 @@ class PrintWorker(QThread):
                 pass
 # ====================================================
 
+class UpdateStageWorker(QThread):
+    """Копирует zip/папку новой версии в pending_update, не блокируя окно."""
+    finished_signal = Signal(bool, str, str)  # ok, message, version
+
+    def __init__(self, source_path, app_dir):
+        super().__init__()
+        self.source_path = source_path
+        self.app_dir = app_dir
+
+    def run(self):
+        try:
+            ver = app_update.stage_package(Path(self.source_path), Path(self.app_dir))
+            self.finished_signal.emit(True, "", ver or "")
+        except Exception as e:
+            self.finished_signal.emit(False, str(e), "")
+
+# ====================================================
+
 class Backend(QObject):
     dbListChanged = Signal()
     groupListChanged = Signal()
@@ -203,6 +222,11 @@ class Backend(QObject):
     itemDeleted = Signal(str, str)
     startHiddenChanged = Signal()
     reminderEnabledChanged = Signal()
+    updateReadyChanged = Signal()
+    updateBusyChanged = Signal()
+    updateVersionChanged = Signal()
+    updateStatusTextChanged = Signal()
+    appVersionChanged = Signal()
 
     def __init__(self, start_hidden=False):
         super().__init__()
@@ -254,6 +278,14 @@ class Backend(QObject):
         self._active_department_name = ""
         
         self.load_databases()
+
+        self._update_ready = False
+        self._update_busy = False
+        self._update_version = ""
+        self._update_status = ""
+        self._update_source = ""
+        self._app_version = app_update.current_app_version(self.app_dir)
+        self._init_updates()
 
     def load_databases(self):
         loaded_dbs = []
@@ -2751,6 +2783,203 @@ class Backend(QObject):
         except Exception as e:
             self.showToast.emit(f"Ошибка переноса: {e}", "error")
 
+    # ====================================================
+    # ОБНОВЛЕНИЕ ПРОГРАММЫ (офлайн, как кнопка в Telegram)
+    # data/ не трогаем: базы, хоткеи и тема остаются на месте.
+    # ====================================================
+
+    def _read_qrc_version(self) -> str:
+        try:
+            from PySide6.QtCore import QFile, QIODevice
+            f = QFile(":/components/AppTheme.qml")
+            if f.open(QIODevice.ReadOnly):
+                text = bytes(f.readAll()).decode("utf-8", errors="replace")
+                f.close()
+                return app_update._read_version_from_text(text)
+        except Exception:
+            return ""
+        return ""
+
+    def _init_updates(self):
+        qrc_ver = self._read_qrc_version()
+        if qrc_ver:
+            self._app_version = qrc_ver
+        if self._app_version:
+            try:
+                root = app_update.install_root(self.app_dir)
+                app_update.write_version_json(root / "version.json", self._app_version)
+                if root != Path(self.app_dir):
+                    app_update.write_version_json(Path(self.app_dir) / "version.json", self._app_version)
+            except Exception:
+                pass
+        # Если прошлый раз уже обновились — подчистить хвосты
+        staged = app_update.staged_info(self.app_dir)
+        if staged:
+            ver = staged.get("version") or ""
+            if ver and not app_update.is_newer(ver, self._app_version):
+                app_update.cleanup_pending(self.app_dir)
+        self.scanForUpdates()
+
+    @Property(str, notify=appVersionChanged)
+    def appVersion(self):
+        return self._app_version or ""
+
+    @Property(bool, notify=updateReadyChanged)
+    def updateReady(self):
+        return self._update_ready
+
+    @Property(bool, notify=updateBusyChanged)
+    def updateBusy(self):
+        return self._update_busy
+
+    @Property(str, notify=updateVersionChanged)
+    def updateVersion(self):
+        return self._update_version
+
+    @Property(str, notify=updateStatusTextChanged)
+    def updateStatusText(self):
+        return self._update_status
+
+    @Property(int, notify=updateReadyChanged)
+    def updateChromeExtra(self):
+        return 52 if (self._update_ready or self._update_busy) else 0
+
+    def _set_update_busy(self, busy, text=""):
+        self._update_busy = bool(busy)
+        self._update_status = text or ""
+        self.updateBusyChanged.emit()
+        self.updateStatusTextChanged.emit()
+        self.updateReadyChanged.emit()  # высота полоски тоже зависит от busy
+
+    def _set_update_ready(self, ready, version=""):
+        self._update_ready = bool(ready)
+        if version:
+            self._update_version = version
+            self.updateVersionChanged.emit()
+        self.updateReadyChanged.emit()
+
+    @Slot()
+    def scanForUpdates(self):
+        """Ищет zip/папку новой версии рядом с программой и на флешках."""
+        if self._update_busy:
+            return
+        try:
+            dismissed = ""
+            if self.config_path.exists():
+                data = json.loads(self.config_path.read_text(encoding="utf-8"))
+                dismissed = str(data.get("ui", {}).get("dismissed_update_version") or "")
+        except Exception:
+            dismissed = ""
+
+        staged = app_update.staged_info(self.app_dir)
+        if staged and staged.get("version") and app_update.is_newer(staged["version"], self._app_version):
+            if staged["version"] != dismissed:
+                self._update_source = staged["root"]
+                self._set_update_ready(True, staged["version"])
+            return
+
+        found = app_update.pick_best_update(self.app_dir, self._app_version)
+        if not found:
+            return
+        if found["version"] and found["version"] == dismissed:
+            return
+        if found.get("already_staged"):
+            self._update_source = found["root"]
+            self._set_update_ready(True, found["version"])
+            return
+        self.prepareUpdateFromPath(found["root"])
+
+    @Slot(str)
+    def prepareUpdateFromPath(self, file_url):
+        """Готовит обновление из zip или папки. Можно вызвать из диалога настроек."""
+        if not file_url or self._update_busy:
+            return
+        path = QUrl(file_url).toLocalFile() if str(file_url).startswith("file:") else file_url
+        if not path:
+            path = file_url
+        try:
+            info = app_update.describe_package(Path(path))
+        except Exception as e:
+            self.showToast.emit(str(e), "error")
+            return
+
+        ver = info.get("version") or ""
+        if ver and not app_update.is_newer(ver, self._app_version):
+            if ver == self._app_version:
+                self.showToast.emit(f"Это та же версия ({ver})", "error")
+            else:
+                self.showToast.emit(f"Выбранная копия старше текущей ({ver})", "error")
+            return
+
+        self._set_update_busy(True, "Готовим обновление…")
+        self.showToast.emit("Готовим обновление. Можно продолжать работу.", "success")
+        self.update_thread = UpdateStageWorker(info["root"], str(self.app_dir))
+        self.update_thread.finished_signal.connect(self._on_update_staged)
+        self.update_thread.start()
+
+    def _on_update_staged(self, ok, message, version):
+        self._set_update_busy(False, "")
+        if not ok:
+            self.showToast.emit(f"Не удалось подготовить обновление: {message}", "error")
+            return
+        staged = app_update.staged_info(self.app_dir)
+        self._update_source = staged["root"] if staged else ""
+        self._set_update_ready(True, version or (staged or {}).get("version") or "")
+        label = self._update_version or "новой версии"
+        self.showToast.emit(f"Готово. Можно обновить до {label}", "success")
+
+    @Slot()
+    def applyReadyUpdate(self):
+        """Кнопка «Обновить»: переодеваем коробку и перезапускаемся. data/ не трогаем."""
+        staged = app_update.staged_info(self.app_dir)
+        if not staged:
+            self.showToast.emit("Сначала укажите файл или папку новой версии", "error")
+            return
+        dest_root = app_update.install_root(self.app_dir)
+        if not (dest_root / "OVERTIMETAB.exe").exists() and not IS_FROZEN:
+            self.showToast.emit("Обновление ставится в собранную программу, не из редактора кода", "error")
+            return
+        try:
+            if self.active_db:
+                try:
+                    self.active_db.close()
+                except Exception:
+                    pass
+                self.active_db = None
+            app_update.launch_file_swap(
+                Path(staged["root"]),
+                dest_root,
+                os.getpid(),
+            )
+            # Крестик у нас сворачивает в трей, а quitOnLastWindowClosed=False.
+            # Помощник ждёт именно смерти PID — выходим жёстко, базу уже закрыли.
+            app = QApplication.instance()
+            if app:
+                for w in app.topLevelWidgets():
+                    try:
+                        w.hide()
+                    except Exception:
+                        pass
+            QTimer.singleShot(400, lambda: os._exit(0))
+        except Exception as e:
+            self.showToast.emit(f"Не удалось запустить обновление: {e}", "error")
+
+    @Slot()
+    def dismissUpdate(self):
+        """Спрятать кнопку до следующего более нового файла."""
+        try:
+            data = {"db_paths": [], "last_db_path": None, "ui": {}}
+            if self.config_path.exists():
+                data = json.loads(self.config_path.read_text(encoding="utf-8"))
+            ui_cfg = data.get("ui", {})
+            ui_cfg["dismissed_update_version"] = self._update_version or ""
+            data["ui"] = ui_cfg
+            self.config_path.parent.mkdir(parents=True, exist_ok=True)
+            self.config_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+        self._set_update_ready(False)
+
 import ctypes # <--- Добавляем системную библиотеку Windows
 
 # Уникальный ID сервера для общения между процессами
@@ -2844,4 +3073,16 @@ def main():
     sys.exit(exit_code)
 
 if __name__ == "__main__":
+    apply = app_update.parse_apply_argv(sys.argv)
+    if apply:
+        try:
+            app_update.apply_update_inplace(
+                Path(apply["source"]),
+                Path(apply["dest"]),
+                apply.get("wait_pid") or None,
+            )
+        except Exception as e:
+            print(f"Ошибка применения обновления: {e}")
+            sys.exit(1)
+        sys.exit(0)
     main()

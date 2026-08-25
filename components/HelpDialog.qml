@@ -158,6 +158,15 @@ AppSidePanel {
             }
         }
 
+        Column {
+            width: parent.width; spacing: AppTheme.spaceXS
+            Text { text: "Обновление"; color: AppTheme.accentBrand; font.family: AppTheme.fontFamily; font.pixelSize: AppTheme.sizeBodyLarge; font.weight: AppTheme.weightBold }
+            Text {
+                text: "Новую версию не нужно ставить поверх старой вручную. Откройте уже установленную программу, вставьте флешку с zip или папкой — внизу слева появится кнопка «Обновить». Базы и горячие клавиши сохранятся. Файл можно указать и в Настройках → Обновление."
+                color: AppTheme.textSecondary; font.family: AppTheme.fontFamily; font.pixelSize: AppTheme.sizeBody; width: parent.width; wrapMode: Text.WordWrap
+            }
+        }
+
         Rectangle { width: parent.width; height: 1; color: AppTheme.borderDivider }
 
         // ==========================================

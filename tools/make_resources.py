@@ -41,6 +41,21 @@ FONT_ALLOW = {
     "RobotoCondensed-Bold.ttf",
 }
 
+def write_version_json():
+    """Кладём version.json рядом с exe, чтобы обновлятор понял номер сборки."""
+    theme = ROOT / "components" / "AppTheme.qml"
+    text = theme.read_text(encoding="utf-8") if theme.exists() else ""
+    m = __import__("re").search(r'appVersion:\s*"([^"]+)"', text)
+    version = m.group(1) if m else "dev"
+    out = ROOT / "version.json"
+    out.write_text(
+        '{\n  "name": "OVERTIMETAB",\n  "version": "%s"\n}\n' % version,
+        encoding="utf-8",
+    )
+    print(f"version.json: {version}")
+    return version
+
+
 def collect_files():
     files = []
     for name in ROOT_FILES:
@@ -64,6 +79,7 @@ def collect_files():
     return files
 
 def main():
+    write_version_json()
     files = collect_files()
     if not files:
         print("ОШИБКА: не найдено ни одного файла ресурсов")

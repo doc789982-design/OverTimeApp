@@ -67,7 +67,7 @@ Rectangle {
     ListView {
         id: empList
         anchors.top: headerArea.bottom; anchors.bottom: parent.bottom; anchors.left: parent.left; anchors.right: parent.right
-        bottomMargin: 140; clip: true; model: backend.employeeList
+        bottomMargin: 140 + backend.updateChromeExtra; clip: true; model: backend.employeeList
         
         delegate: Item {
             id: empDelegateItem

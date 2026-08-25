@@ -552,6 +552,12 @@ ApplicationWindow {
                         lineHeight: 1.2
                     }
                 }
+                AppUI.UpdateBanner {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    anchors.bottomMargin: AppUI.AppTheme.spaceS
+                }
             }
 
             SequentialAnimation {
@@ -606,11 +612,13 @@ ApplicationWindow {
                             workspace: workspaceRoot
                         }
                     }
-                    AppUI.LeftControlPanel {
+                    Column {
                         anchors.left: parent.left
                         anchors.right: parent.right
                         anchors.bottom: parent.bottom
                         z: AppUI.AppTheme.zSticky
+                        AppUI.UpdateBanner { width: parent.width }
+                        AppUI.LeftControlPanel { width: parent.width }
                     }
                 }
                 AppUI.CalendarWorkspace {
@@ -793,6 +801,11 @@ FileDialog {
         interval: 5000; running: true; repeat: false
         onTriggered: { if (backend.reminderEnabled) checkAndNotify() }
     }
+    Timer {
+        id: updateScanTimer
+        interval: 20000; running: true; repeat: true
+        onTriggered: backend.scanForUpdates()
+    }
 
     function checkAndNotify() {
         let d = new Date()
@@ -801,4 +814,4 @@ FileDialog {
             systemAlert.showNotification()
         }
     }
-} 
+}
