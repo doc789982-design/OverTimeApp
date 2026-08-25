@@ -46,10 +46,6 @@ SKIP_NAMES = {
     "data",
 }
 
-# Имена zip/папок, которые считаем «посылкой с обновлением»
-ZIP_PREFIXES = ("overtimetab", "overtimeapp")
-
-
 class UpdateError(Exception):
     pass
 
@@ -134,16 +130,19 @@ def write_version_json(path: Path, version: str) -> None:
 
 
 def current_app_version(app_dir: Path) -> str:
-    """Версия этой установленной копии. Ищем рядом с exe и в исходниках."""
+    """Версия этой установленной копии. Ищем рядом с exe и в _internal."""
     here = Path(__file__).resolve().parent
     root = install_root(app_dir)
-    for p in (
+    candidates = [
         root / VERSION_JSON,
-        app_dir / VERSION_JSON,
+        root / "_internal" / VERSION_JSON,
+        Path(app_dir) / VERSION_JSON,
+        Path(app_dir) / "_internal" / VERSION_JSON,
         here / VERSION_JSON,
         here / THEME_REL,
-        app_dir / THEME_REL,
-    ):
+        Path(app_dir) / THEME_REL,
+    ]
+    for p in candidates:
         if not p.exists():
             continue
         ver = read_version_json(p) if p.suffix.lower() == ".json" else read_version_from_theme_file(p)
@@ -175,7 +174,14 @@ def find_package_root(path: Path) -> Optional[Path]:
         return None
 
     if path.is_file() and path.suffix.lower() == ".zip":
-        return path.resolve()
+        try:
+            with zipfile.ZipFile(path, "r") as zf:
+                names = _zip_namelist_safe(zf)
+            if _zip_has_exe(names):
+                return path.resolve()
+        except Exception:
+            return None
+        return None
 
     if path.is_file() and path.name.lower() == EXE_NAME.lower():
         return path.parent.resolve()
@@ -200,30 +206,69 @@ def _zip_namelist_safe(zf: zipfile.ZipFile) -> list[str]:
     return names
 
 
+def _norm_zip_name(name: str) -> str:
+    return name.replace("\\", "/").lstrip("/")
+
+
+def _zip_has_exe(names: list[str]) -> bool:
+    for n in names:
+        low = _norm_zip_name(n).lower()
+        if low.endswith("overtimetab.exe") and not low.endswith("/"):
+            return True
+    return False
+
+
+def _version_from_zip_bytes(raw: bytes, as_json: bool) -> str:
+    text = raw.decode("utf-8", errors="replace")
+    if as_json:
+        try:
+            return str(json.loads(text).get("version") or "").strip()
+        except Exception:
+            return ""
+    return _read_version_from_text(text)
+
+
 def version_of_package(package: Path) -> str:
-    """Версия посылки, не распаковывая целиком."""
+    """Номер версии изнутри посылки. Имя файла zip не смотрим."""
     package = Path(package)
     if package.is_file() and package.suffix.lower() == ".zip":
         with zipfile.ZipFile(package, "r") as zf:
-            names = _zip_namelist_safe(zf)
-            for key in (VERSION_JSON, "OVERTIMETAB/" + VERSION_JSON):
-                if key in names:
-                    with zf.open(key) as fh:
-                        data = json.loads(fh.read().decode("utf-8"))
-                        return str(data.get("version") or "").strip()
-            for name in names:
-                if name.endswith("components/AppTheme.qml") or name.endswith("AppTheme.qml"):
-                    with zf.open(name) as fh:
-                        ver = _read_version_from_text(fh.read().decode("utf-8", errors="replace"))
+            names = [_norm_zip_name(n) for n in _zip_namelist_safe(zf)]
+            jsons = [n for n in names if n.lower().endswith("/" + VERSION_JSON) or n.lower() == VERSION_JSON]
+            jsons.sort(key=lambda n: ("/data/" in ("/" + n.lower()), n.count("/"), len(n)))
+            for n in jsons:
+                if "/data/" in ("/" + n.lower()):
+                    continue
+                try:
+                    with zf.open(n) as fh:
+                        ver = _version_from_zip_bytes(fh.read(), True)
+                    if ver:
+                        return ver
+                except Exception:
+                    continue
+            for n in names:
+                if n.lower().endswith("apptheme.qml"):
+                    try:
+                        with zf.open(n) as fh:
+                            ver = _version_from_zip_bytes(fh.read(), False)
                         if ver:
                             return ver
+                    except Exception:
+                        continue
         return ""
 
     if package.is_dir():
-        v = read_version_json(package / VERSION_JSON)
-        if v:
-            return v
-        return read_version_from_theme_file(package / THEME_REL)
+        for cand in (
+            package / VERSION_JSON,
+            package / "_internal" / VERSION_JSON,
+            package / THEME_REL,
+            package / "_internal" / THEME_REL,
+        ):
+            if not cand.exists():
+                continue
+            ver = read_version_json(cand) if cand.suffix.lower() == ".json" else read_version_from_theme_file(cand)
+            if ver:
+                return ver
     return ""
 
 
@@ -408,15 +453,8 @@ def _iter_removable_roots() -> list[Path]:
     return roots
 
 
-def _looks_like_update_zip(path: Path) -> bool:
-    name = path.name.lower()
-    if path.suffix.lower() != ".zip":
-        return False
-    return any(name.startswith(p) for p in ZIP_PREFIXES) or "overtime" in name
-
-
 def scan_update_sources(app_dir: Path) -> list[Path]:
-    """Кандидаты: уже подготовленная папка, zip рядом, флешки."""
+    """Кандидаты рядом с exe и на флешках. Имя файла не важно — смотрим содержимое."""
     found: list[Path] = []
     app_dir = Path(app_dir)
 
@@ -425,6 +463,7 @@ def scan_update_sources(app_dir: Path) -> list[Path]:
         found.append(Path(staged["root"]))
 
     root = install_root(app_dir)
+    skip_roots = {app_dir.resolve(), root.resolve(), pending_dir(app_dir).resolve()}
     search_dirs = [root, root.parent, app_dir, app_dir.parent]
     search_dirs.extend(_iter_removable_roots())
 
@@ -438,21 +477,27 @@ def scan_update_sources(app_dir: Path) -> list[Path]:
         try:
             for child in folder.iterdir():
                 try:
-                    if child.is_file() and _looks_like_update_zip(child):
-                        rp = child.resolve()
+                    if child.is_file() and child.suffix.lower() == ".zip":
+                        pkg = find_package_root(child)
+                        if not pkg:
+                            continue
+                        rp = pkg.resolve()
                         if rp not in seen:
                             found.append(rp)
                             seen.add(rp)
-                    elif child.is_dir() and child.name.lower() in ("overtimetab", "overtimeapp"):
+                    elif child.is_dir():
+                        if child.name.lower() in SKIP_NAMES:
+                            continue
                         pkg = find_package_root(child)
-                        if pkg:
-                            rp = pkg.resolve()
-                            if rp not in seen and rp not in (app_dir.resolve(), root):
-                                found.append(rp)
-                                seen.add(rp)
+                        if not pkg:
+                            continue
+                        rp = pkg.resolve()
+                        if rp not in seen and rp not in skip_roots:
+                            found.append(rp)
+                            seen.add(rp)
                     elif child.is_file() and child.name.lower() == EXE_NAME.lower():
                         rp = child.parent.resolve()
-                        if rp not in seen and rp not in (app_dir.resolve(), root):
+                        if rp not in seen and rp not in skip_roots:
                             found.append(rp)
                             seen.add(rp)
                 except Exception:

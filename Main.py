@@ -2904,11 +2904,14 @@ class Backend(QObject):
             return
 
         ver = info.get("version") or ""
-        if ver and not app_update.is_newer(ver, self._app_version):
+        if not ver:
+            self.showToast.emit("В архиве нет номера версии — так обновляться нельзя", "error")
+            return
+        if not app_update.is_newer(ver, self._app_version):
             if ver == self._app_version:
                 self.showToast.emit(f"Это та же версия ({ver})", "error")
             else:
-                self.showToast.emit(f"Выбранная копия старше текущей ({ver})", "error")
+                self.showToast.emit(f"Откат запрещён: {ver} старше текущей {self._app_version}", "error")
             return
 
         self._set_update_busy(True, "Готовим обновление…")
@@ -2934,6 +2937,10 @@ class Backend(QObject):
         staged = app_update.staged_info(self.app_dir)
         if not staged:
             self.showToast.emit("Сначала укажите файл или папку новой версии", "error")
+            return
+        staged_ver = staged.get("version") or ""
+        if not staged_ver or not app_update.is_newer(staged_ver, self._app_version):
+            self.showToast.emit("Откат на старую версию запрещён", "error")
             return
         dest_root = app_update.install_root(self.app_dir)
         if not (dest_root / "OVERTIMETAB.exe").exists() and not IS_FROZEN:
