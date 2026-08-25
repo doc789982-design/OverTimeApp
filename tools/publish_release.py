@@ -94,14 +94,14 @@ def main() -> int:
     parser.add_argument("--dry-run", action="store_true", help="только показать текст, не публиковать")
     args = parser.parse_args()
 
-    version = read_version()
+    version, build = read_identity()
     tag = f"v{version}"
-    title = f"OVERTIMETAB {version}"
+    title = f"OVERTIMETAB {version}" + (f" · сборка {build}" if build else "")
     notes = changelog_section(version)
     branch = current_branch()
     pre = is_prerelease(version)
 
-    print(f"версия:   {version}")
+    print(f"версия:   {version}" + (f" · сборка {build}" if build else ""))
     print(f"тег:      {tag}")
     print(f"ветка:    {branch}")
     print(f"пререлиз: {pre}")
