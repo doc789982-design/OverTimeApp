@@ -10,7 +10,7 @@ QtObject {
     // подхватят автоматически.
     // ==========================================
     readonly property string appVersion: "2.0.0-ALPHA.20"
-    readonly property int appBuild: 67
+    readonly property int appBuild: 68
     readonly property string appVersionFull: appVersion + " · сборка " + appBuild
 
     // ==========================================
@@ -150,6 +150,13 @@ QtObject {
     property int spaceXL:    32
     property int spaceXXL:   48
     property int spaceXXXL:  64
+
+    // Одинаковые по смыслу ряды и шапки — одни числа.
+    property int rowHeight:         56
+    property int barHeight:         60
+    property int fieldIconSize:     36
+    property int cardActionReserve: 84
+    property int startCardHeight:   72
 
     // ==========================================
     // 9. ГЛУБИНА И ТЕНИ (Elevation Levels - Material 3)
