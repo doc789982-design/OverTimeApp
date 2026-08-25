@@ -21,18 +21,18 @@ Item {
         anchors.rightMargin: AppTheme.spaceM
         anchors.bottomMargin: AppTheme.spaceXS
         radius: AppTheme.radiusMedium
-        border.width: backend.updateBusy ? 1 : 0
-        border.color: AppTheme.borderDivider
-        color: backend.updateBusy ? AppTheme.bgElevated : "transparent"
 
-        // Зелёный → бирюзовый, как на кнопке «Обновить Telegram»
-        gradient: backend.updateBusy ? null : readyGrad
-
-        Gradient {
-            id: readyGrad
+        gradient: Gradient {
             orientation: Gradient.Horizontal
             GradientStop { position: 0.0; color: "#2BD16A" }
             GradientStop { position: 1.0; color: "#18C8C8" }
+        }
+
+        Rectangle {
+            anchors.fill: parent
+            radius: parent.radius
+            visible: backend.updateBusy
+            color: Qt.rgba(0, 0, 0, 0.18)
         }
 
         Rectangle {
@@ -55,14 +55,14 @@ Item {
                 height: 28
                 radius: 14
                 anchors.verticalCenter: parent.verticalCenter
-                color: backend.updateBusy ? AppTheme.bgBase : Qt.rgba(1, 1, 1, 0.22)
+                color: Qt.rgba(1, 1, 1, 0.22)
 
                 IconImage {
                     anchors.centerIn: parent
                     source: "../icons/refresh.svg"
                     width: AppTheme.iconMedium
                     height: AppTheme.iconMedium
-                    color: backend.updateBusy ? AppTheme.textSecondary : "#FFFFFF"
+                    color: "#FFFFFF"
                 }
             }
 
@@ -73,7 +73,7 @@ Item {
                 text: backend.updateBusy
                       ? (backend.updateStatusText || "Готовим обновление…")
                       : "Обновить OverTimeTab"
-                color: backend.updateBusy ? AppTheme.textPrimary : "#FFFFFF"
+                color: "#FFFFFF"
                 font.family: AppTheme.fontFamily
                 font.pixelSize: AppTheme.sizeBody
                 font.weight: AppTheme.weightBold
