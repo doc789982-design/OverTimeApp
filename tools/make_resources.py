@@ -50,9 +50,20 @@ def write_version_json():
     version = m.group(1) if m else "dev"
     bm = re.search(r"appBuild:\s*(\d+)", text)
     build = int(bm.group(1)) if bm else 0
-    payload = {"name": "OVERTIMETAB", "version": version}
+    scan = version
+    try:
+        sys.path.insert(0, str(ROOT))
+        from app_update import scan_version as _scan_version
+
+        scan = _scan_version(version, build)
+    except Exception:
+        if build and version:
+            scan = version.rsplit(".", 1)[0] + f".{build}" if "-" in version else version
+    payload = {"name": "OVERTIMETAB", "version": scan}
     if build:
         payload["build"] = build
+    if version and version != scan:
+        payload["display"] = version
     out = ROOT / "version.json"
     out.write_text(
         __import__("json").dumps(payload, ensure_ascii=False, indent=2) + "\n",
@@ -93,7 +104,14 @@ def plant_version_in_collected_packages(version: str, build: int = 0):
         try:
             dest.parent.mkdir(parents=True, exist_ok=True)
             if dest.name == "AppTheme.qml":
-                lines = [f'appVersion: "{version}"']
+                # Старые копии читают appVersion из этого файла, если нет version.json.
+                try:
+                    from app_update import scan_version as _scan_version
+
+                    planted = _scan_version(version, build)
+                except Exception:
+                    planted = version
+                lines = [f'appVersion: "{planted}"']
                 if int(build or 0) > 0:
                     lines.append(f"appBuild: {int(build)}")
                 dest.write_text("\n".join(lines) + "\n", encoding="utf-8")

@@ -40,9 +40,18 @@ def read_version() -> str:
 
 
 def version_payload(version: str, build: int = 0) -> bytes:
-    payload = {"name": "OVERTIMETAB", "version": version}
+    sys.path.insert(0, str(ROOT))
+    try:
+        from app_update import scan_version
+
+        scan = scan_version(version, build)
+    except Exception:
+        scan = version
+    payload = {"name": "OVERTIMETAB", "version": scan}
     if int(build or 0) > 0:
         payload["build"] = int(build)
+    if version and version != scan:
+        payload["display"] = version
     return (json.dumps(payload, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
 
 

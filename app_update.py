@@ -84,8 +84,27 @@ def parse_version(raw: str) -> tuple:
     return (tuple(nums[:3]), pre_name, pre_num)
 
 
+def scan_version(version: str, build: int = 0) -> str:
+    """
+    Строка, которую понимает старая is_newer без номера сборки.
+    2.0.0-ALPHA.20 + сборка 70 → 2.0.0-ALPHA.70
+    На экране по-прежнему честная version (20).
+    """
+    ver = (version or "").strip()
+    bld = int(build or 0)
+    if not ver or bld <= 0:
+        return ver
+    core, sep, tail = ver.partition("-")
+    if not sep or not tail:
+        return ver
+    name, _, _num = tail.partition(".")
+    if not name:
+        return ver
+    return f"{core}-{name}.{bld}"
+
+
 def is_newer(candidate: str, current: str, candidate_build: int = 0, current_build: int = 0) -> bool:
-    """candidate новее current? При той же версии смотрим номер сборки."""
+    """candidate новее current? Если есть номер сборки — сравниваем его, а не хвост ALPHA.N."""
     if not candidate:
         return False
     if not current:
@@ -99,9 +118,10 @@ def is_newer(candidate: str, current: str, candidate_build: int = 0, current_bui
         return False
     if c[1] != v[1]:
         return c[1] > v[1]
-    if c[2] != v[2]:
-        return c[2] > v[2]
-    return int(candidate_build or 0) > int(current_build or 0)
+    cb, vb = int(candidate_build or 0), int(current_build or 0)
+    if cb > 0 or vb > 0:
+        return cb > vb
+    return c[2] > v[2]
 
 
 def _read_version_from_text(text: str) -> str:
@@ -124,10 +144,28 @@ def read_version_json(path: Path) -> str:
         return ""
 
 
-def write_version_json(path: Path, version: str, build: int = 0) -> None:
-    payload = {"name": "OVERTIMETAB", "version": version}
-    if int(build or 0) > 0:
-        payload["build"] = int(build)
+def write_version_json(
+    path: Path,
+    version: str,
+    build: int = 0,
+    for_package: bool = False,
+    display: str = "",
+) -> None:
+    ver = (version or "").strip()
+    bld = int(build or 0)
+    shown = (display or "").strip()
+    if for_package:
+        scan = scan_version(ver, bld)
+        payload = {"name": "OVERTIMETAB", "version": scan}
+        if bld > 0:
+            payload["build"] = bld
+        honest = shown or ver
+        if honest and honest != scan:
+            payload["display"] = honest
+    else:
+        payload = {"name": "OVERTIMETAB", "version": shown or ver}
+        if bld > 0:
+            payload["build"] = bld
     path.write_text(
         json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
@@ -488,6 +526,48 @@ def version_of_package(package: Path) -> str:
     return ""
 
 
+def _read_json_field_from_bytes(raw: bytes, key: str):
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw.decode("utf-8", errors="replace"))
+    except Exception:
+        return None
+    if not isinstance(data, dict):
+        return None
+    return data.get(key)
+
+
+def display_of_package(package: Path) -> str:
+    """Честный номер с экрана (поле display). Пусто — значит version уже честный."""
+    package = Path(package)
+    if package.is_file() and package.suffix.lower() == ".zip":
+        try:
+            with zipfile.ZipFile(package, "r") as zf:
+                for n in zf.namelist():
+                    if Path(n).name.lower() != "version.json":
+                        continue
+                    if "/data/" in ("/" + n.replace("\\", "/").lower()):
+                        continue
+                    val = _read_json_field_from_bytes(zf.read(n), "display")
+                    return str(val or "").strip()
+        except Exception:
+            return ""
+        return ""
+    if package.is_dir():
+        for cand in (package / VERSION_JSON, package / "_internal" / VERSION_JSON):
+            if not cand.exists():
+                continue
+            try:
+                data = json.loads(cand.read_text(encoding="utf-8"))
+                val = str(data.get("display") or "").strip()
+                if val:
+                    return val
+            except Exception:
+                continue
+    return ""
+
+
 def build_of_package(package: Path) -> int:
     """Номер сборки из version.json внутри посылки."""
     package = Path(package)
@@ -528,7 +608,14 @@ def describe_package(package: Path) -> dict:
         raise UpdateError("Это не папка и не архив OVERTIMETAB")
     ver = version_of_package(root)
     bld = build_of_package(root)
-    return {"root": str(root), "version": ver, "build": bld, "is_zip": root.is_file()}
+    shown = display_of_package(root)
+    return {
+        "root": str(root),
+        "version": ver,
+        "build": bld,
+        "display": shown,
+        "is_zip": root.is_file(),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -624,6 +711,7 @@ def stage_package(package: Path, app_dir: Path) -> str:
 
     ver = version_of_package(root)
     bld = build_of_package(root)
+    shown = display_of_package(root)
     dest = pending_dir(app_dir)
     tmp = dest.with_name(dest.name + ".__tmp")
     _clear_dir(tmp)
@@ -638,8 +726,9 @@ def stage_package(package: Path, app_dir: Path) -> str:
         if not _exe_in(tmp):
             raise UpdateError("После распаковки не оказалось OVERTIMETAB.exe")
 
-        write_version_json(tmp / VERSION_JSON, ver, bld) if ver else None
-        meta = {"version": ver, "build": bld, "source": str(root)}
+        if ver:
+            write_version_json(tmp / VERSION_JSON, ver, bld, for_package=True, display=shown)
+        meta = {"version": ver, "build": bld, "display": shown, "source": str(root)}
         (tmp / META_NAME).write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
 
         _clear_dir(dest)
@@ -657,20 +746,25 @@ def staged_info(app_dir: Path) -> Optional[dict]:
         return None
     ver = ""
     bld = 0
+    shown = ""
     meta = dest / META_NAME
     if meta.exists():
         try:
             data = json.loads(meta.read_text(encoding="utf-8"))
             ver = str(data.get("version") or "")
             bld = int(data.get("build") or 0)
+            shown = str(data.get("display") or "")
         except Exception:
             ver = ""
             bld = 0
+            shown = ""
     if not ver:
         ver = version_of_package(dest)
     if not bld:
         bld = build_of_package(dest)
-    return {"root": str(dest), "version": ver, "build": bld}
+    if not shown:
+        shown = display_of_package(dest)
+    return {"root": str(dest), "version": ver, "build": bld, "display": shown}
 
 
 def cleanup_pending(app_dir: Path) -> None:
@@ -866,14 +960,26 @@ def pick_best_update(app_dir: Path, current_version: str, current_build: int = 0
                 ver = info["version"]
                 bld = int(info.get("build") or 0)
                 if ver and is_newer(ver, current_version, bld, current_build):
-                    return {"root": info["root"], "version": ver, "build": bld, "already_staged": True}
+                    return {
+                        "root": info["root"],
+                        "version": ver,
+                        "build": bld,
+                        "display": info.get("display") or "",
+                        "already_staged": True,
+                    }
                 continue
             ver = version_of_package(src)
             if not ver:
                 continue
             bld = build_of_package(src)
             if is_newer(ver, best_ver if best else current_version, bld, best_bld if best else current_build):
-                best = {"root": str(src), "version": ver, "build": bld, "already_staged": False}
+                best = {
+                    "root": str(src),
+                    "version": ver,
+                    "build": bld,
+                    "display": display_of_package(src),
+                    "already_staged": False,
+                }
                 best_ver = ver
                 best_bld = bld
         except Exception:

@@ -310,6 +310,7 @@ class Backend(QObject):
         self._whats_new = []
         self._scan_running = False
         self._app_version = app_update.current_app_version(self.app_dir)
+        self._app_build = app_update.current_app_build(self.app_dir)
         self._init_updates()
 
     def load_databases(self):
@@ -2988,7 +2989,7 @@ class Backend(QObject):
         staged_bld = int((staged or {}).get("build") or 0)
         if staged and staged_ver and app_update.is_newer(staged_ver, self._app_version, staged_bld, self._app_build):
             dismissed = self._dismissed_update_version()
-            label = self._version_label(staged_ver, staged_bld)
+            label = self._version_label(staged.get("display") or staged_ver, staged_bld)
             if label != dismissed:
                 self._update_source = staged["root"]
                 self._set_update_ready(True, label)
@@ -3014,7 +3015,10 @@ class Backend(QObject):
         if not found:
             return
         dismissed = self._dismissed_update_version()
-        label = self._version_label(found.get("version") or "", int(found.get("build") or 0))
+        label = self._version_label(
+            found.get("display") or found.get("version") or "",
+            int(found.get("build") or 0),
+        )
         if label and label == dismissed:
             return
         if found.get("already_staged"):
@@ -3038,14 +3042,20 @@ class Backend(QObject):
             return
 
         ver = info.get("version") or ""
+        bld = int(info.get("build") or 0)
+        shown = info.get("display") or ver
         if not ver:
             self.showToast.emit("В архиве нет номера версии — так обновляться нельзя", "error")
             return
-        if not app_update.is_newer(ver, self._app_version):
-            if ver == self._app_version:
-                self.showToast.emit(f"Это та же версия ({ver})", "error")
+        if not app_update.is_newer(ver, self._app_version, bld, int(self._app_build or 0)):
+            cand = self._version_label(shown, bld)
+            here = self._version_label()
+            if bld and bld == int(self._app_build or 0):
+                self.showToast.emit(f"Это та же сборка ({cand})", "error")
+            elif ver == self._app_version and not bld:
+                self.showToast.emit(f"Это та же версия ({cand})", "error")
             else:
-                self.showToast.emit(f"Откат запрещён: {ver} старше текущей {self._app_version}", "error")
+                self.showToast.emit(f"Откат запрещён: {cand} старше текущей {here}", "error")
             return
 
         self._set_update_busy(True, "Готовим обновление…")
@@ -3062,7 +3072,7 @@ class Backend(QObject):
         staged = app_update.staged_info(self.app_dir)
         self._update_source = staged["root"] if staged else ""
         label = self._version_label(
-            version or (staged or {}).get("version") or "",
+            (staged or {}).get("display") or version or (staged or {}).get("version") or "",
             int((staged or {}).get("build") or 0),
         )
         self._set_update_ready(True, label)
