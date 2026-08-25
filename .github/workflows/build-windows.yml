@@ -51,13 +51,8 @@ jobs:
       - name: Сгенерировать иконку .ico
         run: python tools/make_icon.py
 
-      - name: Сборка PyInstaller
-        run: >
-          pyinstaller --noconfirm --clean --windowed
-          --name OVERTIMETAB
-          --icon app_icon.ico
-          --collect-all PySide6
-          Main.py
+      - name: Сборка PyInstaller (только нужные куски Qt)
+        run: pyinstaller --noconfirm --clean tools/overtimetab.spec
 
       - name: Собрать ZIP
         shell: pwsh
