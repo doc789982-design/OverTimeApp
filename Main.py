@@ -2951,16 +2951,9 @@ class Backend(QObject):
                 dest_root,
                 os.getpid(),
             )
-            # Крестик у нас сворачивает в трей, а quitOnLastWindowClosed=False.
-            # Помощник ждёт именно смерти PID — выходим жёстко, базу уже закрыли.
-            app = QApplication.instance()
-            if app:
-                for w in app.topLevelWidgets():
-                    try:
-                        w.hide()
-                    except Exception:
-                        pass
-            QTimer.singleShot(400, lambda: os._exit(0))
+            # Помощник ждёт смерти PID. Не прячемся в трей и не ждём таймер —
+            # иначе старый процесс живёт, а консоль обновления крутится вечно.
+            os._exit(0)
         except Exception as e:
             self.showToast.emit(f"Не удалось запустить обновление: {e}", "error")
 

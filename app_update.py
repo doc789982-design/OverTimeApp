@@ -488,80 +488,121 @@ def pick_best_update(app_dir: Path, current_version: str) -> Optional[dict]:
 
 
 # ---------------------------------------------------------------------------
-# Переодевание: bat в TEMP, потому что Windows не даст перезаписать свой exe
+# Переодевание: скрытый VBS в TEMP.
+# bat + tasklist|findstr открывал чёрное окно и зацикливался:
+# у канала cmd errorlevel берётся от tasklist (всегда 0), а не от findstr.
 # ---------------------------------------------------------------------------
 
-_BAT_TEMPLATE = r"""@echo off
-setlocal EnableExtensions
-set "SRC=%~1"
-set "DST=%~2"
-set "PID=%~3"
-set "EXE=%DST%\OVERTIMETAB.exe"
-set "LOG=%TEMP%\overtimetab_update.log"
+_VBS_TEMPLATE = r"""Option Explicit
+Dim src, dst, pid, exe, sh, fso, logFile, t0, rc
+src = WScript.Arguments(0)
+dst = WScript.Arguments(1)
+pid = WScript.Arguments(2)
+exe = dst & "\OVERTIMETAB.exe"
 
-echo start %DATE% %TIME% > "%LOG%"
-echo src=%SRC%>> "%LOG%"
-echo dst=%DST%>> "%LOG%"
-echo pid=%PID%>> "%LOG%"
+Set sh = CreateObject("WScript.Shell")
+Set fso = CreateObject("Scripting.FileSystemObject")
+logFile = sh.ExpandEnvironmentStrings("%TEMP%") & "\overtimetab_update.log"
+WriteLog "start src=" & src & " dst=" & dst & " pid=" & pid
 
-:wait
-tasklist /FI "PID eq %PID%" 2>nul | findstr /I /C:"%PID%" >nul
-if not errorlevel 1 (
-  ping -n 2 127.0.0.1 >nul
-  goto wait
-)
+t0 = Timer
+Do While PidAlive(pid)
+  If (Timer - t0) > 45 Then
+    WriteLog "wait timeout"
+    Exit Do
+  End If
+  WScript.Sleep 400
+Loop
+WScript.Sleep 800
 
-ping -n 2 127.0.0.1 >nul
+If Not fso.FileExists(src & "\OVERTIMETAB.exe") Then
+  WriteLog "missing source exe"
+  WScript.Quit 1
+End If
 
-if not exist "%SRC%\OVERTIMETAB.exe" (
-  echo missing source exe>> "%LOG%"
-  exit /b 1
-)
+rc = sh.Run("robocopy """ & src & """ """ & dst & """ /E /XD data pending_update /XF *.sqlite *.sqlite-wal *.sqlite-shm /NFL /NDL /NJH /NJS /NC /NS /NP /R:3 /W:1", 0, True)
+WriteLog "robocopy=" & rc
 
-robocopy "%SRC%" "%DST%" /E /XD data pending_update /XF *.sqlite *.sqlite-wal *.sqlite-shm /NFL /NDL /NJH /NJS /nc /ns /np /R:3 /W:1
-set RC=%ERRORLEVEL%
-echo robocopy=%RC%>> "%LOG%"
+If rc >= 8 Then
+  WriteLog "robocopy failed"
+  If fso.FileExists(exe) Then sh.Run """" & exe & """", 1, False
+  WScript.Quit 1
+End If
 
-if %RC% GEQ 8 (
-  echo robocopy failed>> "%LOG%"
-  if exist "%EXE%" start "" "%EXE%"
-  exit /b 1
-)
+If fso.FileExists(exe) Then
+  sh.Run """" & exe & """", 1, False
+  WriteLog "restarted"
+End If
 
-if exist "%EXE%" (
-  start "" "%EXE%"
-  echo restarted>> "%LOG%"
-)
+On Error Resume Next
+If fso.FolderExists(src) Then fso.DeleteFolder src, True
+fso.DeleteFile WScript.ScriptFullName, True
+On Error GoTo 0
+WScript.Quit 0
 
-rmdir /s /q "%SRC%" 2>nul
-del "%~f0" >nul 2>&1
+Function PidAlive(p)
+  Dim wmi, procs
+  On Error Resume Next
+  PidAlive = False
+  If p = "" Or p = "0" Then Exit Function
+  Set wmi = GetObject("winmgmts:\\.\root\cimv2")
+  If Err.Number <> 0 Then
+    Err.Clear
+    Exit Function
+  End If
+  Set procs = wmi.ExecQuery("SELECT ProcessId FROM Win32_Process WHERE ProcessId=" & CLng(p))
+  If Err.Number <> 0 Then
+    Err.Clear
+    Exit Function
+  End If
+  If procs.Count > 0 Then PidAlive = True
+End Function
+
+Sub WriteLog(msg)
+  Dim ts
+  On Error Resume Next
+  Set ts = fso.OpenTextFile(logFile, 8, True)
+  ts.WriteLine Now & " " & msg
+  ts.Close
+End Sub
 """
 
 
 def launch_file_swap(source: Path, dest: Path, pid: int) -> Path:
-    """Пишет .bat в TEMP и запускает его отвязанным процессом."""
+    """Пишет скрытый .vbs в TEMP и запускает его без консоли."""
     source = Path(source).resolve()
     dest = Path(dest).resolve()
     if not _exe_in(source):
         raise UpdateError("Подготовленное обновление повреждено")
+    if os.name != "nt":
+        raise UpdateError("Переодевание файлов рассчитано на Windows")
 
-    bat_path = Path(tempfile.gettempdir()) / f"ot_update_{os.getpid()}.bat"
-    bat_path.write_text(_BAT_TEMPLATE, encoding="ascii", errors="replace")
+    vbs_path = Path(tempfile.gettempdir()) / f"ot_update_{os.getpid()}.vbs"
+    vbs_path.write_text(_VBS_TEMPLATE, encoding="ascii", errors="replace")
 
-    creation = 0
-    if os.name == "nt":
-        creation = 0x00000008 | 0x08000000  # DETACHED_PROCESS | CREATE_NO_WINDOW
+    windir = Path(os.environ.get("SystemRoot", r"C:\Windows"))
+    wscript = windir / "System32" / "wscript.exe"
+    if not wscript.exists():
+        wscript = Path("wscript.exe")
+
+    creation = 0x08000000  # CREATE_NO_WINDOW, без DETACHED_PROCESS
+    startup = None
+    if hasattr(subprocess, "STARTUPINFO"):
+        startup = subprocess.STARTUPINFO()
+        startup.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        startup.wShowWindow = 0
 
     subprocess.Popen(
-        ["cmd.exe", "/c", str(bat_path), str(source), str(dest), str(pid)],
+        [str(wscript), "//B", "//Nologo", str(vbs_path), str(source), str(dest), str(pid)],
         cwd=str(Path(tempfile.gettempdir())),
         close_fds=True,
         creationflags=creation,
+        startupinfo=startup,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
-    return bat_path
+    return vbs_path
 
 
 def apply_update_inplace(source: Path, dest: Path, wait_pid: int | None = None) -> None:
