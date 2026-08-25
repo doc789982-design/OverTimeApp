@@ -35,6 +35,26 @@ ApplicationWindow {
         confirmDialog.open()
     }
 
+    // Сворачивание в трей: прячем окно и ОДИН раз объясняем, куда оно делось.
+    // (Как в Telegram: «Приложение продолжит работу в фоне»)
+    function minimizeToTray() {
+        mainWindow.hide()
+        if (!backend.trayHintWasShown()) {
+            systemAlert.showCustom(
+                "OVERTIMETAB продолжит работать в фоне. Развернуть — клик по иконке возле часов.",
+                "Развернуть"
+            )
+            backend.setTrayHintShown()
+        }
+    }
+
+    // Alt+F4 и системное закрытие окна тоже сворачивают в трей, а не убивают программу.
+    // Полный выход — через иконку в трее: «Закрыть полностью».
+    onClosing: (close) => {
+        close.accepted = false
+        minimizeToTray()
+    }
+
     Connections {
         target: backend
         function onDatabaseOpened() { 
@@ -200,7 +220,7 @@ ApplicationWindow {
                             id: closeHov
                             anchors.fill: parent
                             hoverEnabled: true
-                            onClicked: mainWindow.hide()
+                            onClicked: minimizeToTray()
                         }
                     }
                 }
@@ -723,17 +743,21 @@ FileDialog {
         } 
     }
 
-    AppUI.AppDesktopNotification { id: systemAlert }
+    AppUI.AppDesktopNotification {
+        id: systemAlert
+        // Кнопка «Развернуть» в подсказке про трей возвращает окно
+        onActionTriggered: { mainWindow.show(); mainWindow.requestActivate() }
+    }
 
     Timer {
         id: notificationTimer
         interval: 10800000; running: true; repeat: true
-        onTriggered: checkAndNotify()
+        onTriggered: { if (backend.reminderEnabled) checkAndNotify() }
     }
     Timer {
         id: startupNotificationTimer
         interval: 5000; running: true; repeat: false
-        onTriggered: checkAndNotify()
+        onTriggered: { if (backend.reminderEnabled) checkAndNotify() }
     }
 
     function checkAndNotify() {

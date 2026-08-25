@@ -72,7 +72,8 @@ AppLargeModal {
                         { title: "Внешний вид",          icon: "../icons/layout.svg",    desc: "Тема и элементы" },
                         { title: "Горячие клавиши",      icon: "../icons/command.svg",   desc: "Сочетания клавиш" },
                         { title: "Управление базами",    icon: "../icons/database.svg",  desc: "Подключение и экспорт" },
-                        { title: "Данные подразделения", icon: "../icons/briefcase.svg", desc: "Реквизиты отдела" }
+                        { title: "Данные подразделения", icon: "../icons/briefcase.svg", desc: "Реквизиты отдела" },
+                        { title: "Уведомления",          icon: "../icons/bell.svg",      desc: "Напоминания программы" }
                     ]
 
                     delegate: Item {
@@ -159,9 +160,6 @@ AppLargeModal {
             }
         }
 
-        // ==========================================
-        // ПРАВАЯ ЧАСТЬ — КОНТЕНТ
-        // ==========================================
         StackLayout {
             id: settingsStack
             width: parent.width - settingsMenuPanel.width
@@ -662,6 +660,35 @@ AppLargeModal {
                             )
                         }
                     }
+                }
+            }
+
+            // ── 5. Уведомления ────────────────────────
+            SettingsPage {
+                title: "Уведомления"
+                description: "Настройте, как программа напоминает о важных делах."
+
+                Text {
+                    width: parent.width
+                    text: "Напоминание о сдаче табеля"
+                    color: AppTheme.textPrimary
+                    font.family: AppTheme.fontFamily
+                    font.pixelSize: AppTheme.sizeBodyLarge
+                    font.weight: AppTheme.weightBold
+                }
+                Text {
+                    width: parent.width
+                    text: "С 28-го числа текущего месяца по 5-е число следующего программа напоминает подготовить табель, ознакомить с ним сотрудников и сдать его в кадровое подразделение. Напоминание появляется не чаще одного раза в 3 часа."
+                    color: AppTheme.textSecondary
+                    font.family: AppTheme.fontFamily
+                    font.pixelSize: AppTheme.sizeBody
+                    wrapMode: Text.WordWrap
+                }
+
+                AppSwitch {
+                    text: "Напоминать о сдаче табеля"
+                    checked: backend.reminderEnabled
+                    onCheckedChanged: backend.setReminderEnabled(checked)
                 }
             }
         }
