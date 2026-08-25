@@ -48,7 +48,10 @@ def changelog_section(version: str) -> str:
         if lines[j].startswith("## "):
             end = j
             break
-    body = "\n".join(lines[start:end]).strip()
+    chunk = lines[start:end]
+    while chunk and chunk[-1].strip() in ("", "---"):
+        chunk.pop()
+    body = "\n".join(chunk).strip()
     return body + "\n"
 
 
