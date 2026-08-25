@@ -68,7 +68,12 @@ EXCLUDES = list(UNUSED_STDLIB) + list(UNUSED_PYSIDE_MODULES)
 
 
 _version_json = ROOT / "version.json"
-_datas = [(str(_version_json), ".")] if _version_json.exists() else []
+_changelog = ROOT / "CHANGELOG.md"
+_datas = []
+if _version_json.exists():
+    _datas.append((str(_version_json), "."))
+if _changelog.exists():
+    _datas.append((str(_changelog), "."))
 
 a = Analysis(
     [str(ROOT / "Main.py")],

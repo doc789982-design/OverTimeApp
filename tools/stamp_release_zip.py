@@ -92,6 +92,16 @@ def run_gh(args: list[str], check: bool = True) -> subprocess.CompletedProcess:
 
 
 def main() -> int:
+    if len(sys.argv) >= 3 and sys.argv[1] == "--local":
+        zip_path = Path(sys.argv[2])
+        if not zip_path.is_file():
+            sys.exit(f"Нет файла {zip_path}")
+        added = stamp_zip(zip_path, read_version())
+        if added:
+            print("дописали:", ", ".join(added))
+        else:
+            print("version.json уже был в архиве")
+        return 0
     tag = sys.argv[1] if len(sys.argv) > 1 else f"v{read_version()}"
     version = read_version()
     print(f"релиз:  {tag}")

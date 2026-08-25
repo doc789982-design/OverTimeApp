@@ -56,6 +56,47 @@ def write_version_json():
     return version
 
 
+def plant_version_in_collected_packages(version: str):
+    """
+    Сборка на GitHub идёт через --collect-all PySide6 без --add-data.
+    Уже установленная программа ищет в zip файлы version.json / AppTheme.qml.
+    Кладём их в пакет PySide6 — `--collect-all` копирует каталог как данные.
+    """
+    src = ROOT / "version.json"
+    if not src.exists():
+        return
+    payload = src.read_bytes()
+    changelog = ROOT / "CHANGELOG.md"
+    try:
+        import PySide6
+
+        pkg = Path(PySide6.__file__).resolve().parent
+    except Exception as exc:
+        print(f"PySide6 не найден, version.json в пакет не кладём: {exc}")
+        return
+    targets = [pkg / "version.json"]
+    qml_dir = pkg / "qml"
+    if qml_dir.is_dir():
+        targets.append(qml_dir / "version.json")
+        targets.append(qml_dir / "AppTheme.qml")
+    if changelog.exists():
+        targets.append(pkg / "CHANGELOG.md")
+        if qml_dir.is_dir():
+            targets.append(qml_dir / "CHANGELOG.md")
+    for dest in targets:
+        try:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            if dest.name == "AppTheme.qml":
+                dest.write_text(f'appVersion: "{version}"\n', encoding="utf-8")
+            elif dest.name.lower() == "changelog.md":
+                dest.write_bytes(changelog.read_bytes())
+            else:
+                dest.write_bytes(payload)
+            print(f"положили {dest.name} → {dest}")
+        except Exception as exc:
+            print(f"не смогли положить {dest}: {exc}")
+
+
 def collect_files():
     files = []
     for name in ROOT_FILES:
@@ -79,7 +120,8 @@ def collect_files():
     return files
 
 def main():
-    write_version_json()
+    version = write_version_json()
+    plant_version_in_collected_packages(version)
     files = collect_files()
     if not files:
         print("ОШИБКА: не найдено ни одного файла ресурсов")
