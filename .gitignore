@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+
+# артефакты сборки
+resources.qrc
+resources_rc.py
+app_icon.ico
+dist/
+build/
+*.spec

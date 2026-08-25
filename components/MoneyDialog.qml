@@ -1,7 +1,3 @@
-// ========================================
-// НАЧАЛО ФАЙЛА: MoneyDialog.qml
-// ========================================
-
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts

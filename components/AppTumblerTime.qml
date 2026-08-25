@@ -1,7 +1,3 @@
-// ========================================
-// НАЧАЛО ФАЙЛА: AppTumblerTime.qml
-// ========================================
-
 import QtQuick
 import QtQuick.Controls
 

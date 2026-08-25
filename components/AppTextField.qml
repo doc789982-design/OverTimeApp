@@ -6,9 +6,17 @@ TextField {
     id: root
 
     property string label: ""
-    property bool isRequired: false 
+    property bool isRequired: false
     property color cutoutColor: AppTheme.bgModal
+    property bool numericOnly: false   // true = поле принимает только цифры
     property bool isFloated: root.text.length > 0 || root.activeFocus
+
+    // Защита числовых полей: буквы физически невозможно ввести
+    validator: root.numericOnly ? digitsOnly : null
+    RegularExpressionValidator {
+        id: digitsOnly
+        regularExpression: /^[0-9]{0,5}$/
+    }
 
     implicitHeight: 44 
     Layout.fillWidth: true

@@ -117,6 +117,7 @@ AppDialog {
 
             AppTextField {
                 id: empOpenHours
+                numericOnly: true
                 width: (parent.width - AppTheme.spaceS * 2) / 3
                 label: "Ночные (ч)"
                 text: "0"
@@ -124,6 +125,7 @@ AppDialog {
             }
             AppTextField {
                 id: empPrevOpenHours
+                numericOnly: true
                 width: (parent.width - AppTheme.spaceS * 2) / 3
                 label: "Ночные (ч)"
                 text: "0"
@@ -132,6 +134,7 @@ AppDialog {
 
             AppTextField {
                 id: empOpenOvertime
+                numericOnly: true
                 width: (parent.width - AppTheme.spaceS * 2) / 3
                 label: "Сверх нормы (ч)"
                 text: "0"
@@ -139,6 +142,7 @@ AppDialog {
             }
             AppTextField {
                 id: empPrevOpenOvertime
+                numericOnly: true
                 width: (parent.width - AppTheme.spaceS * 2) / 3
                 label: "Сверх нормы (ч)"
                 text: "0"
@@ -147,6 +151,7 @@ AppDialog {
 
             AppTextField {
                 id: empOpenDays
+                numericOnly: true
                 width: (parent.width - AppTheme.spaceS * 2) / 3
                 label: "Дни"
                 text: "0"
@@ -154,6 +159,7 @@ AppDialog {
             }
             AppTextField {
                 id: empPrevOpenDays
+                numericOnly: true
                 width: (parent.width - AppTheme.spaceS * 2) / 3
                 label: "Дни"
                 text: "0"

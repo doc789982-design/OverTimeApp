@@ -202,6 +202,7 @@ class Backend(QObject):
     isDarkThemeChanged = Signal()    
     itemDeleted = Signal(str, str)
     startHiddenChanged = Signal()
+    reminderEnabledChanged = Signal()
 
     def __init__(self, start_hidden=False):
         super().__init__()
@@ -227,6 +228,8 @@ class Backend(QObject):
         self.loadPrinters()          # <--- Добавили  
         self._year_summary = {}
         self._is_dark_theme = True
+        self._reminder_enabled = True    # Напоминание "сдать табель" (28-е — 5-е число)
+        self._tray_hint_shown = False    # Показывали ли подсказку про работу в фоне
         # Делаем программу портативной: папка data прямо внутри папки с программой
         self.app_dir = Path(__file__).parent
         self.config_path = self.app_dir / "data" / "config.json"
@@ -283,6 +286,8 @@ class Backend(QObject):
                 ui_cfg = data.get("ui", {})
                 self._time_input_mode = ui_cfg.get("time_input_mode", "slider")
                 self._is_dark_theme = ui_cfg.get("theme", "dark") == "dark"
+                self._reminder_enabled = ui_cfg.get("reminder_enabled", True)
+                self._tray_hint_shown = ui_cfg.get("tray_hint_shown", False)
                 
             except Exception as e: 
                 print(f"Ошибка чтения конфига: {e}")
@@ -480,27 +485,114 @@ class Backend(QObject):
             
         self.isDarkThemeChanged.emit()
 
+    def _write_ui_config(self, key, value):
+        """Аккуратно дописывает одну настройку в секцию ui конфига (не трогая остальное)"""
+        try:
+            data = {"db_paths": [], "last_db_path": None, "ui": {}}
+            if self.config_path.exists():
+                data = json.loads(self.config_path.read_text(encoding="utf-8"))
+            ui_cfg = data.get("ui", {})
+            ui_cfg[key] = value
+            data["ui"] = ui_cfg
+            self.config_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        except Exception as e:
+            print(f"Ошибка сохранения настройки '{key}': {e}")
+
+    # ── Напоминание о сдаче табеля (вкл/выкл из настроек) ──────────────
+    @Property(bool, notify=reminderEnabledChanged)
+    def reminderEnabled(self):
+        return self._reminder_enabled
+
+    @Slot(bool)
+    def setReminderEnabled(self, enabled):
+        if self._reminder_enabled == bool(enabled): return
+        self._reminder_enabled = bool(enabled)
+        self._write_ui_config("reminder_enabled", self._reminder_enabled)
+        self.reminderEnabledChanged.emit()
+        self.showToast.emit(
+            "Напоминания включены" if self._reminder_enabled else "Напоминания выключены",
+            "success"
+        )
+
+    # ── Подсказка "программа работает в фоне" (показываем один раз) ────
+    @Slot(result=bool)
+    def trayHintWasShown(self):
+        return self._tray_hint_shown
+
+    @Slot()
+    def setTrayHintShown(self):
+        if self._tray_hint_shown: return
+        self._tray_hint_shown = True
+        self._write_ui_config("tray_hint_shown", True)
+
+    def _validate_db_file(self, path: str):
+        """Проверяет, что файл — настоящая база OverTimeTab (или пустой файл под новую базу).
+        Возвращает кортеж (ok, текст_ошибки). Нужна, чтобы не подсунуть программе
+        случайный файл (фото, документ, чужую базу) и не сломать её."""
+        try:
+            p = Path(path)
+        except Exception:
+            return False, "некорректный путь"
+
+        if not p.exists():
+            return False, "файл не найден"
+        if p.is_dir():
+            return False, "выбрана папка, а не файл"
+
+        # Совсем пустой файл — разрешаем: из него создастся новая база
+        if p.stat().st_size == 0:
+            return True, ""
+
+        import sqlite3 as _sq
+        try:
+            uri = p.resolve().as_uri() + "?mode=ro"
+            con = _sq.connect(uri, uri=True)
+            tables = [r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
+            con.close()
+        except Exception:
+            return False, "это не файл базы данных SQLite"
+
+        our_tables = {"employee", "duty", "employee_group", "calendar_day", "department_settings"}
+        if tables and not our_tables.intersection(tables):
+            return False, "это база данных другого приложения, а не табель"
+        return True, ""
+
     @Slot(str)
     def attachDatabase(self, file_url):
         if not file_url:
             return
-            
+
         # QML отдает путь в виде 'file:///C:/...', переводим в нормальный вид
         path = QUrl(file_url).toLocalFile() if file_url.startswith("file://") else file_url
-        
-        # Если такого файла нет, ругаемся
-        if not Path(path).exists():
-            self.showToast.emit("Файл базы данных не найден", "error")
+
+        ok, err = self._validate_db_file(path)
+        if not ok:
+            self.showToast.emit(f"Не удалось подключить: {err}", "error")
             return
-            
+
         self.add_to_config(path)
         self.load_databases()
         self.showToast.emit("База успешно подключена", "success")
 
     @Slot(str)
     def openDatabase(self, path):
-        if self.active_db: self.active_db.close()
-        self.active_db = DB(path)
+        # Сначала убеждаемся, что файл на месте и он действительно наша база.
+        # Если нет — честно ругаемся и ОСТАЕМСЯ на старой базе, а не ломаемся посередине.
+        ok, err = self._validate_db_file(path)
+        if not ok:
+            self.showToast.emit(f"Не удалось открыть базу: {err}", "error")
+            return
+
+        try:
+            new_db = DB(path)
+        except Exception as e:
+            self.showToast.emit(f"Не удалось открыть базу: {e}", "error")
+            return
+
+        if self.active_db:
+            try: self.active_db.close()
+            except Exception: pass
+        self.active_db = new_db
         self._active_department_name = self.active_db.get_department_name()
         self.activeDepartmentNameChanged.emit()        
         self.add_to_config(path)
@@ -827,9 +919,11 @@ class Backend(QObject):
             self.refresh_yearly_panorama()
             self.refresh_pulse()            
             self.loadDayDetails(current_day_str)
+            self.showToast.emit("Дежурство удалено. Отменить: Ctrl+Z", "success")
             
         except Exception as e:
             self.active_db.conn.execute("ROLLBACK;")
+            self.showToast.emit(f"Не удалось удалить дежурство: {e}", "error")
 
     @Slot(int, str)
     def deleteCompensation(self, comp_id, current_day_str):
@@ -856,14 +950,16 @@ class Backend(QObject):
                 self.active_db.delete_compensation(comp_id)
 
             self.active_db.conn.execute("COMMIT;")
-            
+
             self.refresh_calendar()
             self.refresh_yearly_panorama()
             self.refresh_pulse()            
             self.loadDayDetails(current_day_str)
-            
+            self.showToast.emit("Компенсация удалена. Отменить: Ctrl+Z", "success")
+
         except Exception as e:
             self.active_db.conn.execute("ROLLBACK;")
+            self.showToast.emit(f"Не удалось удалить компенсацию: {e}", "error")
 
     @Slot(str)
     def clearDayDuties(self, date_str):
@@ -891,7 +987,7 @@ class Backend(QObject):
             self.refresh_calendar()
             self.refresh_yearly_panorama()
             self.refresh_pulse()            
-            self.showToast.emit(f"Дежурства удалены", "success")
+            self.showToast.emit(f"Дежурства удалены. Отменить: Ctrl+Z", "success")
             # ...
         except Exception as e:
             self.active_db.conn.execute("ROLLBACK;")
@@ -939,7 +1035,7 @@ class Backend(QObject):
             self.refresh_calendar()
             self.refresh_yearly_panorama()
             self.refresh_pulse()            
-            self.showToast.emit(f"Компенсации удалены", "success")
+            self.showToast.emit(f"Компенсации удалены. Отменить: Ctrl+Z", "success")
         except Exception as e:
             self.active_db.conn.execute("ROLLBACK;")
             self.showToast.emit(f"Ошибка удаления: {e}", "error")
@@ -1498,24 +1594,23 @@ class Backend(QObject):
             return
 
         try:
-            # МАГИЯ: Открываем блок with. 
+            # МАГИЯ: Открываем блок with.
             # Нам больше не нужно писать COMMIT и ROLLBACK вручную!
             with self.active_db.transaction():
                 self.active_db.delete_employee(emp_id)
-            
-            print(f"ПИТОН: Сотрудник {emp_id} удален!")
-            
+
             # Если мы удалили того сотрудника, который сейчас был выбран - сбрасываем выбор
             if self._selected_employee_id == emp_id:
                 self._selected_employee_id = 0
                 self.selectedEmployeeChanged.emit()
                 self.refresh_calendar()
-                
+
             self.refresh_employees()
-            
+            self.showToast.emit("Сотрудник удалён. Отменить: Ctrl+Z", "success")
+
         except Exception as e:
-            # Ошибка БД автоматически отменит изменения, нам остается только вывести текст
-            print(f"ОШИБКА удаления сотрудника: {e}")
+            # Ошибка БД автоматически отменит изменения — говорим об этом открыто
+            self.showToast.emit(f"Не удалось удалить сотрудника: {e}", "error")
 
     @Slot(int, str, str)
     def setEmployeeEndDate(self, emp_id, end_date_str, reason):
@@ -1747,7 +1842,13 @@ class Backend(QObject):
         """Создает копию выбранной базы в нашей системной папке и подключает её"""
         if not file_url: return
         path = QUrl(file_url).toLocalFile() if file_url.startswith("file://") else file_url
-        
+
+        # Проверяем файл ДО копирования: не всякий выбранный файл — наша база
+        ok, err = self._validate_db_file(path)
+        if not ok:
+            self.showToast.emit(f"Не удалось импортировать: {err}", "error")
+            return
+
         try:
             db_dir = self._get_db_dir()
             db_dir.mkdir(parents=True, exist_ok=True)
@@ -1781,14 +1882,22 @@ class Backend(QObject):
             temp_db = DB(current_db_path)
             dept_name = temp_db.get_department_name()
             temp_db.close()
-            
+
             safe_name = "".join(c for c in dept_name if c.isalnum() or c in " _-").strip() or "Database"
             export_path = Path(target_folder) / f"{safe_name}.sqlite"
-            
+
+            # ЗАЩИТА ОТ ПЕРЕЗАПИСИ: если файл с таким именем уже есть в папке,
+            # подбираем свободное имя ("База_2.sqlite", "База_3.sqlite"...),
+            # а не затираем чужую копию молча.
+            i = 2
+            while export_path.exists():
+                export_path = Path(target_folder) / f"{safe_name}_{i}.sqlite"
+                i += 1
+
             import shutil
             shutil.copy2(current_db_path, str(export_path))
-            
-            self.showToast.emit(f"Копия базы сохранена в {export_path.parent.name}", "success")
+
+            self.showToast.emit(f"Копия базы сохранена: {export_path.name}", "success")
         except Exception as e:
             self.showToast.emit(f"Ошибка экспорта: {e}", "error")
 
@@ -1927,10 +2036,22 @@ class Backend(QObject):
                 self.current_group_id = None
             self.refresh_groups()
             self.refresh_employees()
-            self.showToast.emit("Группа удалена", "success")
+            self.showToast.emit("Группа удалена. Отменить: Ctrl+Z", "success")
         except Exception as e:
             self.active_db.conn.execute("ROLLBACK;")
             self.showToast.emit(f"Ошибка: {e}", "error")
+
+    @Slot(int, result=int)
+    def getGroupEmployeeCount(self, group_id):
+        """Сколько сотрудников сейчас в группе (для предупреждения при удалении группы)"""
+        if not self.active_db: return 0
+        try:
+            row = self.active_db.conn.execute(
+                "SELECT COUNT(*) FROM employee WHERE group_id=?", (group_id,)
+            ).fetchone()
+            return int(row[0]) if row else 0
+        except Exception:
+            return 0
 
     @Slot(int, int)
     def moveEmployeeToGroup(self, emp_id, group_id):
@@ -2667,7 +2788,7 @@ def main():
     app.setWindowIcon(app_icon)
 
     tray_icon = QSystemTrayIcon(app_icon, app)
-    tray_icon.setToolTip("OVERTIMETAB (Служба табеля)")
+    tray_icon.setToolTip("OVERTIMETAB — табель учёта переработок")
     
     tray_menu = QMenu()
     open_action = QAction("Развернуть", app)
@@ -2704,7 +2825,8 @@ def main():
     exit_action.triggered.connect(app.quit) 
     
     def tray_activated(reason):
-        if reason == QSystemTrayIcon.DoubleClick:
+        # Одинарный клик тоже разворачивает окно — как в Telegram и Discord
+        if reason in (QSystemTrayIcon.Trigger, QSystemTrayIcon.DoubleClick, QSystemTrayIcon.MiddleClick):
             show_window()
             
     tray_icon.activated.connect(tray_activated)

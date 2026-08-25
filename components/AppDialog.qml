@@ -30,7 +30,10 @@ Popup {
     modal: false 
     dim: false  
     focus: true
-    closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+    // Закрываем только по Esc / крестику / «Отмена».
+    // Клик мимо окна НЕ закрывает форму: случайный щелчок больше не сжигает
+    // введённые дежурства, перерывы и балансы (стандарт Apple/Google для форм).
+    closePolicy: Popup.CloseOnEscape
 
     // Анимации появления
     enter: Transition {

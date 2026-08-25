@@ -169,7 +169,18 @@ Rectangle {
                             text: "Удалить группу"
                             isDanger: true 
                             iconSource: "../icons/trash.svg"
-                            onClicked: backend.deleteGroup(modelData.id)
+                            onClicked: {
+                                let empCount = backend.getGroupEmployeeCount(modelData.id)
+                                let msg = empCount === 0
+                                    ? "Группа «" + modelData.name + "» пуста — можно удалять.\nЕсли передумаете — нажмите Ctrl+Z."
+                                    : "В группе «" + modelData.name + "» сейчас " + empCount + " чел.\nПосле удаления они останутся в списке «Без группы»."
+                                mainWindow.askConfirm(
+                                    "Удалить группу?",
+                                    msg,
+                                    "Удалить",
+                                    function() { backend.deleteGroup(modelData.id) }
+                                )
+                            }
                         }
                     }
 

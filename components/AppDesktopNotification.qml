@@ -15,7 +15,10 @@ Window {
     // Высота окна = высота плашки + 32 пикселя на тени (без зацикливания!)
     height: bgRect.height + 32 
 
-    property string message: "Не забудьте сделать табель, ознакомить с ним всех сотрудников и сдать его в кадровое подразделение до 5-го числа месяца."
+    property string message: "Не забудьте сделать табель, ознакомить с ним всех сотрудников и сдать его в кадровое подразделение до 5-го числа месяца. Скрыть до следующего напоминания."
+    property string actionText: ""   // Если задан — показываем кнопку действия
+
+    signal actionTriggered()
 
     Rectangle {
         id: bgRect
@@ -58,6 +61,15 @@ Window {
                 implicitHeight: 32
                 onClicked: closeAnim.start() 
             }
+
+            AppButton {
+                Layout.alignment: Qt.AlignVCenter
+                visible: root.actionText !== ""
+                text: root.actionText
+                variant: "primary"
+                implicitHeight: 32
+                onClicked: { root.actionTriggered(); closeAnim.start() }
+            }
         }
     }
 
@@ -75,6 +87,19 @@ Window {
     }
 
     function showNotification() {
+        // Обычное напоминание: без кнопки действия
+        root.actionText = ""
+        _show()
+    }
+
+    function showCustom(msg, action) {
+        // Уведомление с текстом и (необязательно) кнопкой действия
+        root.message = msg
+        root.actionText = (action && action !== "") ? action : ""
+        _show()
+    }
+
+    function _show() {
         // Надежно получаем ширину монитора
         let screenW = Screen.width
         
@@ -91,7 +116,8 @@ Window {
         closeXAnim.to = startX
         
         root.show()
-        root.requestActivate() 
+        // ВАЖНО: не вызываем requestActivate() — уведомление не должно
+        // красть фокус и перебивать пользователя, пока он работает в другом окне
         openAnim.start()
     }
 }

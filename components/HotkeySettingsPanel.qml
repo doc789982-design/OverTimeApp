@@ -220,7 +220,7 @@ Item {
                             textRole: "text"; valueRole: "value"
                         }
                         AppTextField { 
-                            id: hkCompAmt; Layout.preferredWidth: 150; label: "Количество:"
+                            id: hkCompAmt; numericOnly: true; Layout.preferredWidth: 150; label: "Количество:"
                             text: "8"
                             visible: hkCompUnit.currentValue !== "days" 
                         }

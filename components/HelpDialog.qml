@@ -7,9 +7,54 @@ AppSidePanel {
     width: 550 // Сделали чуть шире для комфортного чтения
     title: "О программе и справка"
 
+    // Человекочитаемое описание действия горячей клавиши.
+    // Если пользователь дал имени название — показываем его, иначе собираем сами.
+    function describeHotkey(hk) {
+        if (hk.name && hk.name !== "") return hk.name
+
+        function getPlural(n, f1, f2, f5) {
+            let n10 = Math.abs(n) % 10, n100 = Math.abs(n) % 100
+            if (n100 >= 11 && n100 <= 14) return f5
+            if (n10 === 1) return f1
+            if (n10 >= 2 && n10 <= 4) return f2
+            return f5
+        }
+
+        if (hk.type === "duty") {
+            let sType = hk.duty_shift ? "(в смене)" : "(вне графика)"
+            let res = "Дежурство " + sType + " с " + hk.duty_start + " до " + hk.duty_end
+            if (hk.duty_breaks && hk.duty_breaks.length > 0) {
+                let b = hk.duty_breaks.map(item => "с " + item.start + " до " + item.end).join(", ")
+                res += " с перерывом " + b
+            }
+            return res
+        }
+        if (hk.type === "comp") {
+            let unit = hk.comp_unit === "days" ? getPlural(hk.comp_amount, "день", "дня", "дней")
+                                               : getPlural(hk.comp_amount, "час", "часа", "часов")
+            return "Компенсация " + hk.comp_amount + " " + unit
+        }
+        if (hk.type === "status") {
+            let sNames = {"Б": "Больничный", "О": "Отпуск", "К": "Командировка"}
+            return sNames[hk.status_val] || hk.status_val
+        }
+        return ""
+    }
+
     Column {
         width: parent.width
         spacing: AppTheme.spaceL
+
+        // Версия программы (единственный источник — AppTheme.appVersion)
+        Text {
+            width: parent.width
+            text: "OVERTIMETAB · версия " + AppTheme.appVersion
+            color: AppTheme.textTertiary
+            font.family: AppTheme.fontFamily
+            font.pixelSize: AppTheme.sizeSmall
+            font.weight: AppTheme.weightMedium
+            horizontalAlignment: Text.AlignHCenter
+        }
 
         // ==========================================
         // БЛОК 1: ЮРИДИЧЕСКАЯ ИНФОРМАЦИЯ
@@ -58,7 +103,7 @@ AppSidePanel {
         Rectangle { width: parent.width; height: 1; color: AppTheme.borderDivider }
 
         // ==========================================
-        // БЛОК 2: КРАТКАЯ СПРАВКА (Старый текст)
+        // БЛОК 2: КРАТКАЯ СПРАВКА
         // ==========================================
         Text { 
             text: "Краткое руководство"
@@ -66,6 +111,15 @@ AppSidePanel {
             font.family: AppTheme.fontFamily
             font.pixelSize: AppTheme.sizeH2
             font.weight: AppTheme.weightBold 
+        }
+
+        Column {
+            width: parent.width; spacing: AppTheme.spaceXS
+            Text { text: "Дежурство"; color: AppTheme.accentBrand; font.family: AppTheme.fontFamily; font.pixelSize: AppTheme.sizeBodyLarge; font.weight: AppTheme.weightBold }
+            Text { 
+                text: "Двойной клик по дню в календаре — быстрое добавление дежурства. Правый клик по дню открывает меню: статусы, компенсации, «Открыть день» и тип дня (рабочий / выходной / праздничный)."
+                color: AppTheme.textSecondary; font.family: AppTheme.fontFamily; font.pixelSize: AppTheme.sizeBody; width: parent.width; wrapMode: Text.WordWrap 
+            }
         }
 
         Column {
@@ -92,6 +146,96 @@ AppSidePanel {
             Text { 
                 text: "Нажмите правой кнопкой мыши по ячейке в календаре для выбора статуса."
                 color: AppTheme.textSecondary; font.family: AppTheme.fontFamily; font.pixelSize: AppTheme.sizeBody; width: parent.width; wrapMode: Text.WordWrap 
+            }
+        }
+
+        Column {
+            width: parent.width; spacing: AppTheme.spaceXS
+            Text { text: "Отмена действий"; color: AppTheme.accentTeal; font.family: AppTheme.fontFamily; font.pixelSize: AppTheme.sizeBodyLarge; font.weight: AppTheme.weightBold }
+            Text { 
+                text: "Ctrl+Z — отменить последнее действие, Ctrl+Y — вернуть отменённое. Стек истории — 20 шагов."
+                color: AppTheme.textSecondary; font.family: AppTheme.fontFamily; font.pixelSize: AppTheme.sizeBody; width: parent.width; wrapMode: Text.WordWrap 
+            }
+        }
+
+        Rectangle { width: parent.width; height: 1; color: AppTheme.borderDivider }
+
+        // ==========================================
+        // БЛОК 3: ВАШИ ГОРЯЧИЕ КЛАВИШИ (ЖИВОЙ СПИСОК)
+        // ==========================================
+        Column {
+            width: parent.width; spacing: AppTheme.spaceXS
+            Text { text: "Ваши горячие клавиши"; color: AppTheme.textPrimary; font.family: AppTheme.fontFamily; font.pixelSize: AppTheme.sizeH3; font.weight: AppTheme.weightBold }
+            Text { 
+                text: "Список берётся из ваших настроек. Изменить: «Настройки» → «Горячие клавиши»."
+                color: AppTheme.textSecondary; font.family: AppTheme.fontFamily; font.pixelSize: AppTheme.sizeBody; width: parent.width; wrapMode: Text.WordWrap 
+            }
+        }
+
+        Column {
+            width: parent.width
+            spacing: AppTheme.spaceS
+            visible: backend.hotkeysList.length > 0
+
+            Repeater {
+                model: backend.hotkeysList
+
+                RowLayout {
+                    width: parent.width
+                    spacing: AppTheme.spaceM
+
+                    // Бейдж с клавишей
+                    Rectangle {
+                        Layout.preferredWidth: Math.max(44, hkKeyText.implicitWidth + 16)
+                        Layout.preferredHeight: 26
+                        radius: AppTheme.radiusSmall
+                        color: AppTheme.bgBase
+                        border.color: AppTheme.borderInput
+                        border.width: 1
+
+                        Text {
+                            id: hkKeyText
+                            anchors.centerIn: parent
+                            text: modelData.key
+                            color: AppTheme.accentBrand
+                            font.family: AppTheme.fontFamily
+                            font.pixelSize: AppTheme.sizeSmall
+                            font.weight: AppTheme.weightBold
+                        }
+                    }
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: root.describeHotkey(modelData)
+                        color: AppTheme.textSecondary
+                        font.family: AppTheme.fontFamily
+                        font.pixelSize: AppTheme.sizeBody
+                        wrapMode: Text.WordWrap
+                    }
+                }
+            }
+        }
+
+        // Подсказка, если клавиш ещё нет
+        Rectangle {
+            width: parent.width
+            height: emptyHkText.implicitHeight + AppTheme.spaceM * 2
+            visible: backend.hotkeysList.length === 0
+            radius: AppTheme.radiusMedium
+            color: AppTheme.bgSurface
+            border.color: AppTheme.borderDivider
+            border.width: 1
+
+            Text {
+                id: emptyHkText
+                anchors.centerIn: parent
+                width: parent.width - AppTheme.spaceL * 2
+                text: "Горячие клавиши пока не настроены. Создайте первую в разделе «Настройки» → «Горячие клавиши» — и заполняйте табель одним нажатием."
+                color: AppTheme.textTertiary
+                font.family: AppTheme.fontFamily
+                font.pixelSize: AppTheme.sizeBody
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.WordWrap
             }
         }
     }

@@ -13,13 +13,51 @@ ApplicationWindow {
     visible: !backend.startHidden
     width: 1200  
     height: 800
-    title: "OVERTIMETAB 2.0.0-ALPHA.19"
+    // Посуда не бьётся: меньше этого размера окно не сожмёшь,
+    // интерфейс не превратится в кашу
+    minimumWidth: 940
+    minimumHeight: 620
+    title: "OVERTIMETAB " + AppUI.AppTheme.appVersion
 
     // Прозрачный фон самого окна
     color: AppUI.AppTheme.bgBase
     flags: Qt.Window | Qt.FramelessWindowHint
 
     property Item activeSpotlightCell: null
+
+    // Колбэк для диалога подтверждения (хранится, пока пользователь думает)
+    property var confirmCallback: null
+
+    // ЕДИНАЯ ТОЧКА ВХОДА ДЛЯ ВСЕХ ПОДТВЕРЖДЕНИЙ В ПРОГРАММЕ.
+    // Пример: mainWindow.askConfirm("Удалить?", "Точно?", "Удалить", function() { ... })
+    function askConfirm(titleText, messageText, confirmText, callback, isDanger) {
+        confirmDialog.dialogTitle = titleText
+        confirmDialog.dialogMessage = messageText
+        confirmDialog.confirmLabel = (confirmText && confirmText !== "") ? confirmText : "Подтвердить"
+        confirmDialog.dangerMode = (isDanger === undefined) ? true : isDanger
+        mainWindow.confirmCallback = callback
+        confirmDialog.open()
+    }
+
+    // Сворачивание в трей: прячем окно и ОДИН раз объясняем, куда оно делось.
+    // (Как в Telegram: «Приложение продолжит работу в фоне»)
+    function minimizeToTray() {
+        mainWindow.hide()
+        if (!backend.trayHintWasShown()) {
+            systemAlert.showCustom(
+                "OVERTIMETAB продолжит работать в фоне. Развернуть — клик по иконке возле часов.",
+                "Развернуть"
+            )
+            backend.setTrayHintShown()
+        }
+    }
+
+    // Alt+F4 и системное закрытие окна тоже сворачивают в трей, а не убивают программу.
+    // Полный выход — через иконку в трее: «Закрыть полностью».
+    onClosing: (close) => {
+        close.accepted = false
+        minimizeToTray()
+    }
 
     Connections {
         target: backend
@@ -85,7 +123,7 @@ ApplicationWindow {
                     anchors.left: parent.left
                     anchors.leftMargin: AppUI.AppTheme.spaceM
                     anchors.verticalCenter: parent.verticalCenter
-                    text: "OVERTIMETAB 2.0.0-ALPHA.19"
+                    text: "OVERTIMETAB " + AppUI.AppTheme.appVersion
                     color: AppUI.AppTheme.textTertiary
                     font.family: AppUI.AppTheme.fontFamily
                     font.pixelSize: AppUI.AppTheme.sizeSmall
@@ -108,6 +146,7 @@ ApplicationWindow {
                             anchors.fill: parent
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
+                            onClicked: helpDialog.show()
                         }
                         
                         IconImage {
@@ -124,106 +163,7 @@ ApplicationWindow {
                             anchors.topMargin: AppUI.AppTheme.spaceXXS       
                             dropDown: true             
                             isVisible: helpHov.containsMouse
-    
-                            Text {
-                                width: parent.width
-                                text: "Справка (Горячие клавиши)"
-                                color: AppUI.AppTheme.textPrimary
-                                font.family: AppUI.AppTheme.fontFamily
-                                font.pixelSize: AppUI.AppTheme.sizeBody
-                                font.weight: AppUI.AppTheme.weightBold
-                                horizontalAlignment: Text.AlignHCenter
-                                bottomPadding: AppUI.AppTheme.spaceXS
-                            }
-
-                            Column {
-                                spacing: AppUI.AppTheme.spaceXS
-        
-                                Repeater {
-                                    model: backend.hotkeysList
-            
-                                    Row {
-                                        spacing: AppUI.AppTheme.spaceM
-                
-                                        Rectangle {
-                                            width: Math.max(32, keyText.implicitWidth + 12)
-                                            height: 24
-                                            radius: 4
-                                            color: AppUI.AppTheme.bgBase
-                                            border.color: AppUI.AppTheme.borderInput
-                                            border.width: 1
-                    
-                                            Text {
-                                                id: keyText
-                                                anchors.centerIn: parent
-                                                text: modelData.key
-                                                color: AppUI.AppTheme.accentBrand
-                                                font.family: AppUI.AppTheme.fontFamily
-                                                font.pixelSize: AppUI.AppTheme.sizeSmall
-                                                font.weight: AppUI.AppTheme.weightBold
-                                            }
-                                        }
-
-                                        Text {
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            color: AppUI.AppTheme.textSecondary
-                                            font.family: AppUI.AppTheme.fontFamily
-                                            font.pixelSize: AppUI.AppTheme.sizeSmall
-                    
-                                            text: {
-                                                let hk = modelData
-                                                
-                                                // ═══════════════════════════════════════════════
-                                                // ЕСЛИ ЕСТЬ НАЗВАНИЕ — ПОКАЗЫВАЕМ ЕГО
-                                                // ═══════════════════════════════════════════════
-                                                if (hk.name && hk.name !== "") {
-                                                    return hk.name;
-                                                }
-                                                
-                                                // ═══════════════════════════════════════════════
-                                                // ИНАЧЕ — СТАРЫЙ АЛГОРИТМ ГЕНЕРАЦИИ
-                                                // ═══════════════════════════════════════════════
-                                                function getPlural(n, f1, f2, f5) { 
-                                                    let n10 = Math.abs(n)%10; let n100 = Math.abs(n)%100;
-                                                    if (n100>=11 && n100<=14) return f5;
-                                                    if (n10===1) return f1; if (n10>=2 && n10<=4) return f2;
-                                                    return f5;
-                                                }
-
-                                                if (hk.type === "duty") {
-                                                    let sType = hk.duty_shift ? "(в смене)" : "(вне графика)"
-                                                    let res = "Дежурство " + sType + " с " + hk.duty_start + " до " + hk.duty_end
-                                                    if (hk.duty_breaks && hk.duty_breaks.length > 0) {
-                                                        let b = hk.duty_breaks.map(item => "с " + item.start + " до " + item.end).join(", ")
-                                                        res += " с перерывом " + b
-                                                    }
-                                                    return res
-                                                } 
-                        
-                                                if (hk.type === "comp") {
-                                                    let unit = hk.comp_unit === "days" ? getPlural(hk.comp_amount, "день", "дня", "дней") : getPlural(hk.comp_amount, "час", "часа", "часов")
-                                                    return "Компенсация " + hk.comp_amount + " " + unit
-                                                }
-                        
-                                                if (hk.type === "status") {
-                                                    let sNames = {"Б": "Больничный", "О": "Отпуск", "К": "Командировка"}
-                                                    return sNames[hk.status_val] || hk.status_val
-                                                }
-                                                return ""
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            Text {
-                                visible: backend.hotkeysList.length === 0
-                                text: "Горячие клавиши не настроены"
-                                color: AppUI.AppTheme.textTertiary
-                                font.family: AppUI.AppTheme.fontFamily
-                                font.pixelSize: AppUI.AppTheme.sizeSmall
-                                horizontalAlignment: Text.AlignHCenter
-                            }
+                            text: "Справка и горячие клавиши (F1)"
                         }
                     }
 
@@ -284,7 +224,7 @@ ApplicationWindow {
                             id: closeHov
                             anchors.fill: parent
                             hoverEnabled: true
-                            onClicked: mainWindow.hide()
+                            onClicked: minimizeToTray()
                         }
                     }
                 }
@@ -325,6 +265,36 @@ ApplicationWindow {
                 cursorShape: Qt.SizeVerCursor
                 visible: mainWindow.visibility !== Window.Maximized
                 onPressed: mainWindow.startSystemResize(Qt.BottomEdge)
+            }
+
+            // УГЛЫ: тянуть окно можно и за углы, как в обычных программах
+            MouseArea {
+                z: 201; width: 16; height: 16
+                anchors.top: parent.top; anchors.left: parent.left
+                cursorShape: Qt.SizeFDiagCursor
+                visible: mainWindow.visibility !== Window.Maximized
+                onPressed: mainWindow.startSystemResize(Qt.TopEdge | Qt.LeftEdge)
+            }
+            MouseArea {
+                z: 201; width: 16; height: 16
+                anchors.top: parent.top; anchors.right: parent.right
+                cursorShape: Qt.SizeBDiagCursor
+                visible: mainWindow.visibility !== Window.Maximized
+                onPressed: mainWindow.startSystemResize(Qt.TopEdge | Qt.RightEdge)
+            }
+            MouseArea {
+                z: 201; width: 16; height: 16
+                anchors.bottom: parent.bottom; anchors.left: parent.left
+                cursorShape: Qt.SizeBDiagCursor
+                visible: mainWindow.visibility !== Window.Maximized
+                onPressed: mainWindow.startSystemResize(Qt.BottomEdge | Qt.LeftEdge)
+            }
+            MouseArea {
+                z: 201; width: 16; height: 16
+                anchors.bottom: parent.bottom; anchors.right: parent.right
+                cursorShape: Qt.SizeFDiagCursor
+                visible: mainWindow.visibility !== Window.Maximized
+                onPressed: mainWindow.startSystemResize(Qt.BottomEdge | Qt.RightEdge)
             }
 
             StackView {
@@ -517,17 +487,27 @@ ApplicationWindow {
                             text: "Подключить базу данных"
                             onClicked: fileDialog.open() 
                         }
-                        AppUI.AppButton { 
+                        AppUI.AppButton {
                             width: 330; variant: "secondary"
-                            text: "Изменить путь сохранения"
-                            onClicked: globalFolderDialog.open() 
+                            text: "Перенести базы в другую папку"
+                            onClicked: globalFolderDialog.open()
                         }
                     }
                 }
                 FolderDialog {
                     id: globalFolderDialog
                     title: "Выберите новую папку для баз"
-                    onAccepted: backend.changeDbDirectory(globalFolderDialog.selectedFolder)
+                    property string pendingFolder: ""
+                    onAccepted: {
+                        pendingFolder = globalFolderDialog.selectedFolder
+                        mainWindow.askConfirm(
+                            "Перенести все базы?",
+                            "Файлы всех подразделений будут физически перенесены в выбранную папку. Пара секунд — и готово.",
+                            "Перенести",
+                            function() { backend.changeDbDirectory(globalFolderDialog.pendingFolder) },
+                            false
+                        )
+                    }
                 }
                 FileDialog {
                     id: fileDialog
@@ -561,7 +541,7 @@ ApplicationWindow {
                     Text {
                         id: logoText
                         width: parent.width
-                        text: "OVERTIMETAB 2.0.0-ALPHA.19"
+                        text: "OVERTIMETAB " + AppUI.AppTheme.appVersion
                         color: AppUI.AppTheme.accentBrand
                         font.family: AppUI.AppTheme.fontFamily
                         font.pixelSize: AppUI.AppTheme.sizeH4
@@ -750,6 +730,15 @@ ApplicationWindow {
     AppUI.TransferDialog    { id: transferDialog }
     AppUI.MoneyDialog       { id: moneyDialog }
     AppUI.AppToast          { id: toastPopup }
+    AppUI.AppConfirmDialog  {
+        id: confirmDialog
+        onAccepted: {
+            let cb = mainWindow.confirmCallback
+            mainWindow.confirmCallback = null
+            if (cb) cb()
+        }
+        onRejected: mainWindow.confirmCallback = null
+    }
     AppUI.SettingsDialog    { id: settingsDialog; onRequestFileAttach: fileDialog.open() }
     AppUI.AddGroupDialog    { id: addGroupDialog }
     AppUI.HistoryDialog     { id: historyDialog }
@@ -779,6 +768,7 @@ FileDialog {
     Shortcut { sequence: "Ctrl+Z";       onActivated: backend.undoAction() }
     Shortcut { sequence: "Ctrl+Y";       onActivated: backend.redoAction() }
     Shortcut { sequence: "Ctrl+Shift+Z"; onActivated: backend.redoAction() }
+    Shortcut { sequence: "F1";           onActivated: helpDialog.show() }
 
     AppUI.AppPrintDialog { 
         id: customPrintDialog
@@ -787,17 +777,21 @@ FileDialog {
         } 
     }
 
-    AppUI.AppDesktopNotification { id: systemAlert }
+    AppUI.AppDesktopNotification {
+        id: systemAlert
+        // Кнопка «Развернуть» в подсказке про трей возвращает окно
+        onActionTriggered: { mainWindow.show(); mainWindow.requestActivate() }
+    }
 
     Timer {
         id: notificationTimer
         interval: 10800000; running: true; repeat: true
-        onTriggered: checkAndNotify()
+        onTriggered: { if (backend.reminderEnabled) checkAndNotify() }
     }
     Timer {
         id: startupNotificationTimer
         interval: 5000; running: true; repeat: false
-        onTriggered: checkAndNotify()
+        onTriggered: { if (backend.reminderEnabled) checkAndNotify() }
     }
 
     function checkAndNotify() {

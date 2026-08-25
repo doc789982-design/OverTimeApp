@@ -21,6 +21,14 @@ Item {
     // ==========================================
     // ФУНКЦИИ ДЛЯ ЭФФЕКТА ТАНОСА
     // ==========================================
+    // Красивая дата для сообщений: "2026-08-24" -> "24.08.2026"
+    function fmtRuDate(iso) {
+        if (!iso) return ""
+        let p = iso.split("-")
+        if (p.length !== 3) return iso
+        return p[2] + "." + p[1] + "." + p[0]
+    }
+
     function findDayCell(dateStr) {
         if (calendarStack.currentIndex !== 0) return null
         for (let i = 0; i < calendarGrid.children.length; i++) {
@@ -827,13 +835,20 @@ Item {
                             anchors.fill: parent
                             hoverEnabled: true
                             onClicked: {
-                                mainWindow.explodeAndDelete(
-                                    monthPage.menuDate, "duty", null,
-                                    function() { backend.clearDayDuties(monthPage.menuDate) }
+                                mainWindow.askConfirm(
+                                    "Удалить все дежурства?",
+                                    "Будут удалены все дежурства за " + root.fmtRuDate(monthPage.menuDate) + ".\nЕсли передумаете — нажмите Ctrl+Z.",
+                                    "Удалить",
+                                    function() {
+                                        mainWindow.explodeAndDelete(
+                                            monthPage.menuDate, "duty", null,
+                                            function() { backend.clearDayDuties(monthPage.menuDate) }
+                                        )
+                                    }
                                 )
                                 globalContextMenu.close()
                             }
-                        } 
+                        }
                     } 
                 }
                 
@@ -868,13 +883,20 @@ Item {
                             anchors.fill: parent
                             hoverEnabled: true
                             onClicked: {
-                                mainWindow.explodeAndDelete(
-                                    monthPage.menuDate, "comp", null,
-                                    function() { backend.clearDayCompensations(monthPage.menuDate) }
+                                mainWindow.askConfirm(
+                                    "Удалить все компенсации?",
+                                    "Будут удалены все компенсации за " + root.fmtRuDate(monthPage.menuDate) + ".\nЕсли передумаете — нажмите Ctrl+Z.",
+                                    "Удалить",
+                                    function() {
+                                        mainWindow.explodeAndDelete(
+                                            monthPage.menuDate, "comp", null,
+                                            function() { backend.clearDayCompensations(monthPage.menuDate) }
+                                        )
+                                    }
                                 )
                                 globalContextMenu.close()
                             }
-                        } 
+                        }
                     } 
                 }
                 
