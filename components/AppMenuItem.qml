@@ -4,68 +4,114 @@ import QtQuick.Controls.impl
 
 MenuItem {
     id: control
-    
+
     property bool isDanger: false
     property string customColor: ""
     property string iconSource: ""
+    property bool showDelete: false
 
-    default property alias customContent: extraArea.data
+    signal deleteClicked()
 
-    implicitHeight: visible ? 36 : 0 
-    
-    // Если кнопка заблокирована - она полупрозрачная
-    opacity: control.enabled ? 1.0 : AppTheme.alphaDisabled
+    padding: 0
+    leftPadding: 0
+    rightPadding: 0
+    topPadding: 0
+    bottomPadding: 0
+    implicitHeight: visible ? 36 : 0
+    implicitWidth: visible ? contentItem.implicitWidth : 0
+    opacity: enabled ? 1.0 : AppTheme.alphaDisabled
+    hoverEnabled: true
+
+    indicator: Item { implicitWidth: 0; implicitHeight: 0 }
+    arrow: Item { implicitWidth: 0; implicitHeight: 0 }
+
+    readonly property color _ink: customColor !== "" ? customColor
+                                : (isDanger ? AppTheme.accentDanger : AppTheme.textPrimary)
+    readonly property color _iconInk: customColor !== "" ? customColor
+                                    : (isDanger ? AppTheme.accentDanger : AppTheme.textSecondary)
 
     contentItem: Item {
-        
-        // ИКОНКА (Если есть)
-        IconImage {
-            id: leftIcon
-            visible: control.iconSource !== ""
-            source: control.iconSource
-            width: AppTheme.iconSmall // Строго 12px для меню
-            height: AppTheme.iconSmall
-            
-            color: control.customColor !== "" ? control.customColor : 
-                  (control.isDanger ? AppTheme.accentDanger : AppTheme.textPrimary)
-                  
+        implicitHeight: 36
+        implicitWidth: AppTheme.spaceS + AppTheme.iconMedium + AppTheme.spaceS
+                       + Math.ceil(itemLabel.implicitWidth)
+                       + (control.showDelete ? 36 : AppTheme.spaceS)
+
+        Item {
+            id: iconSlot
+            width: AppTheme.iconMedium
+            height: AppTheme.iconMedium
+            x: AppTheme.spaceS
             anchors.verticalCenter: parent.verticalCenter
-            anchors.left: parent.left
-            anchors.leftMargin: AppTheme.spaceM
+
+            IconImage {
+                anchors.centerIn: parent
+                visible: control.iconSource !== ""
+                source: control.iconSource
+                width: AppTheme.iconMedium
+                height: AppTheme.iconMedium
+                color: control._iconInk
+            }
         }
 
-        // ТЕКСТ
         Text {
+            id: itemLabel
             text: control.text
-            color: control.customColor !== "" ? control.customColor : 
-                  (control.isDanger ? AppTheme.accentDanger : AppTheme.textPrimary)
-                  
+            color: control._ink
             font.family: AppTheme.fontFamily
             font.pixelSize: AppTheme.sizeBody
-            font.weight: control.isDanger ? AppTheme.weightMedium : AppTheme.weightRegular // Опасные действия полужирные
-            
+            font.weight: control.isDanger ? AppTheme.weightMedium : AppTheme.weightRegular
+            elide: Text.ElideRight
+            verticalAlignment: Text.AlignVCenter
             anchors.verticalCenter: parent.verticalCenter
-            // Динамический отступ текста, если есть иконка
-            anchors.left: leftIcon.visible ? leftIcon.right : parent.left
-            anchors.leftMargin: leftIcon.visible ? AppTheme.spaceS : AppTheme.spaceM
-        }
-        
-        // ЭКСТРА КОНТЕНТ (Крестики удаления справа и т.д.)
-        Item {
-            id: extraArea
+            anchors.left: parent.left
+            anchors.leftMargin: AppTheme.spaceS + AppTheme.iconMedium + AppTheme.spaceS
             anchors.right: parent.right
-            anchors.top: parent.top
-            anchors.bottom: parent.bottom
+            anchors.rightMargin: control.showDelete ? 40 : AppTheme.spaceS
+        }
+
+        Rectangle {
+            id: deleteBtn
+            visible: control.showDelete
+            width: 28
+            height: 28
+            radius: AppTheme.radiusSmall
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.right: parent.right
+            anchors.rightMargin: 6
+            color: deleteMouse.containsMouse ? AppTheme.bgDangerSoft : "transparent"
+
+            IconImage {
+                anchors.centerIn: parent
+                source: "../icons/trash.svg"
+                width: AppTheme.iconMedium
+                height: AppTheme.iconMedium
+                color: deleteMouse.containsMouse ? AppTheme.accentDanger : AppTheme.textTertiary
+            }
+
+            MouseArea {
+                id: deleteMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                preventStealing: true
+                cursorShape: Qt.PointingHandCursor
+                onPressed: (mouse) => { mouse.accepted = true }
+                onClicked: (mouse) => {
+                    control.deleteClicked()
+                    mouse.accepted = true
+                }
+            }
         }
     }
 
-    // ==========================================
-    // ФОН (Интерактивное состояние)
-    // ==========================================
     background: Rectangle {
-        // МАГИЯ: Мягкий фон при наведении
-        color: control.hovered ? AppTheme.stateHover : "transparent"
+        implicitWidth: 0
+        implicitHeight: 36
+        color: control.hovered && !(control.showDelete && deleteMouse.containsMouse)
+               ? AppTheme.stateHover : "transparent"
         radius: AppTheme.radiusSmall
-        anchors.margins: AppTheme.spaceXXS // Маленький отступ от краев самого меню (4px)
+        anchors.leftMargin: AppTheme.spaceXXS
+        anchors.rightMargin: AppTheme.spaceXXS
+        anchors.topMargin: 1
+        anchors.bottomMargin: 1
     }
 }
