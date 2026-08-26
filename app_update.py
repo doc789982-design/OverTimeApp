@@ -1259,12 +1259,54 @@ def changelog_since(text: str, from_version: str, to_version: str, to_build: int
                 continue
         elif to_version and ver != to_version:
             continue
-        elif to_build and bld != to_build:
+        elif to_build and bld and bld != to_build:
             continue
         if not (b["added"] or b["changed"] or b["fixed"] or b["removed"]):
             continue
         out.append(b)
     return out
+
+
+def _merge_changelog_blocks(blocks: list[dict]) -> dict:
+    """Склеивает несколько блоков одной версии в один список без повторов."""
+    out = {
+        "version": "",
+        "build_num": 0,
+        "date": "",
+        "added": [],
+        "changed": [],
+        "fixed": [],
+        "removed": [],
+        "build": [],
+    }
+    seen = {key: set() for key in ("added", "changed", "fixed", "removed", "build")}
+    for b in blocks:
+        if not out["version"]:
+            out["version"] = (b.get("version") or "").strip()
+        for key in seen:
+            for item in b.get(key) or []:
+                if not item or item in seen[key]:
+                    continue
+                seen[key].add(item)
+                out[key].append(item)
+    return out
+
+
+def changelog_for_version(text: str, version: str) -> list[dict]:
+    """
+    Один накопленный блок текущей версии — все сборки этой версии вместе.
+    Новая версия в CHANGELOG начинается с пустого раздела и сюда не попадает.
+    """
+    ver = (version or "").strip()
+    if not ver:
+        return []
+    hits = [b for b in parse_changelog(text) if (b.get("version") or "").strip() == ver]
+    if not hits:
+        return []
+    merged = _merge_changelog_blocks(hits)
+    if not (merged["added"] or merged["changed"] or merged["fixed"] or merged["removed"]):
+        return []
+    return [merged]
 
 
 def _bullets(items: list[str]) -> str:

@@ -2959,12 +2959,8 @@ class Backend(QObject):
             self._whats_new = []
             return
         text = self._read_changelog_text()
-        last_ver, last_bld = app_update.split_version_key(last)
-        if last and app_update.is_newer(self._app_version or "", last_ver, self._app_build, last_bld):
-            blocks = app_update.changelog_since(text, last, self._app_version or "", self._app_build)
-        else:
-            # Первая постановка 20 поверх 29 или пустой last — только текущий блок.
-            blocks = app_update.changelog_since(text, "", self._app_version or "", self._app_build)
+        # Одна версия — один список. Сборка 71→72 внутри 20 показывает весь блок 20.
+        blocks = app_update.changelog_for_version(text, self._app_version or "")
         self._whats_new = app_update.changelog_for_qml(blocks)
 
     @Slot()

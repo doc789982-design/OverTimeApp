@@ -11,10 +11,13 @@ Rectangle {
     
     property Item workspace: null
 
-    function dismissSearch() {
-        if (searchInput.text !== "")
-            searchInput.text = ""
+    function blurSearch() {
         searchInput.focus = false
+    }
+
+    function clearSearch() {
+        searchInput.text = ""
+        searchInput.forceActiveFocus()
     }
 
     function dismissSearchIfOutside(srcItem, x, y) {
@@ -23,21 +26,13 @@ Rectangle {
         var p = searchFieldBox.mapFromItem(srcItem, x, y)
         if (p.x >= 0 && p.y >= 0 && p.x <= searchFieldBox.width && p.y <= searchFieldBox.height)
             return
-        // Клик по карточке в отфильтрованном списке: сначала выбрать, потом сбросить.
-        if (empList) {
-            var lp = empList.mapFromItem(srcItem, x, y)
-            if (lp.x >= 0 && lp.y >= 0 && lp.x <= empList.width && lp.y <= empList.height) {
-                Qt.callLater(root.dismissSearch)
-                return
-            }
-        }
-        dismissSearch()
+        blurSearch()
     }
 
     Shortcut {
         sequence: "Escape"
-        enabled: searchInput.activeFocus || searchInput.text.length > 0
-        onActivated: root.dismissSearch()
+        enabled: searchInput.activeFocus
+        onActivated: root.blurSearch()
     }
     
     Rectangle { 
@@ -68,16 +63,82 @@ Rectangle {
                 Layout.fillWidth: true; Layout.fillHeight: true
                 radius: AppTheme.radiusMedium
                 color: searchInput.activeFocus ? AppTheme.bgElevated : AppTheme.bgBase
-                border.color: searchInput.activeFocus ? AppTheme.borderFocus : "transparent"
+                border.color: searchInput.activeFocus ? AppTheme.borderFocus : AppTheme.borderDivider
                 border.width: searchInput.activeFocus ? AppTheme.focusWidth : 1
-                
+                Behavior on color { ColorAnimation { duration: AppTheme.durNormal; easing.type: AppTheme.easeColor } }
+                Behavior on border.color { ColorAnimation { duration: AppTheme.durNormal; easing.type: AppTheme.easeColor } }
+                Behavior on border.width { NumberAnimation { duration: AppTheme.durFast; easing.type: AppTheme.easeStandard } }
+
+                Rectangle {
+                    anchors.fill: parent
+                    anchors.margins: -3
+                    radius: parent.radius + 2
+                    color: "transparent"
+                    border.color: AppTheme.accentBrand
+                    border.width: 2
+                    opacity: searchInput.activeFocus ? 0.22 : 0
+                    z: -1
+                    Behavior on opacity { NumberAnimation { duration: AppTheme.durNormal; easing.type: AppTheme.easeStandard } }
+                }
+
                 RowLayout {
-                    anchors.fill: parent; anchors.leftMargin: AppTheme.spaceM; anchors.rightMargin: AppTheme.spaceM; spacing: AppTheme.spaceS
-                    IconImage { source: "../icons/search.svg"; width: AppTheme.iconMedium; height: AppTheme.iconMedium; color: searchInput.activeFocus ? AppTheme.accentBrand : AppTheme.textSecondary }
+                    anchors.fill: parent
+                    anchors.leftMargin: AppTheme.spaceM
+                    anchors.rightMargin: AppTheme.spaceXS
+                    spacing: AppTheme.spaceS
+
+                    IconImage {
+                        source: "../icons/search.svg"
+                        width: AppTheme.iconMedium
+                        height: AppTheme.iconMedium
+                        color: searchInput.activeFocus ? AppTheme.accentBrand : AppTheme.textSecondary
+                        Behavior on color { ColorAnimation { duration: AppTheme.durNormal } }
+                    }
                     TextInput {
-                        id: searchInput; Layout.fillWidth: true; color: AppTheme.textPrimary; font.family: AppTheme.fontFamily; font.pixelSize: AppTheme.sizeBody; verticalAlignment: TextInput.AlignVCenter
-                        Text { text: "Поиск сотрудника"; color: AppTheme.textTertiary; visible: !parent.text && !parent.activeFocus; anchors.verticalCenter: parent.verticalCenter }
+                        id: searchInput
+                        Layout.fillWidth: true
+                        color: AppTheme.textPrimary
+                        font.family: AppTheme.fontFamily
+                        font.pixelSize: AppTheme.sizeBody
+                        verticalAlignment: TextInput.AlignVCenter
+                        selectByMouse: true
+                        Text {
+                            text: "Поиск сотрудника"
+                            color: AppTheme.textTertiary
+                            visible: !parent.text && !parent.activeFocus
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
                         onTextChanged: backend.setSearchText(text)
+                    }
+                    Item {
+                        Layout.preferredWidth: searchInput.text.length > 0 ? 22 : 0
+                        Layout.preferredHeight: 22
+                        visible: Layout.preferredWidth > 0
+                        clip: true
+
+                        Behavior on Layout.preferredWidth {
+                            NumberAnimation { duration: AppTheme.durFast; easing.type: AppTheme.easeStandard }
+                        }
+
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: AppTheme.radiusPill
+                            color: clearSearchMouse.containsMouse ? AppTheme.stateHover : "transparent"
+                            IconImage {
+                                anchors.centerIn: parent
+                                source: "../icons/close.svg"
+                                width: AppTheme.iconSmall
+                                height: AppTheme.iconSmall
+                                color: clearSearchMouse.containsMouse ? AppTheme.textPrimary : AppTheme.textTertiary
+                            }
+                            MouseArea {
+                                id: clearSearchMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.clearSearch()
+                            }
+                        }
                     }
                 }
             }
@@ -102,7 +163,8 @@ Rectangle {
         delegate: Item {
             id: empDelegateItem
             width: ListView.view.width
-            height: (modelData.is_header ? 40 : AppTheme.rowHeight) + gapRect.height
+            readonly property int empCardHeight: Math.max(AppTheme.rowHeight, empTextCol.implicitHeight + AppTheme.spaceM)
+            height: (modelData.is_header ? 40 : empCardHeight) + gapRect.height
 
             DropArea {
                 id: empDropArea
@@ -142,7 +204,8 @@ Rectangle {
                     id: cardContainer
                     visible: !modelData.is_header
                     width: parent.width
-                    height: AppTheme.rowHeight
+                    height: modelData.is_header ? 0 : empDelegateItem.empCardHeight
+                    clip: true
 
                     property bool isSelected: backend.selectedEmployeeId === modelData.id
 
@@ -171,6 +234,7 @@ Rectangle {
 
                     // 2. КОНТЕНТ
                     Column {
+                        id: empTextCol
                         anchors.verticalCenter: parent.verticalCenter
                         anchors.left: parent.left
                         anchors.leftMargin: AppTheme.spaceL
@@ -188,6 +252,8 @@ Rectangle {
                             font.weight: cardContainer.isSelected ? AppTheme.weightBold : AppTheme.weightMedium
                             elide: Text.ElideRight
                             maximumLineCount: 1
+                            lineHeight: 1.15
+                            lineHeightMode: Text.ProportionalHeight
                             Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
                         }
 
@@ -197,9 +263,11 @@ Rectangle {
                             color: modelData.is_active ? AppTheme.textSecondary : AppTheme.textDisabled
                             font.family: AppTheme.fontFamily
                             font.pixelSize: AppTheme.sizeSmall
-                            wrapMode: Text.NoWrap
-                            maximumLineCount: 1
+                            wrapMode: Text.WordWrap
+                            maximumLineCount: 2
                             elide: Text.ElideRight
+                            lineHeight: 1.15
+                            lineHeightMode: Text.ProportionalHeight
                         }
                     }
                     
