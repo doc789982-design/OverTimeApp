@@ -10,7 +10,7 @@ QtObject {
     // подхватят автоматически.
     // ==========================================
     readonly property string appVersion: "2.0.0-ALPHA.20"
-    readonly property int appBuild: 72
+    readonly property int appBuild: 73
     readonly property string appVersionFull: appVersion + " · сборка " + appBuild
 
     // ==========================================
@@ -60,10 +60,10 @@ QtObject {
     // Это 100% безопасный метод для движка QML
     property color bgBrandSoft:   isDark ? "#334B9AEE" : "#1E0374B5"
 
-    // Годовая сетка: клетки ~12px, 12% soft на них не читается.
-    // Обычное дежурство — плотный бренд. Сменное — тот же синий, но тусклее.
+    // Годовая сетка: клетки ~12px. Обычное дежурство — плотный бренд.
+    // Сменное — тот же цвет, вполовину прозрачнее.
     property color yearDutyExtra: accentBrand
-    property color yearDutyShift: isDark ? "#3D6A9A" : "#5C91B0"
+    property color yearDutyShift: Qt.rgba(accentBrand.r, accentBrand.g, accentBrand.b, 0.5)
     property color yearWeekend:   isDark ? "#66E76C78" : "#4DDE2E43"
     property color bgInfoSoft:    isDark ? "#3382B1FF" : "#1E0056B3"
     property color bgSuccessSoft: isDark ? "#335CB85C" : "#1E107C3F"
