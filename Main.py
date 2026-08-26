@@ -16,7 +16,7 @@ from PySide6.QtCore import QObject, Slot, Signal, Property, QUrl, QThread, QTime
 
 from database import DB
 from utils import fmt_date_iso, fmt_dt_iso, d_iso, d_parse, dt_parse, dt_iso, parse_hhmm, subtract_intervals, intersect, merge_intervals, fmt_minutes_ru_words
-from logic import compute_month_summary, is_employee_shift, validate_non_negative_over_year, default_is_working, build_shifted_weekend_checker
+from logic import compute_month_summary, is_employee_shift, validate_non_negative_over_year, default_is_working, build_shifted_weekend_checker, resolve_is_working, _row_flag
 import app_update
 
 # ====================================================
@@ -1100,12 +1100,18 @@ class Backend(QObject):
 
     def refresh_groups(self):
         if not self.active_db: return
-        formatted_groups = [{"id": 0, "name": "Все", "icon": "Все"}]
+        formatted_groups = [{"id": 0, "name": "Все", "icon": "Все", "is_shift": False, "shifted_weekends": False}]
         for g in self.active_db.list_groups():
             clean_name = g["name"]
             for ch in "№-.,_()[]{}": clean_name = clean_name.replace(ch, " ")
             icon_text = "".join(p if p.isdigit() else p[0].upper() for p in clean_name.split() if p)[:4] or "?"
-            formatted_groups.append({"id": int(g["id"]), "name": g["name"], "icon": icon_text})
+            formatted_groups.append({
+                "id": int(g["id"]),
+                "name": g["name"],
+                "icon": icon_text,
+                "is_shift": _row_flag(g, "is_shift"),
+                "shifted_weekends": _row_flag(g, "shifted_weekends"),
+            })
         self._group_list = formatted_groups
         self.groupListChanged.emit()
 
@@ -1325,9 +1331,11 @@ class Backend(QObject):
         for week in month_days:
             for d in week:
                 d_str = d_iso(d)
-                is_working = work_map.get(
+                is_working = resolve_is_working(
                     d,
-                    default_is_working(d, bool(shifted_checker and shifted_checker(d))),
+                    bool(shifted_checker and shifted_checker(d)),
+                    work_map,
+                    holidays_set,
                 )
                 is_holiday = d in holidays_set
                 grid_data.append({
@@ -1432,6 +1440,7 @@ class Backend(QObject):
         
         # МАГИЯ: Сначала загружаем ИЗ БАЗЫ весь календарь рабочих/выходных дней на этот год!
         work_map = self.active_db.get_calendar_month(y_start, y_end)
+        holidays_set = self.active_db.get_holidays_month(y_start, y_end)
         shifted_checker = build_shifted_weekend_checker(self.active_db, eid)
 
         # 1. Собираем статусы
@@ -1480,9 +1489,8 @@ class Backend(QObject):
                     # МАГИЯ: Смотрим в базу! Если дня нет в базе, по умолчанию Сб/Вс - выходные.
                     # Переменная work_map возвращает True (рабочий) или False (выходной).
                     # is_weekend = это когда НЕ рабочий.
-                    is_weekend = not work_map.get(
-                        cur_date,
-                        default_is_working(cur_date, shifted_checker(cur_date)),
+                    is_weekend = not resolve_is_working(
+                        cur_date, shifted_checker(cur_date), work_map, holidays_set
                     )
                         
                     month_row.append({
@@ -2090,6 +2098,26 @@ class Backend(QObject):
             self.active_db.conn.execute("COMMIT;")
             self.refresh_groups()
             self.showToast.emit("Группа создана", "success")
+        except Exception as e:
+            self.active_db.conn.execute("ROLLBACK;")
+            self.showToast.emit(f"Ошибка: {e}", "error")
+
+    @Slot(int, bool)
+    def setGroupShiftedWeekends(self, group_id, enabled):
+        if not self.active_db or not group_id:
+            return
+        try:
+            self.active_db.begin()
+            self.active_db.set_group_shifted_weekends(group_id, enabled)
+            self.active_db.conn.execute("COMMIT;")
+            self.refresh_groups()
+            self.refresh_employees()
+            self.refresh_calendar()
+            self.refresh_yearly_panorama()
+            self.showToast.emit(
+                "Смещённые выходные включены" if enabled else "Обычные выходные",
+                "success",
+            )
         except Exception as e:
             self.active_db.conn.execute("ROLLBACK;")
             self.showToast.emit(f"Ошибка: {e}", "error")

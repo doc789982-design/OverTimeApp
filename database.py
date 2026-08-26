@@ -363,6 +363,12 @@ class DB:
     def delete_group(self, group_id: int) -> None:
         self.conn.execute("DELETE FROM employee_group WHERE id=?", (group_id,))
 
+    def set_group_shifted_weekends(self, group_id: int, enabled: bool) -> None:
+        self.conn.execute(
+            "UPDATE employee_group SET shifted_weekends=? WHERE id=?",
+            (int(bool(enabled)), int(group_id)),
+        )
+
     def set_employee_group(self, employee_id: int, group_id: Optional[int]) -> None:
         self.conn.execute("UPDATE employee SET group_id=? WHERE id=?", (group_id, employee_id))    
         

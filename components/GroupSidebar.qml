@@ -165,6 +165,13 @@ Rectangle {
                     AppMenu {
                         id: groupMenu
                         AppMenuItem {
+                            visible: modelData.id !== 0
+                            text: modelData.shifted_weekends ? "Обычные выходные" : "Смещённые выходные"
+                            iconSource: "../icons/calendar.svg"
+                            onClicked: backend.setGroupShiftedWeekends(modelData.id, !modelData.shifted_weekends)
+                        }
+                        AppMenuSeparator { visible: modelData.id !== 0 }
+                        AppMenuItem {
                             visible: modelData.id !== 0 
                             text: "Удалить группу"
                             isDanger: true 
@@ -220,7 +227,7 @@ Rectangle {
                         anchors.left: parent.right
                         anchors.leftMargin: AppTheme.spaceXS
                         anchors.verticalCenter: parent.verticalCenter
-                        text: modelData.name // Здесь лежит ПОЛНОЕ имя группы
+                        text: modelData.name + (modelData.shifted_weekends ? " · смещённые выходные" : "")
                         isVisible: btnMouseArea.containsMouse && !btnMouseArea.drag.active
                     }
 

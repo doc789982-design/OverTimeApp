@@ -5,7 +5,7 @@ import io
 from PySide6.QtCore import QFile, QIODevice
 
 from utils import next_month, d_iso, d_parse, fmt_date_iso, intersect, merge_intervals, subtract_intervals
-from logic import compute_month_summary, is_employee_shift, default_is_working, build_shifted_weekend_checker
+from logic import compute_month_summary, is_employee_shift, default_is_working, build_shifted_weekend_checker, resolve_is_working
 
 def ensure_openpyxl():
     try:
@@ -77,14 +77,15 @@ class TemplateExporter:
                 # Достаем из базы и галочку "рабочий", и "праздник"
                 row = db.conn.execute("SELECT is_working, is_holiday FROM calendar_day WHERE date=?", (d0.isoformat(),)).fetchone()
                 if row:
-                    is_working = bool(int(row["is_working"]))
-                    # Защита: вдруг колонка is_holiday пустая или ее нет
                     is_holiday = bool(int(row["is_holiday"] if "is_holiday" in row.keys() and row["is_holiday"] is not None else 0))
-                    
-                    # Настоящий рабочий день: галочка "рабочий" стоит, и это НЕ праздник
+                    is_working = resolve_is_working(
+                        d0,
+                        bool(shifted_checker and shifted_checker(d0)),
+                        {d0: bool(int(row["is_working"]))},
+                        {d0} if is_holiday else set(),
+                    )
                     is_real_workday = is_working and not is_holiday
                 else:
-                    # Если дня в базе нет — шаблон группы (смещённые выходные или Пн–Пт)
                     is_real_workday = default_is_working(
                         d0, bool(shifted_checker and shifted_checker(d0))
                     )

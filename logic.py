@@ -49,6 +49,32 @@ def default_is_working(d: date, shifted: bool = False) -> bool:
         return wd not in (0, 6)
     return wd < 5
 
+def resolve_is_working(
+    d: date,
+    shifted: bool,
+    work_map: dict,
+    holidays_set: Optional[set] = None,
+) -> bool:
+    """Рабочий ли день для этого сотрудника.
+
+    Праздники общие. Явное исключение из обычной пятидневки
+    (перенос, «сделать рабочим/выходным») тоже общее.
+    Строки calendar_day, которые просто повторяют пн–пт / сб–вс,
+    шаблон группы не затирают — иначе смещённые выходные пропадают
+    в уже заполненном календаре.
+    """
+    holidays_set = holidays_set or set()
+    stored = work_map.get(d)
+    if d in holidays_set:
+        return False if stored is None else bool(stored)
+    if stored is None:
+        return default_is_working(d, shifted)
+    if not shifted:
+        return bool(stored)
+    if bool(stored) != default_is_working(d, False):
+        return bool(stored)
+    return default_is_working(d, True)
+
 def _row_flag(row, key: str) -> bool:
     try:
         if key not in row.keys():
@@ -72,12 +98,17 @@ def build_shifted_weekend_checker(db, employee_id: int):
     current_gid = emp["group_id"]
 
     def check(target_date: Optional[date] = None) -> bool:
-        if target_date is None:
-            return flag_map.get(current_gid, False)
+        current = flag_map.get(current_gid, False)
+        if target_date is None or not history:
+            return current
+        latest_date, latest_gid = history[0]
+        # Простое перетаскивание не пишет приказ, но меняет текущую группу.
+        if current_gid != latest_gid and target_date >= latest_date:
+            return current
         for t_date, gid in history:
             if target_date >= t_date:
                 return flag_map.get(gid, False)
-        return flag_map.get(current_gid, False)
+        return current
 
     return check
 
@@ -113,10 +144,15 @@ def compute_month_norm_minutes(db, employee_id: int, year: int, month: int, shif
         ).fetchone()
 
         if row:
-            is_working = bool(int(row["is_working"]))
+            is_working = resolve_is_working(
+                candidate,
+                shifted_checker(candidate),
+                {candidate: bool(int(row["is_working"]))},
+                holidays_extended,
+            )
             is_holiday = bool(int(row["is_holiday"] if row["is_holiday"] is not None else 0))
         else:
-            is_working = candidate.weekday() < 5
+            is_working = default_is_working(candidate, shifted_checker(candidate))
             is_holiday = False
 
         if is_working and not is_holiday:
@@ -146,7 +182,7 @@ def compute_month_norm_minutes(db, employee_id: int, year: int, month: int, shif
     total_minutes = 0
 
     while cur <= last:
-        is_working = work_map.get(cur, default_is_working(cur, shifted_checker(cur)))
+        is_working = resolve_is_working(cur, shifted_checker(cur), work_map, holidays_set)
         is_holiday = cur in holidays_set
 
         # Считаем только рабочие не-праздничные дни для сменщика

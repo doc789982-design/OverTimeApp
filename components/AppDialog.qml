@@ -110,7 +110,10 @@ Popup {
         // КОНТЕНТ (Скроллируемый)
         ScrollView {
             Layout.fillWidth: true
-            Layout.fillHeight: true
+            Layout.preferredHeight: Math.min(
+                contentArea.implicitHeight,
+                ApplicationWindow.window ? ApplicationWindow.window.height - 280 : 520
+            )
             clip: true
             ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
 
