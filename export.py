@@ -5,7 +5,7 @@ import io
 from PySide6.QtCore import QFile, QIODevice
 
 from utils import next_month, d_iso, d_parse, fmt_date_iso, intersect, merge_intervals, subtract_intervals
-from logic import compute_month_summary, is_employee_shift
+from logic import compute_month_summary, is_employee_shift, default_is_working, build_shifted_weekend_checker
 
 def ensure_openpyxl():
     try:
@@ -67,8 +67,9 @@ def compute_day_intervals_in_month(db, employee_id: int, year: int, month: int):
 
 class TemplateExporter:
     @staticmethod
-    def _hide_daytime_intervals_in_workdays(db, intervals_by_day):
+    def _hide_daytime_intervals_in_workdays(db, intervals_by_day, employee_id=None):
         out = {}
+        shifted_checker = build_shifted_weekend_checker(db, employee_id) if employee_id else None
         for d0, intervals in (intervals_by_day or {}).items():
             
             # 1. Узнаем, рабочий ли это день по факту
@@ -83,11 +84,14 @@ class TemplateExporter:
                     # Настоящий рабочий день: галочка "рабочий" стоит, и это НЕ праздник
                     is_real_workday = is_working and not is_holiday
                 else:
-                    # Если дня в базе вообще нет, по умолчанию Пн-Пт — рабочие
-                    is_real_workday = d0.weekday() < 5
+                    # Если дня в базе нет — шаблон группы (смещённые выходные или Пн–Пт)
+                    is_real_workday = default_is_working(
+                        d0, bool(shifted_checker and shifted_checker(d0))
+                    )
             except Exception:
-                # Если произошла ошибка БД, тоже считаем Пн-Пт рабочими
-                is_real_workday = d0.weekday() < 5
+                is_real_workday = default_is_working(
+                    d0, bool(shifted_checker and shifted_checker(d0))
+                )
 
             # 2. Если день НЕРАБОЧИЙ (Сб, Вс или Праздник) - выводим всё дежурство целиком!
             if not is_real_workday:

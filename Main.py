@@ -16,7 +16,7 @@ from PySide6.QtCore import QObject, Slot, Signal, Property, QUrl, QThread, QTime
 
 from database import DB
 from utils import fmt_date_iso, fmt_dt_iso, d_iso, d_parse, dt_parse, dt_iso, parse_hhmm, subtract_intervals, intersect, merge_intervals, fmt_minutes_ru_words
-from logic import compute_month_summary, is_employee_shift, validate_non_negative_over_year
+from logic import compute_month_summary, is_employee_shift, validate_non_negative_over_year, default_is_working, build_shifted_weekend_checker
 import app_update
 
 # ====================================================
@@ -1271,6 +1271,10 @@ class Backend(QObject):
         work_map = self.active_db.get_calendar_month(d_iso(grid_start), d_iso(grid_end))
         holidays_set = self.active_db.get_holidays_month(d_iso(grid_start), d_iso(grid_end))
         pre_holidays_set = self.active_db.get_pre_holidays_month(d_iso(grid_start), d_iso(grid_end))
+        shifted_checker = (
+            build_shifted_weekend_checker(self.active_db, self._selected_employee_id)
+            if self._selected_employee_id > 0 else None
+        )
         
         duty_map = {}
         comp_set = set()
@@ -1321,7 +1325,10 @@ class Backend(QObject):
         for week in month_days:
             for d in week:
                 d_str = d_iso(d)
-                is_working = work_map.get(d, d.weekday() < 5)
+                is_working = work_map.get(
+                    d,
+                    default_is_working(d, bool(shifted_checker and shifted_checker(d))),
+                )
                 is_holiday = d in holidays_set
                 grid_data.append({
                     "date_str": d_str,
@@ -1425,6 +1432,7 @@ class Backend(QObject):
         
         # МАГИЯ: Сначала загружаем ИЗ БАЗЫ весь календарь рабочих/выходных дней на этот год!
         work_map = self.active_db.get_calendar_month(y_start, y_end)
+        shifted_checker = build_shifted_weekend_checker(self.active_db, eid)
 
         # 1. Собираем статусы
         sts = self.active_db.conn.execute("SELECT date, status FROM employee_day_status WHERE employee_id=? AND date>=? AND date<=?", (eid, y_start, y_end)).fetchall()
@@ -1472,7 +1480,10 @@ class Backend(QObject):
                     # МАГИЯ: Смотрим в базу! Если дня нет в базе, по умолчанию Сб/Вс - выходные.
                     # Переменная work_map возвращает True (рабочий) или False (выходной).
                     # is_weekend = это когда НЕ рабочий.
-                    is_weekend = not work_map.get(cur_date, cur_date.weekday() < 5)
+                    is_weekend = not work_map.get(
+                        cur_date,
+                        default_is_working(cur_date, shifted_checker(cur_date)),
+                    )
                         
                     month_row.append({
                         "is_real": True, 
@@ -2070,12 +2081,12 @@ class Backend(QObject):
             self.active_db.conn.execute("ROLLBACK;")
             self.showToast.emit(f"Ошибка хоткея: {e}", "error")
 
-    @Slot(str, bool)
-    def createGroup(self, name, is_shift):
+    @Slot(str, bool, bool)
+    def createGroup(self, name, is_shift, shifted_weekends=False):
         if not self.active_db or not name.strip(): return
         try:
             self.active_db.begin()
-            self.active_db.add_group(name, is_shift)
+            self.active_db.add_group(name, is_shift, shifted_weekends)
             self.active_db.conn.execute("COMMIT;")
             self.refresh_groups()
             self.showToast.emit("Группа создана", "success")

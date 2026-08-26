@@ -44,6 +44,8 @@ class DB:
         except Exception: pass
         try: self.conn.execute("ALTER TABLE employee_group ADD COLUMN is_shift INTEGER NOT NULL DEFAULT 0")
         except Exception: pass
+        try: self.conn.execute("ALTER TABLE employee_group ADD COLUMN shifted_weekends INTEGER NOT NULL DEFAULT 0")
+        except Exception: pass
         try: self.conn.execute("ALTER TABLE duty ADD COLUMN is_shift INTEGER NOT NULL DEFAULT 0")
         except Exception: pass   
         try: self.conn.execute("ALTER TABLE employee ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0")
@@ -201,7 +203,8 @@ class DB:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     name TEXT NOT NULL,
                     sort_order INTEGER NOT NULL DEFAULT 0,
-                    is_shift INTEGER NOT NULL DEFAULT 0
+                    is_shift INTEGER NOT NULL DEFAULT 0,
+                    shifted_weekends INTEGER NOT NULL DEFAULT 0
                 );
                 """
             )
@@ -350,8 +353,11 @@ class DB:
     def list_groups(self) -> list[sqlite3.Row]:
         return self.conn.execute("SELECT * FROM employee_group ORDER BY sort_order, id").fetchall()
 
-    def add_group(self, name: str, is_shift: bool = False) -> int:
-        cur = self.conn.execute("INSERT INTO employee_group(name, is_shift) VALUES (?, ?)", (name.strip(), int(is_shift)))
+    def add_group(self, name: str, is_shift: bool = False, shifted_weekends: bool = False) -> int:
+        cur = self.conn.execute(
+            "INSERT INTO employee_group(name, is_shift, shifted_weekends) VALUES (?, ?, ?)",
+            (name.strip(), int(is_shift), int(shifted_weekends)),
+        )
         return int(cur.lastrowid)
 
     def delete_group(self, group_id: int) -> None:
