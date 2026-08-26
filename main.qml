@@ -600,8 +600,18 @@ ApplicationWindow {
         Item {
             id: workspaceRoot
             property alias calendarPanel: calendarPanelId
+            MouseArea {
+                anchors.fill: parent
+                z: 1
+                propagateComposedEvents: true
+                onPressed: (mouse) => {
+                    empListPanel.dismissSearchIfOutside(this, mouse.x, mouse.y)
+                    mouse.accepted = false
+                }
+            }
             SplitView {
                 anchors.fill: parent
+                z: 0
                 orientation: Qt.Horizontal
                 handle: Rectangle { 
                     implicitWidth: 1
@@ -627,6 +637,7 @@ ApplicationWindow {
                             workspace: workspaceRoot
                         }
                         AppUI.EmployeeListPanel {
+                            id: empListPanel
                             SplitView.fillWidth: true
                             workspace: workspaceRoot
                         }

@@ -10,6 +10,35 @@ Rectangle {
     color: AppTheme.bgPanel
     
     property Item workspace: null
+
+    function dismissSearch() {
+        if (searchInput.text !== "")
+            searchInput.text = ""
+        searchInput.focus = false
+    }
+
+    function dismissSearchIfOutside(srcItem, x, y) {
+        if (!searchFieldBox)
+            return
+        var p = searchFieldBox.mapFromItem(srcItem, x, y)
+        if (p.x >= 0 && p.y >= 0 && p.x <= searchFieldBox.width && p.y <= searchFieldBox.height)
+            return
+        // Клик по карточке в отфильтрованном списке: сначала выбрать, потом сбросить.
+        if (empList) {
+            var lp = empList.mapFromItem(srcItem, x, y)
+            if (lp.x >= 0 && lp.y >= 0 && lp.x <= empList.width && lp.y <= empList.height) {
+                Qt.callLater(root.dismissSearch)
+                return
+            }
+        }
+        dismissSearch()
+    }
+
+    Shortcut {
+        sequence: "Escape"
+        enabled: searchInput.activeFocus || searchInput.text.length > 0
+        onActivated: root.dismissSearch()
+    }
     
     Rectangle { 
         width: 1
@@ -35,6 +64,7 @@ Rectangle {
             anchors.fill: parent; anchors.margins: AppTheme.spaceS; spacing: AppTheme.spaceM
 
             Rectangle {
+                id: searchFieldBox
                 Layout.fillWidth: true; Layout.fillHeight: true
                 radius: AppTheme.radiusMedium
                 color: searchInput.activeFocus ? AppTheme.bgElevated : AppTheme.bgBase
@@ -140,28 +170,37 @@ Rectangle {
                     }
 
                     // 2. КОНТЕНТ
-                    Text { 
-                        id: empName
-                        anchors.left: parent.left; anchors.leftMargin: AppTheme.spaceL
-                        anchors.right: parent.right; anchors.rightMargin: AppTheme.spaceL
-                        anchors.top: parent.top; anchors.topMargin: AppTheme.spaceS
-                        text: modelData.name
-                        color: cardContainer.isSelected ? AppTheme.accentBrand : (modelData.is_active ? AppTheme.textPrimary : AppTheme.textDisabled)
-                        font.family: AppTheme.fontFamily; font.pixelSize: AppTheme.sizeBody; font.weight: cardContainer.isSelected ? AppTheme.weightBold : AppTheme.weightMedium
-                        elide: Text.ElideRight
-                        Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
-                    }
+                    Column {
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.left: parent.left
+                        anchors.leftMargin: AppTheme.spaceL
+                        anchors.right: parent.right
+                        anchors.rightMargin: AppTheme.spaceL + AppTheme.spaceS
+                        spacing: 2
 
-                    Text { 
-                        anchors.left: parent.left; anchors.leftMargin: AppTheme.spaceL
-                        anchors.right: parent.right; anchors.rightMargin: AppTheme.spaceL
-                        anchors.top: empName.bottom; anchors.topMargin: 2
-                        text: modelData.subtitle
-                        color: modelData.is_active ? AppTheme.textSecondary : AppTheme.textDisabled
-                        font.family: AppTheme.fontFamily; font.pixelSize: AppTheme.sizeSmall
-                        wrapMode: Text.WordWrap
-                        maximumLineCount: 2
-                        elide: Text.ElideRight
+                        Text {
+                            id: empName
+                            width: parent.width
+                            text: modelData.name
+                            color: cardContainer.isSelected ? AppTheme.accentBrand : (modelData.is_active ? AppTheme.textPrimary : AppTheme.textDisabled)
+                            font.family: AppTheme.fontFamily
+                            font.pixelSize: AppTheme.sizeBody
+                            font.weight: cardContainer.isSelected ? AppTheme.weightBold : AppTheme.weightMedium
+                            elide: Text.ElideRight
+                            maximumLineCount: 1
+                            Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
+                        }
+
+                        Text {
+                            width: parent.width
+                            text: modelData.subtitle
+                            color: modelData.is_active ? AppTheme.textSecondary : AppTheme.textDisabled
+                            font.family: AppTheme.fontFamily
+                            font.pixelSize: AppTheme.sizeSmall
+                            wrapMode: Text.NoWrap
+                            maximumLineCount: 1
+                            elide: Text.ElideRight
+                        }
                     }
                     
                     // ИНДИКАТОР НОРМЫ — тонкая полоска справа, как термометр

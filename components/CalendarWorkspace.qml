@@ -1037,15 +1037,17 @@ Item {
                                     anchors.margins: 2
                                     radius: AppTheme.radiusSmall
                                     visible: cellInfo.is_real
-                                    color: !cellInfo
-                                           ? "transparent"
-                                           : (cellInfo.type === "duty"
-                                              ? (cellInfo.val === "1"
-                                                 ? AppTheme.accentBrand
-                                                 : AppTheme.bgBrandSoft)
-                                              : (cellInfo.is_weekend
-                                                 ? AppTheme.bgDangerSoft
-                                                 : AppTheme.bgCell))
+                                    color: {
+                                        if (!cellInfo)
+                                            return "transparent"
+                                        if (cellInfo.type === "duty")
+                                            return cellInfo.val === "1"
+                                                   ? AppTheme.yearDutyShift
+                                                   : AppTheme.yearDutyExtra
+                                        if (cellInfo.is_weekend)
+                                            return AppTheme.yearWeekend
+                                        return AppTheme.bgCell
+                                    }
                                     
                                     Text { 
                                         anchors.centerIn: parent

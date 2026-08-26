@@ -10,7 +10,7 @@ QtObject {
     // подхватят автоматически.
     // ==========================================
     readonly property string appVersion: "2.0.0-ALPHA.20"
-    readonly property int appBuild: 70
+    readonly property int appBuild: 71
     readonly property string appVersionFull: appVersion + " · сборка " + appBuild
 
     // ==========================================
@@ -59,6 +59,12 @@ QtObject {
     // Мягкие фоны (Зашиты прямо в HEX-коды: 33 = 20% opacity, 1E = 12% opacity)
     // Это 100% безопасный метод для движка QML
     property color bgBrandSoft:   isDark ? "#334B9AEE" : "#1E0374B5"
+
+    // Годовая сетка: клетки ~12px, 12% soft на них не читается.
+    // Canvas brand + Material primary container, но плотнее — как чип, не как плёнка.
+    property color yearDutyShift: accentBrand
+    property color yearDutyExtra: isDark ? "#5AA3F0" : "#0284C7"
+    property color yearWeekend:   isDark ? "#66E76C78" : "#4DDE2E43"
     property color bgInfoSoft:    isDark ? "#3382B1FF" : "#1E0056B3"
     property color bgSuccessSoft: isDark ? "#335CB85C" : "#1E107C3F"
     property color bgWarningSoft: isDark ? "#33F4AC5B" : "#1EE67300"
