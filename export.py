@@ -398,36 +398,30 @@ class TemplateExporter:
         m0 = date(year, month, 1)
         m1 = date(ny, nm, 1)
         work_map = db.get_calendar_month(d_iso(m0), d_iso(m1 - timedelta(days=1)))
+        holidays_set = db.get_holidays_month(d_iso(m0), d_iso(m1 - timedelta(days=1)))
 
-        # Желтая заливка для выходных дней (Solid fill, цвет FFFF00)
+        # Желтая заливка для выходных / праздников — как красные клетки в табеле
         yellow_fill = PatternFill(start_color="FFFFFF00", end_color="FFFFFF00", fill_type="solid")
 
-        # Перебираем все возможные дни от 1 до 31
+        # Шапка листа: общий календарь (обычная пятидневка).
+        # Строки сотрудников красим ниже, у каждого свой шаблон выходных.
         for d in range(1, 32):
             marker = f"{{{{DAY_{d:02d}}}}}"
             cols = marker_cols.get(marker, [])
-            
-            # 1. Если день больше, чем дней в месяце (например 31-е февраля) -> прячем колонку
+
             if d > last_day:
-                for col in cols: 
+                for col in cols:
                     ws.column_dimensions[get_column_letter(col)].hidden = True
-            
-            # 2. Если день существует, проверяем, выходной ли он
-            else:
-                day_date = date(year, month, d)
-                
-                # Получаем статус дня из базы. Если в базе пусто, смотрим на календарь (Сб и Вс - выходные)
-                is_working = work_map.get(day_date, day_date.weekday() < 5)
-                
-                # Если день нерабочий (выходной) -> красим всю колонку сплошняком
-                if not is_working:
-                    for col in cols:
-                        # Начинаем красить за 3 строки до сотрудников и идем вниз до конца списка.
-                        # max(1, ...) защищает от ошибки, если шапка случайно окажется на самом верху листа.
-                        for r in range(max(1, start_row - 3), start_row + n):
-                            c = TemplateExporter._safe_cell(ws, r, col)
-                            if c: 
-                                c.fill = yellow_fill
+                continue
+
+            day_date = date(year, month, d)
+            header_rest = (not work_map.get(day_date, day_date.weekday() < 5)) or (day_date in holidays_set)
+            if header_rest:
+                for col in cols:
+                    for r in range(max(1, start_row - 3), start_row):
+                        c = TemplateExporter._safe_cell(ws, r, col)
+                        if c:
+                            c.fill = yellow_fill
 
         for i, emp in enumerate(emps):
             row = start_row + i
@@ -487,7 +481,7 @@ class TemplateExporter:
 
             intervals_by_day = compute_day_intervals_in_month(db, eid, year, month)
             if not is_employee_shift(db, eid):
-                intervals_by_day = TemplateExporter._hide_daytime_intervals_in_workdays(db, intervals_by_day)
+                intervals_by_day = TemplateExporter._hide_daytime_intervals_in_workdays(db, intervals_by_day, eid)
 
             statuses = db.get_statuses_for_period(eid, f"{year:04d}-{month:02d}-01", f"{ny:04d}-{nm:02d}-01")
 
@@ -516,6 +510,8 @@ class TemplateExporter:
                             c.value = values[marker]
                             if marker == "{{EMP_FIO_RANK_POS}}": c.alignment = Alignment(wrap_text=True, vertical="top")
 
+            shifted_on = build_shifted_weekend_checker(db, eid)
+
             # Заполняем дни
             for d in range(1, 32):
                 marker = f"{{{{DAY_{d:02d}}}}}"
@@ -523,6 +519,7 @@ class TemplateExporter:
                 if not cols: continue
                 
                 txt = ""
+                paint_rest = False
                 if d <= last_day:
                     day_date = date(year, month, d)
                     
@@ -543,11 +540,16 @@ class TemplateExporter:
                         comp_txt = "\n".join(comps)
                         txt = f"{txt}\n{comp_txt}" if txt else comp_txt
 
+                    is_working = resolve_is_working(day_date, shifted_on(day_date), work_map, holidays_set)
+                    paint_rest = (not is_working) or (day_date in holidays_set)
+
                 for col in cols:
                     c = TemplateExporter._safe_cell(ws, row, col)
                     if c:
                         c.value = txt
                         if txt: c.alignment = c.alignment.copy(wrap_text=True)
+                        if paint_rest:
+                            c.fill = yellow_fill
 
         # Подписи и область печати
         sign_rows = []
