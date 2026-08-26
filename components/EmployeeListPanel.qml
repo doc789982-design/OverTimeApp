@@ -155,18 +155,46 @@ Rectangle {
     // ==========================================
     // 2. СПИСОК СОТРУДНИКОВ
     // ==========================================
+    Item {
+        id: empListWrap
+        anchors.top: headerArea.bottom
+        anchors.bottom: parent.bottom
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottomMargin: 140 + backend.updateChromeExtra
+
     ListView {
         id: empList
-        anchors.top: headerArea.bottom; anchors.bottom: parent.bottom; anchors.left: parent.left; anchors.right: parent.right
-        bottomMargin: 140 + backend.updateChromeExtra; clip: true; model: backend.employeeList
-        displaced: Transition { NumberAnimation { properties: "y"; duration: 180; easing.type: Easing.OutCubic } }
-        move: Transition { NumberAnimation { properties: "y"; duration: 180; easing.type: Easing.OutCubic } }
+        anchors.fill: parent
+        clip: true
+        model: backend.employeeList
+
+        property int draggingEmpId: 0
+        property int draggingGroupId: -999
+        property real dropLineY: -1
+        property bool restoringScroll: false
+        property real keepContentY: 0
+
+        onContentYChanged: if (!restoringScroll) keepContentY = contentY
+
+        Connections {
+            target: backend
+            function onEmployeeListChanged() {
+                empList.restoringScroll = true
+                Qt.callLater(function() {
+                    var maxY = Math.max(0, empList.contentHeight - empList.height)
+                    empList.contentY = Math.min(Math.max(0, empList.keepContentY), maxY)
+                    empList.restoringScroll = false
+                })
+            }
+        }
         
         delegate: Item {
             id: empDelegateItem
             width: ListView.view.width
             readonly property int empCardHeight: Math.max(AppTheme.rowHeight, empTextCol.implicitHeight + AppTheme.spaceM)
             height: modelData.is_header ? 40 : empCardHeight
+            readonly property int rowGroupId: modelData.group_id === undefined ? 0 : modelData.group_id
 
             DropArea {
                 id: empDropArea
@@ -174,26 +202,40 @@ Rectangle {
                 keys: ["employee"]
                 enabled: !modelData.is_header
                 property bool insertAfter: false
-                onPositionChanged: (drag) => { insertAfter = drag.y > height * 0.5 }
+                readonly property bool acceptSameGroup: {
+                    if (modelData.is_header) return false
+                    var src = empDropArea.drag.source
+                    if (!src || src.empId === undefined || src.empId === modelData.id) return false
+                    return src.empGroupId === empDelegateItem.rowGroupId
+                }
+                function syncInsertLine() {
+                    if (!containsDrag || !acceptSameGroup) return
+                    var p = mapToItem(empList, 0, insertAfter ? height : 0)
+                    empList.dropLineY = p.y
+                }
+                onPositionChanged: (drag) => {
+                    if (!acceptSameGroup) {
+                        empList.dropLineY = -1
+                        return
+                    }
+                    insertAfter = drag.y > height * 0.5
+                    syncInsertLine()
+                }
+                onEntered: (drag) => {
+                    if (!acceptSameGroup) {
+                        empList.dropLineY = -1
+                        return
+                    }
+                    insertAfter = drag.y > height * 0.5
+                    syncInsertLine()
+                }
                 onDropped: (drop) => {
-                    if (drop.source && drop.source.empId !== undefined && drop.source.empId !== modelData.id) {
+                    if (acceptSameGroup) {
                         backend.reorderEmployees(drop.source.empId, modelData.id, insertAfter)
                         drop.accept()
                     }
+                    empList.dropLineY = -1
                 }
-            }
-
-            Rectangle {
-                visible: empDropArea.containsDrag && empDropArea.drag.source && empDropArea.drag.source.empId !== undefined && empDropArea.drag.source.empId !== modelData.id && !modelData.is_header
-                height: 2
-                radius: 1
-                color: AppTheme.accentBrand
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.leftMargin: AppTheme.spaceM
-                anchors.rightMargin: AppTheme.spaceM
-                y: empDropArea.insertAfter ? parent.height - 2 : 0
-                z: 20
             }
 
             Column {
@@ -377,25 +419,116 @@ Rectangle {
                     MouseArea { 
                         id: empMouseArea
                         anchors.fill: parent; hoverEnabled: true; acceptedButtons: Qt.LeftButton | Qt.RightButton
+                        cursorShape: drag.active ? Qt.ClosedHandCursor : Qt.PointingHandCursor
                         drag.target: dragProxy
-                        drag.threshold: 8
-                        onPositionChanged: (mouse) => { if (drag.active && root.workspace) { let pt = mapToItem(root.workspace, mouse.x, mouse.y); dragProxy.x = pt.x - (dragProxy.width / 2); dragProxy.y = pt.y - (dragProxy.height / 2) } }
-                        onPressed: (mouse) => { if (mouse.button === Qt.LeftButton && root.workspace) { dragProxy.isShiftPressed = (mouse.modifiers & Qt.ShiftModifier) !== 0; dragProxy.parent = root.workspace; let pt = mapToItem(root.workspace, mouse.x, mouse.y); dragProxy.x = pt.x - (dragProxy.width / 2); dragProxy.y = pt.y - (dragProxy.height / 2) } }
-                        onReleased: { dragProxy.Drag.drop(); dragProxy.parent = cardContainer; dragProxy.x = 0; dragProxy.y = 0 }
-                        onClicked: (mouse) => { if (mouse.button === Qt.RightButton) empContextMenu.popup(); else backend.selectEmployee(modelData.id) }
+                        drag.threshold: 10
+                        property bool didDrag: false
+                        onPositionChanged: (mouse) => {
+                            if (drag.active && root.workspace) {
+                                didDrag = true
+                                let pt = mapToItem(root.workspace, mouse.x, mouse.y)
+                                dragProxy.x = pt.x - (dragProxy.width / 2)
+                                dragProxy.y = pt.y - (dragProxy.height / 2)
+                            }
+                        }
+                        onPressed: (mouse) => {
+                            didDrag = false
+                            if (mouse.button === Qt.LeftButton && root.workspace) {
+                                dragProxy.isShiftPressed = (mouse.modifiers & Qt.ShiftModifier) !== 0
+                                dragProxy.parent = root.workspace
+                                let pt = mapToItem(root.workspace, mouse.x, mouse.y)
+                                dragProxy.x = pt.x - (dragProxy.width / 2)
+                                dragProxy.y = pt.y - (dragProxy.height / 2)
+                            }
+                        }
+                        onReleased: {
+                            dragProxy.Drag.drop()
+                            dragProxy.parent = cardContainer
+                            dragProxy.x = 0
+                            dragProxy.y = 0
+                            empList.dropLineY = -1
+                            empList.draggingEmpId = 0
+                            empList.draggingGroupId = -999
+                        }
+                        onClicked: (mouse) => {
+                            if (didDrag) return
+                            if (mouse.button === Qt.RightButton) empContextMenu.popup()
+                            else backend.selectEmployee(modelData.id)
+                        }
                     }
 
                     AppToolTip { anchors.horizontalCenter: parent.horizontalCenter; anchors.bottom: parent.top; anchors.bottomMargin: AppTheme.spaceXXS; text: modelData.inactive_reason || ""; isVisible: !modelData.is_active && empMouseArea.containsMouse && text !== "" }
 
                     Rectangle {
                         id: dragProxy
-                        width: empDelegateItem.width - 32; height: 56; color: AppTheme.bgElevated; radius: AppTheme.radiusLarge
-                        border.color: AppTheme.accentBrand; border.width: 1; opacity: 0.95     
-                        property int empId: modelData.id; property bool isShiftPressed: false
-                        Drag.active: empMouseArea.drag.active; Drag.keys: ["employee"]; Drag.hotSpot.x: width / 2; Drag.hotSpot.y: height / 2; visible: empMouseArea.drag.active
+                        width: Math.min(empDelegateItem.width - 24, 280)
+                        height: 48
+                        color: AppTheme.bgElevated
+                        radius: AppTheme.radiusLarge
+                        border.color: AppTheme.accentBrand
+                        border.width: 1
+                        opacity: 0.96
+                        property int empId: modelData.id
+                        property int empGroupId: empDelegateItem.rowGroupId
+                        property bool isShiftPressed: false
+                        Drag.active: empMouseArea.drag.active
+                        Drag.keys: ["employee"]
+                        Drag.hotSpot.x: width / 2
+                        Drag.hotSpot.y: height / 2
+                        visible: empMouseArea.drag.active
+                        onVisibleChanged: {
+                            if (visible) {
+                                empList.draggingEmpId = empId
+                                empList.draggingGroupId = empGroupId
+                            } else if (empList.draggingEmpId === empId) {
+                                empList.draggingEmpId = 0
+                                empList.draggingGroupId = -999
+                                empList.dropLineY = -1
+                            }
+                        }
                         AppShadow { level: 4 }
-                        Text { anchors.left: parent.left; anchors.leftMargin: AppTheme.spaceM; anchors.verticalCenter: parent.verticalCenter; text: modelData.name; color: AppTheme.textPrimary; font.pixelSize: AppTheme.sizeBody; font.weight: AppTheme.weightBold }
+                        Text {
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.leftMargin: AppTheme.spaceM
+                            anchors.rightMargin: AppTheme.spaceM
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: modelData.name
+                            elide: Text.ElideRight
+                            color: AppTheme.textPrimary
+                            font.pixelSize: AppTheme.sizeBody
+                            font.weight: AppTheme.weightBold
+                        }
                     }
+                }
+            }
+        }
+    }
+
+        Item {
+            id: empInsertOverlay
+            anchors.fill: empList
+            z: 80
+            visible: empList.dropLineY >= 0 && empList.draggingEmpId !== 0
+            clip: true
+
+            Row {
+                x: AppTheme.spaceM
+                y: empList.dropLineY - 3
+                spacing: 0
+                width: parent.width - AppTheme.spaceM * 2
+
+                Rectangle {
+                    width: 6; height: 6; radius: 3
+                    color: AppTheme.accentBrand
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+                Rectangle {
+                    width: parent.width - 6
+                    height: 2
+                    radius: 1
+                    color: AppTheme.accentBrand
+                    anchors.verticalCenter: parent.verticalCenter
                 }
             }
         }

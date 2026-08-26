@@ -1169,6 +1169,7 @@ class Backend(QObject):
                     "id": -1, 
                     "is_header": True,
                     "name": g_name,
+                    "group_id": int(gid) if gid is not None else 0,
                     "subtitle": "", "is_active": True, "has_overtime": False,
                     "shift_minutes": 0, "norm_minutes": 0, "last_name": "", "first_name": "", "middle_name": "", "rank": "", "position": "", "start_month": ""
                 })
@@ -2165,6 +2166,9 @@ class Backend(QObject):
         if not self.active_db: return
         try:
             target_gid = None if group_id == 0 else group_id
+            emp = self.active_db.get_employee(emp_id)
+            if emp["group_id"] == target_gid:
+                return
             self.active_db.begin()
             self.active_db.set_employee_group(emp_id, target_gid)
             self.active_db.conn.execute("COMMIT;")
@@ -2519,9 +2523,12 @@ class Backend(QObject):
         ordered_ids = [int(g["id"]) for g in groups]
         if source_id not in ordered_ids or target_id not in ordered_ids:
             return
+        original = list(ordered_ids)
         ordered_ids.remove(source_id)
         idx = ordered_ids.index(target_id)
         ordered_ids.insert(idx + (1 if place_after else 0), source_id)
+        if ordered_ids == original:
+            return
         try:
             self.active_db.begin()
             self.active_db.update_group_orders(ordered_ids)
@@ -2534,6 +2541,7 @@ class Backend(QObject):
 
     @Slot(int, int, bool)
     def reorderEmployees(self, source_id, target_id, place_after=False):
+        """Только внутри одной группы. В другую группу — перетаскивание на значок слева."""
         if not self.active_db or source_id == target_id:
             return
         try:
@@ -2541,27 +2549,21 @@ class Backend(QObject):
             tgt = self.active_db.get_employee(target_id)
         except Exception:
             return
-        src_gid = src["group_id"]
-        tgt_gid = tgt["group_id"]
+        if src["group_id"] != tgt["group_id"]:
+            return
+        original = self.active_db.list_employee_ids_in_group(src["group_id"])
+        if source_id not in original or target_id not in original:
+            return
+        ids = [i for i in original if i != source_id]
+        idx = ids.index(target_id)
+        ids.insert(idx + (1 if place_after else 0), source_id)
+        if ids == original:
+            return
         try:
             self.active_db.begin()
-            if src_gid != tgt_gid:
-                self.active_db.set_employee_group(source_id, tgt_gid)
-            ids = self.active_db.list_employee_ids_in_group(tgt_gid)
-            if source_id in ids:
-                ids.remove(source_id)
-            if target_id not in ids:
-                ids.append(source_id)
-            else:
-                idx = ids.index(target_id)
-                ids.insert(idx + (1 if place_after else 0), source_id)
             self.active_db.update_employee_orders(ids)
             self.active_db.conn.execute("COMMIT;")
             self.refresh_employees()
-            if source_id == self._selected_employee_id and src_gid != tgt_gid:
-                self.selectedEmployeeChanged.emit()
-                self.refresh_calendar()
-                self.refresh_yearly_panorama()
         except Exception as e:
             self.active_db.conn.execute("ROLLBACK;")
             self.showToast.emit(f"Ошибка: {e}", "error")

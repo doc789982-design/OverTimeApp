@@ -63,7 +63,7 @@ class DB:
         try: self.conn.execute("ALTER TABLE employee ADD COLUMN prev_opening_days INTEGER NOT NULL DEFAULT 0")
         except Exception: pass
 
-        
+        self.ensure_group_sort_orders()
 
         # --- СОЗДАНИЕ ТАБЛИЦЫ ДЛЯ ИСТОРИИ ПЕРЕВОДОВ ---
         try: 
@@ -400,8 +400,34 @@ class DB:
             (int(bool(enabled)), int(group_id)),
         )
 
-    def set_employee_group(self, employee_id: int, group_id: Optional[int]) -> None:
-        self.conn.execute("UPDATE employee SET group_id=? WHERE id=?", (group_id, employee_id))    
+    def ensure_group_sort_orders(self) -> None:
+        """Если у нескольких групп один sort_order (старые базы), выстроить их
+        в том порядке, в каком они уже показываются: sort_order, потом id."""
+        try:
+            groups = self.list_groups()
+            if len(groups) < 2:
+                return
+            orders = [int(g["sort_order"] or 0) for g in groups]
+            if len(set(orders)) == len(orders):
+                return
+            for i, g in enumerate(groups):
+                self.conn.execute(
+                    "UPDATE employee_group SET sort_order=? WHERE id=?",
+                    (i, int(g["id"])),
+                )
+            self.conn.commit()
+        except Exception:
+            pass
+
+    def set_employee_group(self, employee_id: int, group_id: Optional[int], at_end: bool = True) -> None:
+        if at_end:
+            so = self._next_employee_sort_order(group_id)
+            self.conn.execute(
+                "UPDATE employee SET group_id=?, sort_order=? WHERE id=?",
+                (group_id, so, employee_id),
+            )
+        else:
+            self.conn.execute("UPDATE employee SET group_id=? WHERE id=?", (group_id, employee_id))
         
     def list_employees_for_month(self, year: int, month: int, active_only: bool, search: str = "") -> list[sqlite3.Row]:
         m = f"{year:04d}-{month:02d}"
@@ -421,7 +447,9 @@ class DB:
             sql += " WHERE " + " AND ".join(where)
             
         # Сначала порядок группы, потом порядок сотрудника внутри группы, потом алфавит
-        sql += " ORDER BY COALESCE(eg.sort_order, 9999), e.sort_order, e.last_name, e.first_name"
+        # Группа целиком, потом люди внутри неё. id группы — чтобы пачки
+        # не перемешивались, пока у старых групп одинаковый sort_order.
+        sql += " ORDER BY COALESCE(eg.sort_order, 9999), COALESCE(eg.id, 2147483647), e.sort_order, e.last_name, e.first_name"
         return self.conn.execute(sql, params).fetchall()
 
     def get_employee(self, employee_id: int) -> sqlite3.Row:
@@ -571,18 +599,19 @@ class DB:
         )
 
     def add_employee(self, last: str, first: str, middle: str, rank: str, position: str, start_month: str, opening_minutes: int, opening_days: int, opening_overtime: int, prev_opening_minutes: int, prev_opening_overtime: int, prev_opening_days: int, group_id: Optional[int] = None) -> int:
+        sort_order = self._next_employee_sort_order(group_id)
         cur = self.conn.execute(
             """
             INSERT INTO employee(last_name,first_name,middle_name,rank,position,start_month,
                                  opening_minutes,opening_days,opening_overtime_minutes,
                                  prev_opening_minutes, prev_opening_overtime_minutes, prev_opening_days,
-                                 group_id)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+                                 group_id, sort_order)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
-            (last, first, middle or None, rank or None, position or None, start_month, 
-             opening_minutes, opening_days, opening_overtime, 
+            (last, first, middle or None, rank or None, position or None, start_month,
+             opening_minutes, opening_days, opening_overtime,
              prev_opening_minutes, prev_opening_overtime, prev_opening_days,
-             group_id),
+             group_id, sort_order),
         )
         return int(cur.lastrowid)
 

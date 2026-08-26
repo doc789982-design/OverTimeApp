@@ -84,6 +84,8 @@ Rectangle {
                 id: groupDropArea
                 anchors.fill: parent
                 property bool insertAfter: false
+                readonly property bool isGroupDrag: drag.source && drag.source.groupId !== undefined
+                readonly property bool isEmpDrag: drag.source && drag.source.empId !== undefined
                 onPositionChanged: (drag) => { insertAfter = drag.y > height * 0.5 }
                 onDropped: (drop) => {
                     if (drop.source && drop.source.empId !== undefined) {
@@ -102,13 +104,13 @@ Rectangle {
             }
 
             Rectangle {
-                visible: groupDropArea.containsDrag && groupDropArea.drag.source && groupDropArea.drag.source.groupId !== undefined && groupDropArea.drag.source.groupId !== modelData.id && modelData.id !== 0
-                width: 32
+                visible: groupDropArea.containsDrag && groupDropArea.isGroupDrag && groupDropArea.drag.source.groupId !== modelData.id && modelData.id !== 0
+                width: 28
                 height: 3
                 radius: AppTheme.radiusPill
                 color: AppTheme.accentBrand
                 anchors.horizontalCenter: parent.horizontalCenter
-                y: groupDropArea.insertAfter ? parent.height - 3 : 0
+                y: groupDropArea.insertAfter ? parent.height - 4 : 2
                 z: 20
             }
 
@@ -192,8 +194,9 @@ Rectangle {
                         acceptedButtons: Qt.LeftButton | Qt.RightButton
                         cursorShape: Qt.PointingHandCursor
                         
+                        cursorShape: drag.active ? Qt.ClosedHandCursor : Qt.PointingHandCursor
                         drag.target: modelData.id !== 0 ? dragGroupProxy : null
-                        drag.threshold: 8
+                        drag.threshold: 10
                         
                         onPositionChanged: (mouse) => {
                             if (drag.active && root.workspace) {
