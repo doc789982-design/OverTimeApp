@@ -12,6 +12,7 @@ workflow «Сборка Windows» — он сам приложит zip к это
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import subprocess
 import sys
@@ -87,6 +88,39 @@ def current_branch() -> str:
 def release_exists(tag: str) -> bool:
     r = run_gh(["release", "view", tag], check=False)
     return r.returncode == 0
+
+
+def current_short_sha() -> str:
+    out = subprocess.check_output(
+        ["git", "rev-parse", "--short=7", "HEAD"],
+        cwd=str(ROOT),
+        text=True,
+    )
+    return out.strip()
+
+
+def cleanup_old_release_zips(tag: str, keep_sha: str) -> None:
+    """На одном теге должен висеть один zip. Actions именует архив с хешем
+    коммита, поэтому новый файл не затирает старый — снимаем хвосты сами."""
+    view = run_gh(["release", "view", tag, "--json", "assets"], check=False)
+    if view.returncode != 0:
+        return
+    try:
+        assets = json.loads(view.stdout or "{}").get("assets") or []
+    except Exception:
+        return
+    keep = (keep_sha or "").lower()
+    for asset in assets:
+        name = str(asset.get("name") or "")
+        if not name.lower().endswith(".zip"):
+            continue
+        if keep and keep in name.lower():
+            continue
+        gone = run_gh(["release", "delete-asset", tag, name, "--yes"], check=False)
+        if gone.returncode == 0:
+            print(f"сняли старый архив {name}")
+        else:
+            sys.stderr.write(gone.stderr or gone.stdout or f"не сняли {name}\n")
 
 
 def main() -> int:
