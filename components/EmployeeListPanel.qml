@@ -159,36 +159,45 @@ Rectangle {
         id: empList
         anchors.top: headerArea.bottom; anchors.bottom: parent.bottom; anchors.left: parent.left; anchors.right: parent.right
         bottomMargin: 140 + backend.updateChromeExtra; clip: true; model: backend.employeeList
+        displaced: Transition { NumberAnimation { properties: "y"; duration: 180; easing.type: Easing.OutCubic } }
+        move: Transition { NumberAnimation { properties: "y"; duration: 180; easing.type: Easing.OutCubic } }
         
         delegate: Item {
             id: empDelegateItem
             width: ListView.view.width
             readonly property int empCardHeight: Math.max(AppTheme.rowHeight, empTextCol.implicitHeight + AppTheme.spaceM)
-            height: (modelData.is_header ? 40 : empCardHeight) + gapRect.height
+            height: modelData.is_header ? 40 : empCardHeight
 
             DropArea {
                 id: empDropArea
                 anchors.fill: parent
+                keys: ["employee"]
+                enabled: !modelData.is_header
+                property bool insertAfter: false
+                onPositionChanged: (drag) => { insertAfter = drag.y > height * 0.5 }
                 onDropped: (drop) => {
-                    if (drop.source && drop.source.empId !== undefined) {
-                        backend.reorderEmployees(drop.source.empId, modelData.id)
+                    if (drop.source && drop.source.empId !== undefined && drop.source.empId !== modelData.id) {
+                        backend.reorderEmployees(drop.source.empId, modelData.id, insertAfter)
                         drop.accept()
                     }
                 }
             }
 
+            Rectangle {
+                visible: empDropArea.containsDrag && empDropArea.drag.source && empDropArea.drag.source.empId !== undefined && empDropArea.drag.source.empId !== modelData.id && !modelData.is_header
+                height: 2
+                radius: 1
+                color: AppTheme.accentBrand
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.leftMargin: AppTheme.spaceM
+                anchors.rightMargin: AppTheme.spaceM
+                y: empDropArea.insertAfter ? parent.height - 2 : 0
+                z: 20
+            }
+
             Column {
                 anchors.fill: parent
-
-                Rectangle {
-                    id: gapRect
-                    width: parent.width
-                    property bool showGap: empDropArea.containsDrag && empDropArea.drag.source && empDropArea.drag.source.empId !== undefined && empDropArea.drag.source.empId !== modelData.id && !modelData.is_header
-                    height: showGap ? AppTheme.spaceM : 0
-                    color: "transparent"; clip: true
-                    Behavior on height { NumberAnimation { duration: AppTheme.durFast; easing.type: AppTheme.easeStandard } }
-                    Rectangle { anchors.centerIn: parent; width: parent.width - AppTheme.spaceXL; height: 2; radius: 1; color: AppTheme.accentBrand }
-                }
 
                 // ЗАГОЛОВОК ГРУППЫ
                 Rectangle {
@@ -206,6 +215,8 @@ Rectangle {
                     width: parent.width
                     height: modelData.is_header ? 0 : empDelegateItem.empCardHeight
                     clip: true
+                    opacity: empMouseArea.drag.active ? 0.35 : 1
+                    Behavior on opacity { NumberAnimation { duration: AppTheme.durFast } }
 
                     property bool isSelected: backend.selectedEmployeeId === modelData.id
 
@@ -367,6 +378,7 @@ Rectangle {
                         id: empMouseArea
                         anchors.fill: parent; hoverEnabled: true; acceptedButtons: Qt.LeftButton | Qt.RightButton
                         drag.target: dragProxy
+                        drag.threshold: 8
                         onPositionChanged: (mouse) => { if (drag.active && root.workspace) { let pt = mapToItem(root.workspace, mouse.x, mouse.y); dragProxy.x = pt.x - (dragProxy.width / 2); dragProxy.y = pt.y - (dragProxy.height / 2) } }
                         onPressed: (mouse) => { if (mouse.button === Qt.LeftButton && root.workspace) { dragProxy.isShiftPressed = (mouse.modifiers & Qt.ShiftModifier) !== 0; dragProxy.parent = root.workspace; let pt = mapToItem(root.workspace, mouse.x, mouse.y); dragProxy.x = pt.x - (dragProxy.width / 2); dragProxy.y = pt.y - (dragProxy.height / 2) } }
                         onReleased: { dragProxy.Drag.drop(); dragProxy.parent = cardContainer; dragProxy.x = 0; dragProxy.y = 0 }

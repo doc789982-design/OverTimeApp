@@ -75,14 +75,21 @@ class TemplateExporter:
             # 1. Узнаем, рабочий ли это день по факту
             try:
                 # Достаем из базы и галочку "рабочий", и "праздник"
-                row = db.conn.execute("SELECT is_working, is_holiday FROM calendar_day WHERE date=?", (d0.isoformat(),)).fetchone()
+                row = db.conn.execute("SELECT * FROM calendar_day WHERE date=?", (d0.isoformat(),)).fetchone()
                 if row:
                     is_holiday = bool(int(row["is_holiday"] if "is_holiday" in row.keys() and row["is_holiday"] is not None else 0))
+                    row_override = set()
+                    try:
+                        if "is_override" in row.keys() and int(row["is_override"] or 0):
+                            row_override.add(d0)
+                    except Exception:
+                        pass
                     is_working = resolve_is_working(
                         d0,
                         bool(shifted_checker and shifted_checker(d0)),
                         {d0: bool(int(row["is_working"]))},
                         {d0} if is_holiday else set(),
+                        row_override,
                     )
                     is_real_workday = is_working and not is_holiday
                 else:
@@ -399,6 +406,7 @@ class TemplateExporter:
         m1 = date(ny, nm, 1)
         work_map = db.get_calendar_month(d_iso(m0), d_iso(m1 - timedelta(days=1)))
         holidays_set = db.get_holidays_month(d_iso(m0), d_iso(m1 - timedelta(days=1)))
+        override_set = db.get_calendar_overrides(d_iso(m0), d_iso(m1 - timedelta(days=1)))
 
         # Желтая заливка для выходных / праздников — как красные клетки в табеле
         yellow_fill = PatternFill(start_color="FFFFFF00", end_color="FFFFFF00", fill_type="solid")
@@ -540,7 +548,7 @@ class TemplateExporter:
                         comp_txt = "\n".join(comps)
                         txt = f"{txt}\n{comp_txt}" if txt else comp_txt
 
-                    is_working = resolve_is_working(day_date, shifted_on(day_date), work_map, holidays_set)
+                    is_working = resolve_is_working(day_date, shifted_on(day_date), work_map, holidays_set, override_set)
                     paint_rest = (not is_working) or (day_date in holidays_set)
 
                 for col in cols:

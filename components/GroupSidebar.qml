@@ -72,14 +72,19 @@ Rectangle {
         clip: true
         model: backend.groupList
         
+        displaced: Transition { NumberAnimation { properties: "y"; duration: 180; easing.type: Easing.OutCubic } }
+        move: Transition { NumberAnimation { properties: "y"; duration: 180; easing.type: Easing.OutCubic } }
+
         delegate: Item {
             id: grpDelegateItem
             width: ListView.view.width
-            height: 56 + grpGap.height 
+            height: 56
 
             DropArea {
                 id: groupDropArea
                 anchors.fill: parent
+                property bool insertAfter: false
+                onPositionChanged: (drag) => { insertAfter = drag.y > height * 0.5 }
                 onDropped: (drop) => {
                     if (drop.source && drop.source.empId !== undefined) {
                         if (drop.source.isShiftPressed) {
@@ -89,38 +94,26 @@ Rectangle {
                         } else {
                             backend.moveEmployeeToGroup(drop.source.empId, modelData.id)
                         }
-                    } else if (drop.source && drop.source.groupId !== undefined) {
-                        backend.reorderGroups(drop.source.groupId, modelData.id)
+                    } else if (drop.source && drop.source.groupId !== undefined && modelData.id !== 0 && drop.source.groupId !== modelData.id) {
+                        backend.reorderGroups(drop.source.groupId, modelData.id, insertAfter)
                     }
                     drop.accept()
                 }
             }
 
+            Rectangle {
+                visible: groupDropArea.containsDrag && groupDropArea.drag.source && groupDropArea.drag.source.groupId !== undefined && groupDropArea.drag.source.groupId !== modelData.id && modelData.id !== 0
+                width: 32
+                height: 3
+                radius: AppTheme.radiusPill
+                color: AppTheme.accentBrand
+                anchors.horizontalCenter: parent.horizontalCenter
+                y: groupDropArea.insertAfter ? parent.height - 3 : 0
+                z: 20
+            }
+
             Column {
                 anchors.fill: parent
-
-                // ==========================================
-                // ЗАЗОР (При перетаскивании групп)
-                // ==========================================
-                Rectangle {
-                    id: grpGap
-                    width: parent.width
-                    property bool isGroupDrag: groupDropArea.drag.source && groupDropArea.drag.source.groupId !== undefined
-                    property bool showGap: groupDropArea.containsDrag && isGroupDrag && groupDropArea.drag.source.groupId !== modelData.id && modelData.id !== 0
-                    
-                    height: showGap ? AppTheme.spaceM : 0
-                    color: "transparent"
-                    clip: true
-                    Behavior on height { NumberAnimation { duration: AppTheme.durFast; easing.type: AppTheme.easeStandard } }
-
-                    Rectangle { 
-                        anchors.centerIn: parent
-                        width: 32
-                        height: 4
-                        radius: AppTheme.radiusPill
-                        color: AppTheme.accentBrand 
-                    }
-                }
 
                 // ==========================================
                 // КНОПКА ГРУППЫ
@@ -200,6 +193,7 @@ Rectangle {
                         cursorShape: Qt.PointingHandCursor
                         
                         drag.target: modelData.id !== 0 ? dragGroupProxy : null
+                        drag.threshold: 8
                         
                         onPositionChanged: (mouse) => {
                             if (drag.active && root.workspace) {

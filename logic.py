@@ -54,19 +54,22 @@ def resolve_is_working(
     shifted: bool,
     work_map: dict,
     holidays_set: Optional[set] = None,
+    override_set: Optional[set] = None,
 ) -> bool:
     """Рабочий ли день для этого сотрудника.
 
-    Праздники общие. Явное исключение из обычной пятидневки
-    (перенос, «сделать рабочим/выходным») тоже общее.
-    Строки calendar_day, которые просто повторяют пн–пт / сб–вс,
-    шаблон группы не затирают — иначе смещённые выходные пропадают
-    в уже заполненном календаре.
+    Шаблон группы (обычная пятидневка или смещённые выходные) — только старт.
+    Праздники и дни, которые поставили вручную (is_override), общие и главнее шаблона.
+    Старые строки calendar_day без пометки «вручную», если они просто повторяют
+    пн–пт / сб–вс, шаблон смещённой группы не затирают.
     """
     holidays_set = holidays_set or set()
+    override_set = override_set or set()
     stored = work_map.get(d)
     if d in holidays_set:
         return False if stored is None else bool(stored)
+    if d in override_set and stored is not None:
+        return bool(stored)
     if stored is None:
         return default_is_working(d, shifted)
     if not shifted:
@@ -121,6 +124,7 @@ def compute_month_norm_minutes(db, employee_id: int, year: int, month: int, shif
     start_dt, end_dt = month_bounds_dt(year, month)
     cur, last = start_dt.date(), (end_dt - timedelta(days=1)).date()
     work_map = db.get_calendar_month(d_iso(cur), d_iso(last))
+    override_set = db.get_calendar_overrides(d_iso(cur), d_iso(last))
 
     # Собираем праздники текущего месяца И первого дня следующего месяца
     # Это нужно чтобы поймать случай: праздник 1-го числа следующего месяца,
@@ -144,11 +148,18 @@ def compute_month_norm_minutes(db, employee_id: int, year: int, month: int, shif
         ).fetchone()
 
         if row:
+            row_override = set()
+            try:
+                if "is_override" in row.keys() and int(row["is_override"] or 0):
+                    row_override.add(candidate)
+            except Exception:
+                pass
             is_working = resolve_is_working(
                 candidate,
                 shifted_checker(candidate),
                 {candidate: bool(int(row["is_working"]))},
                 holidays_extended,
+                row_override,
             )
             is_holiday = bool(int(row["is_holiday"] if row["is_holiday"] is not None else 0))
         else:
@@ -182,7 +193,7 @@ def compute_month_norm_minutes(db, employee_id: int, year: int, month: int, shif
     total_minutes = 0
 
     while cur <= last:
-        is_working = resolve_is_working(cur, shifted_checker(cur), work_map, holidays_set)
+        is_working = resolve_is_working(cur, shifted_checker(cur), work_map, holidays_set, override_set)
         is_holiday = cur in holidays_set
 
         # Считаем только рабочие не-праздничные дни для сменщика

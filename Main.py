@@ -16,7 +16,7 @@ from PySide6.QtCore import QObject, Slot, Signal, Property, QUrl, QThread, QTime
 
 from database import DB
 from utils import fmt_date_iso, fmt_dt_iso, d_iso, d_parse, dt_parse, dt_iso, parse_hhmm, subtract_intervals, intersect, merge_intervals, fmt_minutes_ru_words
-from logic import compute_month_summary, is_employee_shift, validate_non_negative_over_year, default_is_working, build_shifted_weekend_checker, resolve_is_working, _row_flag
+from logic import compute_month_summary, is_employee_shift, is_employee_shifted_weekends, validate_non_negative_over_year, default_is_working, build_shifted_weekend_checker, resolve_is_working, _row_flag
 import app_update
 
 # ====================================================
@@ -504,6 +504,12 @@ class Backend(QObject):
         if not self.active_db or self._selected_employee_id == 0:
             return False
         return is_employee_shift(self.active_db, self._selected_employee_id)
+
+    @Property(bool, notify=selectedEmployeeChanged)
+    def isSelectedEmployeeShiftedWeekends(self):
+        if not self.active_db or self._selected_employee_id == 0:
+            return False
+        return is_employee_shifted_weekends(self.active_db, self._selected_employee_id)
 
     @Property(list, notify=employeeTransferHistoryChanged)
     def employeeTransferHistory(self): 
@@ -1228,9 +1234,10 @@ class Backend(QObject):
                 "opening_minutes": int(e["opening_minutes"] or 0),
                 "opening_overtime": int(e["opening_overtime_minutes"] or 0),
                 "opening_days": int(e["opening_days"] or 0),
-                "prev_opening_minutes": int(e["prev_opening_minutes"] or 0),
+                    "prev_opening_minutes": int(e["prev_opening_minutes"] or 0),
                 "prev_opening_overtime": int(e["prev_opening_overtime_minutes"] or 0),
-                "prev_opening_days": int(e["prev_opening_days"] or 0)
+                "prev_opening_days": int(e["prev_opening_days"] or 0),
+                "group_id": int(gid) if gid is not None else 0,
             })
             
         self._employee_list = formatted_emps
@@ -1276,6 +1283,7 @@ class Backend(QObject):
         
         work_map = self.active_db.get_calendar_month(d_iso(grid_start), d_iso(grid_end))
         holidays_set = self.active_db.get_holidays_month(d_iso(grid_start), d_iso(grid_end))
+        override_set = self.active_db.get_calendar_overrides(d_iso(grid_start), d_iso(grid_end))
         pre_holidays_set = self.active_db.get_pre_holidays_month(d_iso(grid_start), d_iso(grid_end))
         shifted_checker = (
             build_shifted_weekend_checker(self.active_db, self._selected_employee_id)
@@ -1336,6 +1344,7 @@ class Backend(QObject):
                     bool(shifted_checker and shifted_checker(d)),
                     work_map,
                     holidays_set,
+                    override_set,
                 )
                 is_holiday = d in holidays_set
                 grid_data.append({
@@ -1441,6 +1450,7 @@ class Backend(QObject):
         # МАГИЯ: Сначала загружаем ИЗ БАЗЫ весь календарь рабочих/выходных дней на этот год!
         work_map = self.active_db.get_calendar_month(y_start, y_end)
         holidays_set = self.active_db.get_holidays_month(y_start, y_end)
+        override_set = self.active_db.get_calendar_overrides(y_start, y_end)
         shifted_checker = build_shifted_weekend_checker(self.active_db, eid)
 
         # 1. Собираем статусы
@@ -2501,55 +2511,60 @@ class Backend(QObject):
         self._year_list = years
         self.yearListChanged.emit()
 
-    @Slot(int, int)
-    def reorderGroups(self, source_id, target_id):
-        if not self.active_db: return
+    @Slot(int, int, bool)
+    def reorderGroups(self, source_id, target_id, place_after=False):
+        if not self.active_db or source_id == target_id or source_id == 0 or target_id == 0:
+            return
         groups = self.active_db.list_groups()
-        ordered_ids = [g["id"] for g in groups]
-        
-        if source_id in ordered_ids and target_id in ordered_ids:
-            idx_s = ordered_ids.index(source_id)
-            idx_t = ordered_ids.index(target_id)
-            if idx_s == idx_t: return
-            
-            # Удаляем старый элемент
-            item = ordered_ids.pop(idx_s)
-            # Находим новый индекс цели (так как список сдвинулся)
-            new_idx_t = ordered_ids.index(target_id)
-            # Вставляем строго ПЕРЕД целью
-            ordered_ids.insert(new_idx_t, item)
-            
+        ordered_ids = [int(g["id"]) for g in groups]
+        if source_id not in ordered_ids or target_id not in ordered_ids:
+            return
+        ordered_ids.remove(source_id)
+        idx = ordered_ids.index(target_id)
+        ordered_ids.insert(idx + (1 if place_after else 0), source_id)
+        try:
             self.active_db.begin()
             self.active_db.update_group_orders(ordered_ids)
             self.active_db.conn.execute("COMMIT;")
-            
             self.refresh_groups()
             self.refresh_employees()
-            self.showToast.emit("Порядок групп изменен", "success")
+        except Exception as e:
+            self.active_db.conn.execute("ROLLBACK;")
+            self.showToast.emit(f"Ошибка: {e}", "error")
 
-    @Slot(int, int)
-    def reorderEmployees(self, source_id, target_id):
-        if not self.active_db: return
-        current_ids = [e["id"] for e in self._employee_list if not e["is_header"]]
-        
-        if source_id in current_ids and target_id in current_ids:
-            idx_s = current_ids.index(source_id)
-            idx_t = current_ids.index(target_id)
-            if idx_s == idx_t: return
-            
-            # Удаляем старый элемент
-            item = current_ids.pop(idx_s)
-            # Находим новый индекс цели
-            new_idx_t = current_ids.index(target_id)
-            # Вставляем строго ПЕРЕД целью
-            current_ids.insert(new_idx_t, item)
-            
+    @Slot(int, int, bool)
+    def reorderEmployees(self, source_id, target_id, place_after=False):
+        if not self.active_db or source_id == target_id:
+            return
+        try:
+            src = self.active_db.get_employee(source_id)
+            tgt = self.active_db.get_employee(target_id)
+        except Exception:
+            return
+        src_gid = src["group_id"]
+        tgt_gid = tgt["group_id"]
+        try:
             self.active_db.begin()
-            self.active_db.update_employee_orders(current_ids)
+            if src_gid != tgt_gid:
+                self.active_db.set_employee_group(source_id, tgt_gid)
+            ids = self.active_db.list_employee_ids_in_group(tgt_gid)
+            if source_id in ids:
+                ids.remove(source_id)
+            if target_id not in ids:
+                ids.append(source_id)
+            else:
+                idx = ids.index(target_id)
+                ids.insert(idx + (1 if place_after else 0), source_id)
+            self.active_db.update_employee_orders(ids)
             self.active_db.conn.execute("COMMIT;")
-            
             self.refresh_employees()
-            self.showToast.emit("Порядок сотрудников изменен", "success")
+            if source_id == self._selected_employee_id and src_gid != tgt_gid:
+                self.selectedEmployeeChanged.emit()
+                self.refresh_calendar()
+                self.refresh_yearly_panorama()
+        except Exception as e:
+            self.active_db.conn.execute("ROLLBACK;")
+            self.showToast.emit(f"Ошибка: {e}", "error")
 
     @Slot(str)
     def setTimeInputMode(self, mode):

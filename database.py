@@ -54,6 +54,8 @@ class DB:
         except Exception: pass        
         try: self.conn.execute("ALTER TABLE calendar_day ADD COLUMN is_holiday INTEGER NOT NULL DEFAULT 0")
         except Exception: pass
+        try: self.conn.execute("ALTER TABLE calendar_day ADD COLUMN is_override INTEGER NOT NULL DEFAULT 0")
+        except Exception: pass
         try: self.conn.execute("ALTER TABLE employee ADD COLUMN prev_opening_minutes INTEGER NOT NULL DEFAULT 0")
         except Exception: pass
         try: self.conn.execute("ALTER TABLE employee ADD COLUMN prev_opening_overtime_minutes INTEGER NOT NULL DEFAULT 0")
@@ -285,7 +287,8 @@ class DB:
                 CREATE TABLE calendar_day (
                     date TEXT PRIMARY KEY,
                     is_working INTEGER NOT NULL,
-                    is_holiday INTEGER NOT NULL DEFAULT 0
+                    is_holiday INTEGER NOT NULL DEFAULT 0,
+                    is_override INTEGER NOT NULL DEFAULT 0
                 );
                 """
             )
@@ -353,10 +356,38 @@ class DB:
     def list_groups(self) -> list[sqlite3.Row]:
         return self.conn.execute("SELECT * FROM employee_group ORDER BY sort_order, id").fetchall()
 
+    def _next_group_sort_order(self) -> int:
+        r = self.conn.execute("SELECT COALESCE(MAX(sort_order), -1) FROM employee_group").fetchone()
+        return int(r[0]) + 1
+
+    def _next_employee_sort_order(self, group_id: Optional[int] = None) -> int:
+        if group_id is None:
+            r = self.conn.execute(
+                "SELECT COALESCE(MAX(sort_order), -1) FROM employee WHERE group_id IS NULL"
+            ).fetchone()
+        else:
+            r = self.conn.execute(
+                "SELECT COALESCE(MAX(sort_order), -1) FROM employee WHERE group_id=?",
+                (group_id,),
+            ).fetchone()
+        return int(r[0]) + 1
+
+    def list_employee_ids_in_group(self, group_id: Optional[int]) -> list[int]:
+        if group_id is None:
+            rows = self.conn.execute(
+                "SELECT id FROM employee WHERE group_id IS NULL ORDER BY sort_order, last_name, first_name"
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                "SELECT id FROM employee WHERE group_id=? ORDER BY sort_order, last_name, first_name",
+                (group_id,),
+            ).fetchall()
+        return [int(r["id"]) for r in rows]
+
     def add_group(self, name: str, is_shift: bool = False, shifted_weekends: bool = False) -> int:
         cur = self.conn.execute(
-            "INSERT INTO employee_group(name, is_shift, shifted_weekends) VALUES (?, ?, ?)",
-            (name.strip(), int(is_shift), int(shifted_weekends)),
+            "INSERT INTO employee_group(name, is_shift, shifted_weekends, sort_order) VALUES (?, ?, ?, ?)",
+            (name.strip(), int(is_shift), int(shifted_weekends), self._next_group_sort_order()),
         )
         return int(cur.lastrowid)
 
@@ -404,6 +435,17 @@ class DB:
         """Возвращает словарь {дата: рабочий_ли_день}"""
         rows = self.conn.execute("SELECT date, is_working FROM calendar_day WHERE date >= ? AND date <= ?", (start_date_iso, end_date_iso)).fetchall()
         return {d_parse(r["date"]): bool(int(r["is_working"])) for r in rows}
+
+    def get_calendar_overrides(self, start_date_iso: str, end_date_iso: str) -> set[date]:
+        """Дни, которые поставили вручную. Старые строки без пометки сюда не попадают."""
+        try:
+            rows = self.conn.execute(
+                "SELECT date FROM calendar_day WHERE COALESCE(is_override, 0)=1 AND date>=? AND date<=?",
+                (start_date_iso, end_date_iso),
+            ).fetchall()
+            return {d_parse(r["date"]) for r in rows}
+        except Exception:
+            return set()
 
     def get_statuses_for_period(self, employee_id: int, start_date_iso: str, end_date_iso: str) -> dict[date, str]:
         rows = self.conn.execute("SELECT date, status FROM employee_day_status WHERE employee_id=? AND date>=? AND date<=?", (employee_id, start_date_iso, end_date_iso)).fetchall()
@@ -521,12 +563,12 @@ class DB:
         # Меняем значение на противоположное
         new_val = 0 if current else 1
         
-        # Сохраняем в базу
+        # Сохраняем в базу — это ручная правка, шаблон группы больше не затирает
         self.conn.execute(
-            "INSERT INTO calendar_day(date, is_working) VALUES(?, ?) "
-            "ON CONFLICT(date) DO UPDATE SET is_working=?", 
+            "INSERT INTO calendar_day(date, is_working, is_override) VALUES(?, ?, 1) "
+            "ON CONFLICT(date) DO UPDATE SET is_working=?, is_override=1",
             (d_iso(d0), new_val, new_val)
-        )            
+        )
 
     def add_employee(self, last: str, first: str, middle: str, rank: str, position: str, start_month: str, opening_minutes: int, opening_days: int, opening_overtime: int, prev_opening_minutes: int, prev_opening_overtime: int, prev_opening_days: int, group_id: Optional[int] = None) -> int:
         cur = self.conn.execute(
@@ -615,10 +657,10 @@ class DB:
         is_working = 1 if day_type == 'work' else 0
         is_holiday = 1 if day_type == 'holiday' else 0
         
-        # excluded.is_working означает, что если день уже есть в базе, мы его обновим
+        # Ручная правка дня: шаблон группы больше не затирает это значение
         self.conn.execute(
-            "INSERT INTO calendar_day(date, is_working, is_holiday) VALUES(?, ?, ?) "
-            "ON CONFLICT(date) DO UPDATE SET is_working=excluded.is_working, is_holiday=excluded.is_holiday",
+            "INSERT INTO calendar_day(date, is_working, is_holiday, is_override) VALUES(?, ?, ?, 1) "
+            "ON CONFLICT(date) DO UPDATE SET is_working=excluded.is_working, is_holiday=excluded.is_holiday, is_override=1",
             (d_iso(d0), is_working, is_holiday)
         )
 
@@ -680,4 +722,3 @@ class DB:
         except Exception as e:
             print(f"Ошибка get_pre_holidays_month: {e}")
             return set()
-        

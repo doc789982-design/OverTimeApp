@@ -195,7 +195,13 @@ Item {
                         Text { 
                             anchors.centerIn: parent
                             text: modelData
-                            color: (index >= 5) ? AppTheme.accentDanger : AppTheme.textSecondary
+                            color: {
+                                if (index === 6)
+                                    return AppTheme.accentDanger
+                                if (backend.isSelectedEmployeeShiftedWeekends)
+                                    return index === 0 ? AppTheme.accentDanger : AppTheme.textSecondary
+                                return index >= 5 ? AppTheme.accentDanger : AppTheme.textSecondary
+                            }
                             font.family: AppTheme.fontFamily
                             font.pixelSize: AppTheme.sizeBody
                             font.weight: AppTheme.weightMedium 
