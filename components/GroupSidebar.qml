@@ -192,8 +192,6 @@ Rectangle {
                         anchors.fill: parent
                         hoverEnabled: true
                         acceptedButtons: Qt.LeftButton | Qt.RightButton
-                        cursorShape: Qt.PointingHandCursor
-                        
                         cursorShape: drag.active ? Qt.ClosedHandCursor : Qt.PointingHandCursor
                         drag.target: modelData.id !== 0 ? dragGroupProxy : null
                         drag.threshold: 10
@@ -238,6 +236,7 @@ Rectangle {
                         
                         property int groupId: modelData.id 
                         Drag.active: btnMouseArea.drag.active
+                        Drag.keys: ["group"]
                         Drag.hotSpot.x: 24; Drag.hotSpot.y: 24
                         visible: btnMouseArea.drag.active
                         
