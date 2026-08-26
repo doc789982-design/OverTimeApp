@@ -437,20 +437,29 @@ class DB:
             where.append("e.start_month <= ?")
             where.append("(e.end_date IS NULL OR substr(e.end_date,1,7) >= ?)")
             params += [m, m]
-            
-        sql = """
-            SELECT e.* 
-            FROM employee e
-            LEFT JOIN employee_group eg ON e.group_id = eg.id
-        """
+
+        sql = "SELECT e.* FROM employee e"
         if where:
             sql += " WHERE " + " AND ".join(where)
-            
-        # Сначала порядок группы, потом порядок сотрудника внутри группы, потом алфавит
-        # Группа целиком, потом люди внутри неё. id группы — чтобы пачки
-        # не перемешивались, пока у старых групп одинаковый sort_order.
-        sql += " ORDER BY COALESCE(eg.sort_order, 9999), COALESCE(eg.id, 2147483647), e.sort_order, e.last_name, e.first_name"
-        return self.conn.execute(sql, params).fetchall()
+
+        rows = list(self.conn.execute(sql, params).fetchall())
+        # Тот же порядок, что слева в иконках: list_groups() = sort_order, потом id.
+        # Пачки в списке и строки в Excel собираются отсюда.
+        rank = {int(g["id"]): i for i, g in enumerate(self.list_groups())}
+
+        def pack_key(e):
+            gid = e["group_id"]
+            g_rank = rank[int(gid)] if gid is not None and int(gid) in rank else 10_000
+            return (
+                g_rank,
+                int(e["sort_order"] or 0),
+                e["last_name"] or "",
+                e["first_name"] or "",
+                int(e["id"]),
+            )
+
+        rows.sort(key=pack_key)
+        return rows
 
     def get_employee(self, employee_id: int) -> sqlite3.Row:
         r = self.conn.execute("SELECT * FROM employee WHERE id=?", (employee_id,)).fetchone()

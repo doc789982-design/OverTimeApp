@@ -83,6 +83,7 @@ Rectangle {
             DropArea {
                 id: groupDropArea
                 anchors.fill: parent
+                keys: ["group", "employee"]
                 property bool insertAfter: false
                 readonly property bool isGroupDrag: drag.source && drag.source.groupId !== undefined
                 readonly property bool isEmpDrag: drag.source && drag.source.empId !== undefined

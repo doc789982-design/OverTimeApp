@@ -64,9 +64,6 @@ ApplicationWindow {
         function onDatabaseOpened() { 
             stackView.replace(mainWorkspacePage) 
         }
-        function onShowToast(message, type) { 
-            toastPopup.show(message, type) 
-        }
         function onItemDeleted(dateStr, colorHex) {
             let workspace = stackView.currentItem
             if (workspace && workspace.calendarPanel) {
@@ -571,11 +568,13 @@ ApplicationWindow {
                         }
                     }
                 }
-                AppUI.UpdateBanner {
+                Column {
                     anchors.left: parent.left
                     anchors.right: parent.right
                     anchors.bottom: parent.bottom
                     anchors.bottomMargin: AppUI.AppTheme.spaceS
+                    AppUI.ToastHost { width: parent.width }
+                    AppUI.UpdateBanner { width: parent.width }
                 }
             }
 
@@ -647,6 +646,7 @@ ApplicationWindow {
                         anchors.right: parent.right
                         anchors.bottom: parent.bottom
                         z: AppUI.AppTheme.zSticky
+                        AppUI.ToastHost { width: parent.width }
                         AppUI.UpdateBanner { width: parent.width }
                         AppUI.LeftControlPanel { width: parent.width }
                     }
@@ -768,7 +768,7 @@ ApplicationWindow {
     AppUI.EndStatusDialog   { id: endStatusDialog }
     AppUI.TransferDialog    { id: transferDialog }
     AppUI.MoneyDialog       { id: moneyDialog }
-    AppUI.AppToast          { id: toastPopup }
+
     AppUI.AppConfirmDialog  {
         id: confirmDialog
         onAccepted: {
