@@ -26,7 +26,7 @@ Item {
     property bool menuHasDuties: false
     property bool menuHasComps: false
 
-    property real MENU_W: 256
+    property real menuW: 256
 
     // Геометрия ячейки, из которой открылись (для обратной анимации)
     property rect cellRect: Qt.rect(0, 0, 0, 0)
@@ -73,7 +73,7 @@ Item {
             id: menuContent
             x: AppTheme.spaceM
             y: AppTheme.spaceM
-            width: root.MENU_W - 2 * AppTheme.spaceM
+            width: root.menuW - 2 * AppTheme.spaceM
             spacing: 4
             opacity: 0
             scale: 0.97
@@ -332,7 +332,7 @@ Item {
         let margin = AppTheme.spaceL
         root.cellRect = Qt.rect(pt.x, pt.y, cellItem.width, cellItem.height)
 
-        let menuW = Math.min(root.MENU_W, mainWindow.width - margin)
+        let menuW = Math.min(root.menuW, mainWindow.width - margin)
         let menuH = Math.min(menuContent.implicitHeight + 2 * AppTheme.spaceM, mainWindow.height - margin)
 
         // Расширяемся от левого верхнего угла ячейки, но не вылезаем за окно
