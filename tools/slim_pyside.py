@@ -26,7 +26,16 @@ PySide6 — это огромный конструктор. В нём есть �
 """
 from __future__ import annotations
 
+import sys
 from pathlib import Path
+
+# GitHub Actions Windows: консоль часто cp1252 и падает на «МБ».
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
 
 
 # ---------------------------------------------------------------------------

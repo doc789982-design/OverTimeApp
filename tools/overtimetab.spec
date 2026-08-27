@@ -108,7 +108,11 @@ print(
     f"(было {format_mb(before_data)})"
 )
 
-pyz = PYZ(a.pure, a.zipped_data)
+# PyInstaller 6: a.zipped_data больше нет.
+try:
+    pyz = PYZ(a.pure, a.zipped_data)
+except (TypeError, AttributeError):
+    pyz = PYZ(a.pure)
 
 icon_path = ROOT / "app_icon.ico"
 
