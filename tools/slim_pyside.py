@@ -416,27 +416,82 @@ def slim_dist_tree(dist_root) -> None:
         print("[slim] после сборки в dist лишнего не осталось")
 
 
+_SITECUSTOMIZE = '''# overtimetab CI: --collect-all PySide6 -> tools/overtimetab.spec
+import os
+import sys
+from pathlib import Path
+
+if (os.environ.get("GITHUB_ACTIONS") or "").lower() == "true":
+    args_l = [str(a).lower() for a in sys.argv]
+    wants_all = "--collect-all" in args_l and any("pyside6" in str(a).lower() for a in sys.argv)
+    already_spec = any(str(a).endswith(".spec") for a in sys.argv)
+    if wants_all and not already_spec:
+        root = Path(os.environ.get("GITHUB_WORKSPACE") or ".")
+        spec = root / "tools" / "overtimetab.spec"
+        if spec.is_file():
+            print("[slim] sitecustomize: --collect-all PySide6 ->", spec, flush=True)
+            sys.argv[:] = [sys.argv[0], "--noconfirm", "--clean", str(spec)]
+'''
+
+
 def install_ci_pyinstaller_wrapper() -> None:
     """
-    Ставит tools/ci_bin первым в PATH следующего шага Actions.
-    Там лежит pyinstaller.cmd / .ps1, который вызывает spec вместо --collect-all.
+    На GitHub Actions перехватываем `pyinstaller --collect-all PySide6`.
+
+    1) sitecustomize.py в site-packages — срабатывает внутри pyinstaller.exe,
+       независимо от PATH и политики PowerShell.
+    2) tools/ci_bin в GITHUB_PATH — запасной перехват, если вызов идёт через cmd.
     """
     import os
+    import site
+    import sys
 
     if (os.environ.get("GITHUB_ACTIONS") or "").lower() != "true":
         return
-    wrapper_dir = Path(__file__).resolve().parent / "ci_bin"
-    if not wrapper_dir.is_dir():
-        print("[slim] нет tools/ci_bin — PATH не меняем")
-        return
-    gh_path = os.environ.get("GITHUB_PATH")
-    if not gh_path:
-        print("[slim] GITHUB_PATH пуст — обёртку pyinstaller не регистрируем")
-        return
+
+    written = []
+    candidates = []
     try:
-        with open(gh_path, "a", encoding="utf-8") as fh:
-            fh.write(str(wrapper_dir) + "\n")
-    except Exception as exc:
-        print(f"[slim] не смогли записать GITHUB_PATH: {exc}")
-        return
-    print(f"[slim] pyinstaller → spec через {wrapper_dir}")
+        for p in site.getsitepackages() or []:
+            candidates.append(Path(p) / "sitecustomize.py")
+    except Exception:
+        pass
+    try:
+        usp = site.getusersitepackages()
+        if usp:
+            candidates.append(Path(usp) / "sitecustomize.py")
+    except Exception:
+        pass
+    candidates.append(Path(sys.executable).resolve().parent / "sitecustomize.py")
+    candidates.append(Path(sys.executable).resolve().parent / "Lib" / "site-packages" / "sitecustomize.py")
+
+    seen = set()
+    for dest in candidates:
+        key = str(dest).lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            if dest.exists() and "overtimetab CI" not in dest.read_text(encoding="utf-8", errors="replace"):
+                print(f"[slim] sitecustomize уже был, не затираем: {dest}")
+                continue
+            dest.write_text(_SITECUSTOMIZE, encoding="utf-8")
+            written.append(str(dest))
+        except Exception as exc:
+            print(f"[slim] не смогли записать {dest}: {exc}")
+    if written:
+        print("[slim] перехват pyinstaller через sitecustomize:")
+        for w in written:
+            print(f"[slim]   {w}")
+
+    wrapper_dir = Path(__file__).resolve().parent / "ci_bin"
+    gh_path = os.environ.get("GITHUB_PATH")
+    if wrapper_dir.is_dir() and gh_path:
+        try:
+            with open(gh_path, "a", encoding="utf-8") as fh:
+                fh.write(str(wrapper_dir) + "\n")
+            print(f"[slim] pyinstaller.cmd в PATH: {wrapper_dir}")
+        except Exception as exc:
+            print(f"[slim] не смогли записать GITHUB_PATH: {exc}")
+
