@@ -30,7 +30,7 @@ AppSidePanel {
 
             Rectangle {
                 width: parent.width
-                height: modelData.comment !== "" ? 90 : 65 
+                height: AppTheme.rowHeight + AppTheme.spaceL + (modelData.comment !== "" ? AppTheme.spaceL : 0) 
                 color: AppTheme.bgSurface 
                 border.color: AppTheme.borderDivider 
                 border.width: 1                  
@@ -40,7 +40,7 @@ AppSidePanel {
                 AppShadow { level: 1 }
                 
                 ColumnLayout {
-                    anchors.fill: parent; anchors.margins: AppTheme.spaceM; anchors.rightMargin: 80; spacing: 4
+                    anchors.fill: parent; anchors.margins: AppTheme.spaceM; anchors.rightMargin: AppTheme.cardActionReserve; spacing: AppTheme.spaceXXS
                     
                     RowLayout {
                         Layout.fillWidth: true; spacing: AppTheme.spaceS

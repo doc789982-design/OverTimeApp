@@ -9,7 +9,9 @@ QtObject {
     // Меняем здесь: заголовок окна, шапка и логотип
     // подхватят автоматически.
     // ==========================================
-    readonly property string appVersion: "2.0.0-ALPHA.19"
+    readonly property string appVersion: "2.0.0-ALPHA.20"
+    readonly property int appBuild: 83
+    readonly property string appVersionFull: appVersion + " · сборка " + appBuild
 
     // ==========================================
     // ЗАГРУЗКА ШРИФТОВ (ГАРАНТИЯ ПРАВИЛЬНЫХ ИМЕН)
@@ -29,21 +31,15 @@ QtObject {
     // ==========================================
     // 1. ПОВЕРХНОСТИ (Surfaces)
     // ==========================================
-    // Главный фон (Календарь) - ярче в темной (#1C1C1E), чисто белый в светлой
-    property color bgBase:     isDark ? "#1C1C1E" : "#FFFFFF" 
-    
-    // Боковые панели (Группы, Сотрудники) - темнее главного фона
-    property color bgPanel:    isDark ? "#121212" : "#F3F4F6" 
-    
-    // Панель итогов (Внизу) - чуть темнее календаря
-    property color bgSurface:  isDark ? "#161618" : "#F8F9FA" 
-    
-    // Подложка для рабочих дней в календаре (чтобы не были прозрачными)
-    property color bgCell:     isDark ? "#242426" : "#F4F5F7" 
-
-    property color bgElevated: isDark ? "#2C2C2C" : "#FFFFFF" 
-    property color bgModal:    isDark ? "#333333" : "#FFFFFF" 
-    property color bgInput:    "transparent" 
+    // Светлая — Canvas (InstUI): белая страница, фарфор у панелей, карточки белые.
+    // Тёмная — Material: #121212 и ступени elevation, календарь чуть светлее рельс.
+    property color bgBase:     isDark ? "#1C1C1E" : "#FFFFFF"
+    property color bgPanel:    isDark ? "#121212" : "#F5F5F5"
+    property color bgSurface:  isDark ? "#161618" : "#F8F9FA"
+    property color bgCell:     isDark ? "#242426" : "#F4F5F7"
+    property color bgElevated: isDark ? "#2C2C2C" : "#FFFFFF"
+    property color bgModal:    isDark ? "#333333" : "#FFFFFF"
+    property color bgInput:    "transparent"
 
     property color bgDisabled:       isDark ? "#212529" : "#E9ECEF" 
     property color bgSkeletonBase:   isDark ? "#2B3035" : "#E2E8F0" 
@@ -52,7 +48,7 @@ QtObject {
     // ==========================================
     // 2. СЕМАНТИЧЕСКИЕ ЦВЕТА (Brand & Status)
     // ==========================================
-    property color accentBrand:   isDark ? "#4B9AEE" : "#0875E1" 
+    property color accentBrand:   isDark ? "#4B9AEE" : "#0374B5" 
     property color accentInfo:    isDark ? "#82B1FF" : "#0056B3" 
     property color accentSuccess: isDark ? "#5CB85C" : "#107C3F" 
     property color accentWarning: isDark ? "#F4AC5B" : "#E67300" 
@@ -62,7 +58,13 @@ QtObject {
 
     // Мягкие фоны (Зашиты прямо в HEX-коды: 33 = 20% opacity, 1E = 12% opacity)
     // Это 100% безопасный метод для движка QML
-    property color bgBrandSoft:   isDark ? "#334B9AEE" : "#1E0875E1"
+    property color bgBrandSoft:   isDark ? "#334B9AEE" : "#1E0374B5"
+
+    // Годовая сетка: клетки ~12px. Обычное дежурство — плотный бренд.
+    // Сменное — тот же цвет, вполовину прозрачнее.
+    property color yearDutyExtra: accentBrand
+    property color yearDutyShift: Qt.rgba(accentBrand.r, accentBrand.g, accentBrand.b, 0.5)
+    property color yearWeekend:   isDark ? "#66E76C78" : "#4DDE2E43"
     property color bgInfoSoft:    isDark ? "#3382B1FF" : "#1E0056B3"
     property color bgSuccessSoft: isDark ? "#335CB85C" : "#1E107C3F"
     property color bgWarningSoft: isDark ? "#33F4AC5B" : "#1EE67300"
@@ -73,9 +75,9 @@ QtObject {
     // ==========================================
     // 3. ТЕКСТ (Typography Colors)
     // ==========================================
-    property color textPrimary:   isDark ? "#DEE4EA" : "#202124" 
-    property color textSecondary: isDark ? "#8B949E" : "#5F6368" 
-    property color textTertiary:  isDark ? "#6B757D" : "#8A949E" 
+    property color textPrimary:   isDark ? "#DEE4EA" : "#2D3B45"
+    property color textSecondary: isDark ? "#8B949E" : "#6B7780"
+    property color textTertiary:  isDark ? "#6B757D" : "#8B969E"
     property color textDisabled:  isDark ? "#484F58" : "#9AA0A6" 
     
     property color textInverse:   isDark ? "#202124" : "#FFFFFF" 
@@ -109,8 +111,8 @@ QtObject {
     // ==========================================
     // 5. ГРАНИЦЫ И ФОКУС (Borders & Accessibility)
     // ==========================================
-    property color borderDivider:  isDark ? "#30363D" : "#E1E4E8" 
-    property color borderInput:    isDark ? "#484F58" : "#D0D7DE" 
+    property color borderDivider:  isDark ? "#30363D" : "#E8EAEC"
+    property color borderInput:    isDark ? "#484F58" : "#C7CDD1" 
     property color borderDisabled: isDark ? "#353B42" : "#DDE2E5" 
     property color borderError:    accentDanger 
     
@@ -154,6 +156,13 @@ QtObject {
     property int spaceXL:    32
     property int spaceXXL:   48
     property int spaceXXXL:  64
+
+    // Одинаковые по смыслу ряды и шапки — одни числа.
+    property int rowHeight:         56
+    property int barHeight:         60
+    property int fieldIconSize:     36
+    property int cardActionReserve: 84
+    property int startCardHeight:   72
 
     // ==========================================
     // 9. ГЛУБИНА И ТЕНИ (Elevation Levels - Material 3)

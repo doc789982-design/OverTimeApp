@@ -51,7 +51,7 @@ Menu {
     }
     
     background: Rectangle {
-        color: "#FF0000"
+        color: AppTheme.bgElevated
         border.color: AppTheme.borderDivider
         border.width: 1
         radius: AppTheme.radiusMedium

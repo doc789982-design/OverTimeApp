@@ -48,8 +48,7 @@ AppLargeModal {
                 text: "Отправить на печать" 
                 iconSource: "../icons/print.svg" 
                 width: parent.width
-                height: 45 // Главная кнопка действия всегда крупнее
-                variant: "primary" 
+                variant: "primary"
                 onClicked: executePrint()
             }
         }

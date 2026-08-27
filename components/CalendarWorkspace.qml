@@ -195,7 +195,13 @@ Item {
                         Text { 
                             anchors.centerIn: parent
                             text: modelData
-                            color: (index >= 5) ? AppTheme.accentDanger : AppTheme.textSecondary
+                            color: {
+                                if (index === 6)
+                                    return AppTheme.accentDanger
+                                if (backend.isSelectedEmployeeShiftedWeekends)
+                                    return index === 0 ? AppTheme.accentDanger : AppTheme.textSecondary
+                                return index >= 5 ? AppTheme.accentDanger : AppTheme.textSecondary
+                            }
                             font.family: AppTheme.fontFamily
                             font.pixelSize: AppTheme.sizeBody
                             font.weight: AppTheme.weightMedium 
@@ -582,35 +588,23 @@ Item {
             // ГЛОБАЛЬНОЕ МЕНЮ КАЛЕНДАРЯ
             AppMenu {
                 id: globalContextMenu
-                
-                background: Item {
-                    implicitWidth: 220
-                    implicitHeight: globalContextMenu.contentHeight
-                    
-                    Rectangle { 
-                        y: 55
-                        width: parent.width
-                        height: parent.height - 55
-                        color: AppTheme.bgElevated
-                        radius: AppTheme.radiusMedium
-                        border.color: AppTheme.borderDivider
-                        border.width: 1 
-                        // Тень-картинка вместо вычисляемой (Level 2)
-                        AppShadow { level: 2 }
-                    }
-                }
-                
+
                 MenuItem {
-                    height: 55
+                    hoverEnabled: false
+                    implicitHeight: 48
+                    implicitWidth: 184
                     padding: 0
-                    background: Item {} 
-                    
+                    background: Item {}
+
                     contentItem: Item {
-                        anchors.fill: parent
+                        implicitHeight: 48
+                        implicitWidth: 184
 
                         Row {
-                            anchors.centerIn: parent
-                            spacing: 12
+                            anchors.verticalCenter: parent.verticalCenter
+                            anchors.left: parent.left
+                            anchors.leftMargin: 12
+                            spacing: 8
                             
                             Rectangle { 
                                 width: 34; height: 34
@@ -807,104 +801,61 @@ Item {
                 AppMenuItem {
                     text: "Добавить дежурство"
                     iconSource: "../icons/clock.svg"
+                    showDelete: monthPage.menuHasDuties
                     onClicked: {
                         dayEventDialog.openForDuty(
                             monthPage.menuDate, globalContextMenu.parent, 0, 0
                         )
                         globalContextMenu.close()
                     }
-                    Rectangle { 
-                        visible: monthPage.menuHasDuties
-                        width: 26; height: 26
-                        radius: AppTheme.radiusSmall
-                        anchors.verticalCenter: parent.verticalCenter
-                        anchors.right: parent.right
-                        anchors.rightMargin: AppTheme.spaceS
-                        color: dutyDelMouse.containsMouse ? AppTheme.bgDangerSoft : "transparent"
-                        IconImage {
-                            anchors.centerIn: parent
-                            source: "../icons/trash.svg"
-                            width: AppTheme.iconSmall
-                            height: AppTheme.iconSmall
-                            color: dutyDelMouse.containsMouse
-                                   ? AppTheme.accentDanger
-                                   : AppTheme.textTertiary
-                        }
-                        MouseArea {
-                            id: dutyDelMouse
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            onClicked: {
-                                mainWindow.askConfirm(
-                                    "Удалить все дежурства?",
-                                    "Будут удалены все дежурства за " + root.fmtRuDate(monthPage.menuDate) + ".\nЕсли передумаете — нажмите Ctrl+Z.",
-                                    "Удалить",
-                                    function() {
-                                        mainWindow.explodeAndDelete(
-                                            monthPage.menuDate, "duty", null,
-                                            function() { backend.clearDayDuties(monthPage.menuDate) }
-                                        )
-                                    }
+                    onDeleteClicked: {
+                        mainWindow.askConfirm(
+                            "Удалить все дежурства?",
+                            "Будут удалены все дежурства за " + root.fmtRuDate(monthPage.menuDate) + ".\nЕсли передумаете — нажмите Ctrl+Z.",
+                            "Удалить",
+                            function() {
+                                mainWindow.explodeAndDelete(
+                                    monthPage.menuDate, "duty", null,
+                                    function() { backend.clearDayDuties(monthPage.menuDate) }
                                 )
-                                globalContextMenu.close()
                             }
-                        }
-                    } 
+                        )
+                        globalContextMenu.close()
+                    }
                 }
-                
+
                 AppMenuItem {
                     text: "Добавить компенсацию"
                     iconSource: "../icons/rest.svg"
+                    showDelete: monthPage.menuHasComps
                     onClicked: {
                         dayEventDialog.openForComp(
                             monthPage.menuDate, globalContextMenu.parent, 0, 0
                         )
                         globalContextMenu.close()
                     }
-                    Rectangle { 
-                        visible: monthPage.menuHasComps
-                        width: 26; height: 26
-                        radius: AppTheme.radiusSmall
-                        anchors.verticalCenter: parent.verticalCenter
-                        anchors.right: parent.right
-                        anchors.rightMargin: AppTheme.spaceS
-                        color: compDelMouse.containsMouse ? AppTheme.bgDangerSoft : "transparent"
-                        IconImage {
-                            anchors.centerIn: parent
-                            source: "../icons/trash.svg"
-                            width: AppTheme.iconSmall
-                            height: AppTheme.iconSmall
-                            color: compDelMouse.containsMouse
-                                   ? AppTheme.accentDanger
-                                   : AppTheme.textTertiary
-                        }
-                        MouseArea {
-                            id: compDelMouse
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            onClicked: {
-                                mainWindow.askConfirm(
-                                    "Удалить все компенсации?",
-                                    "Будут удалены все компенсации за " + root.fmtRuDate(monthPage.menuDate) + ".\nЕсли передумаете — нажмите Ctrl+Z.",
-                                    "Удалить",
-                                    function() {
-                                        mainWindow.explodeAndDelete(
-                                            monthPage.menuDate, "comp", null,
-                                            function() { backend.clearDayCompensations(monthPage.menuDate) }
-                                        )
-                                    }
+                    onDeleteClicked: {
+                        mainWindow.askConfirm(
+                            "Удалить все компенсации?",
+                            "Будут удалены все компенсации за " + root.fmtRuDate(monthPage.menuDate) + ".\nЕсли передумаете — нажмите Ctrl+Z.",
+                            "Удалить",
+                            function() {
+                                mainWindow.explodeAndDelete(
+                                    monthPage.menuDate, "comp", null,
+                                    function() { backend.clearDayCompensations(monthPage.menuDate) }
                                 )
-                                globalContextMenu.close()
                             }
-                        }
-                    } 
+                        )
+                        globalContextMenu.close()
+                    }
                 }
-                
+
                 AppMenuSeparator {}
 
                 AppMenuItem {
                     visible: monthPage.menuIsWeekend || monthPage.menuIsHoliday
                     text: "Сделать рабочим"
+                    iconSource: "../icons/calendar.svg"
                     customColor: AppTheme.accentTeal
                     onClicked: {
                         backend.setDayType(monthPage.menuDate, "work")
@@ -914,6 +865,7 @@ Item {
                 AppMenuItem {
                     visible: !monthPage.menuIsWeekend
                     text: "Сделать выходным"
+                    iconSource: "../icons/rest.svg"
                     customColor: AppTheme.accentDanger
                     onClicked: {
                         backend.setDayType(monthPage.menuDate, "weekend")
@@ -923,6 +875,7 @@ Item {
                 AppMenuItem {
                     visible: !monthPage.menuIsHoliday
                     text: "Сделать праздничным"
+                    iconSource: "../icons/sparkle.svg"
                     customColor: AppTheme.accentPurple
                     onClicked: {
                         backend.setDayType(monthPage.menuDate, "holiday")
@@ -1037,15 +990,17 @@ Item {
                                     anchors.margins: 2
                                     radius: AppTheme.radiusSmall
                                     visible: cellInfo.is_real
-                                    color: !cellInfo
-                                           ? "transparent"
-                                           : (cellInfo.type === "duty"
-                                              ? (cellInfo.val === "1"
-                                                 ? AppTheme.accentBrand
-                                                 : AppTheme.bgBrandSoft)
-                                              : (cellInfo.is_weekend
-                                                 ? AppTheme.bgDangerSoft
-                                                 : AppTheme.bgCell))
+                                    color: {
+                                        if (!cellInfo)
+                                            return "transparent"
+                                        if (cellInfo.type === "duty")
+                                            return cellInfo.val === "1"
+                                                   ? AppTheme.yearDutyShift
+                                                   : AppTheme.yearDutyExtra
+                                        if (cellInfo.is_weekend)
+                                            return AppTheme.yearWeekend
+                                        return AppTheme.bgCell
+                                    }
                                     
                                     Text { 
                                         anchors.centerIn: parent

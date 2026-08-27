@@ -12,11 +12,12 @@ from pathlib import Path
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
 from PySide6.QtGui import QIcon, QAction
 from PySide6.QtQml import QQmlApplicationEngine
-from PySide6.QtCore import QObject, Slot, Signal, Property, QUrl, QThread
+from PySide6.QtCore import QObject, Slot, Signal, Property, QUrl, QThread, QTimer
 
 from database import DB
 from utils import fmt_date_iso, fmt_dt_iso, d_iso, d_parse, dt_parse, dt_iso, parse_hhmm, subtract_intervals, intersect, merge_intervals, fmt_minutes_ru_words
-from logic import compute_month_summary, is_employee_shift, validate_non_negative_over_year
+from logic import compute_month_summary, is_employee_shift, is_employee_shifted_weekends, validate_non_negative_over_year, default_is_working, build_shifted_weekend_checker, resolve_is_working, _row_flag
+import app_update
 
 # ====================================================
 # УМНЫЙ ПЕРЕКЛЮЧАТЕЛЬ РЕЖИМОВ (DEV / PROD)
@@ -177,6 +178,46 @@ class PrintWorker(QThread):
                 pass
 # ====================================================
 
+class UpdateStageWorker(QThread):
+    """Копирует zip/папку новой версии в pending_update, не блокируя окно."""
+    finished_signal = Signal(bool, str, str)  # ok, message, version
+
+    def __init__(self, source_path, app_dir):
+        super().__init__()
+        self.source_path = source_path
+        self.app_dir = app_dir
+
+    def run(self):
+        try:
+            ver = app_update.stage_package(Path(self.source_path), Path(self.app_dir))
+            self.finished_signal.emit(True, "", ver or "")
+        except Exception as e:
+            self.finished_signal.emit(False, str(e), "")
+
+
+class UpdateScanWorker(QThread):
+    """Ищет zip/папку новой версии, не блокируя окно."""
+    finished_signal = Signal(object)
+
+    def __init__(self, app_dir, current_version, current_build=0):
+        super().__init__()
+        self.app_dir = app_dir
+        self.current_version = current_version
+        self.current_build = current_build
+
+    def run(self):
+        try:
+            found = app_update.pick_best_update(
+                Path(self.app_dir),
+                self.current_version or "",
+                int(self.current_build or 0),
+            )
+            self.finished_signal.emit(found)
+        except Exception:
+            self.finished_signal.emit(None)
+
+# ====================================================
+
 class Backend(QObject):
     dbListChanged = Signal()
     groupListChanged = Signal()
@@ -203,6 +244,12 @@ class Backend(QObject):
     itemDeleted = Signal(str, str)
     startHiddenChanged = Signal()
     reminderEnabledChanged = Signal()
+    updateReadyChanged = Signal()
+    updateBusyChanged = Signal()
+    updateVersionChanged = Signal()
+    updateStatusTextChanged = Signal()
+    appVersionChanged = Signal()
+    whatsNewChanged = Signal()
 
     def __init__(self, start_hidden=False):
         super().__init__()
@@ -254,6 +301,17 @@ class Backend(QObject):
         self._active_department_name = ""
         
         self.load_databases()
+
+        self._update_ready = False
+        self._update_busy = False
+        self._update_version = ""
+        self._update_status = ""
+        self._update_source = ""
+        self._whats_new = []
+        self._scan_running = False
+        self._app_version = app_update.current_app_version(self.app_dir)
+        self._app_build = app_update.current_app_build(self.app_dir)
+        self._init_updates()
 
     def load_databases(self):
         loaded_dbs = []
@@ -446,6 +504,12 @@ class Backend(QObject):
         if not self.active_db or self._selected_employee_id == 0:
             return False
         return is_employee_shift(self.active_db, self._selected_employee_id)
+
+    @Property(bool, notify=selectedEmployeeChanged)
+    def isSelectedEmployeeShiftedWeekends(self):
+        if not self.active_db or self._selected_employee_id == 0:
+            return False
+        return is_employee_shifted_weekends(self.active_db, self._selected_employee_id)
 
     @Property(list, notify=employeeTransferHistoryChanged)
     def employeeTransferHistory(self): 
@@ -1042,12 +1106,18 @@ class Backend(QObject):
 
     def refresh_groups(self):
         if not self.active_db: return
-        formatted_groups = [{"id": 0, "name": "Все", "icon": "Все"}]
+        formatted_groups = [{"id": 0, "name": "Все", "icon": "Все", "is_shift": False, "shifted_weekends": False}]
         for g in self.active_db.list_groups():
             clean_name = g["name"]
             for ch in "№-.,_()[]{}": clean_name = clean_name.replace(ch, " ")
             icon_text = "".join(p if p.isdigit() else p[0].upper() for p in clean_name.split() if p)[:4] or "?"
-            formatted_groups.append({"id": int(g["id"]), "name": g["name"], "icon": icon_text})
+            formatted_groups.append({
+                "id": int(g["id"]),
+                "name": g["name"],
+                "icon": icon_text,
+                "is_shift": _row_flag(g, "is_shift"),
+                "shifted_weekends": _row_flag(g, "shifted_weekends"),
+            })
         self._group_list = formatted_groups
         self.groupListChanged.emit()
 
@@ -1099,6 +1169,7 @@ class Backend(QObject):
                     "id": -1, 
                     "is_header": True,
                     "name": g_name,
+                    "group_id": int(gid) if gid is not None else 0,
                     "subtitle": "", "is_active": True, "has_overtime": False,
                     "shift_minutes": 0, "norm_minutes": 0, "last_name": "", "first_name": "", "middle_name": "", "rank": "", "position": "", "start_month": ""
                 })
@@ -1164,9 +1235,10 @@ class Backend(QObject):
                 "opening_minutes": int(e["opening_minutes"] or 0),
                 "opening_overtime": int(e["opening_overtime_minutes"] or 0),
                 "opening_days": int(e["opening_days"] or 0),
-                "prev_opening_minutes": int(e["prev_opening_minutes"] or 0),
+                    "prev_opening_minutes": int(e["prev_opening_minutes"] or 0),
                 "prev_opening_overtime": int(e["prev_opening_overtime_minutes"] or 0),
-                "prev_opening_days": int(e["prev_opening_days"] or 0)
+                "prev_opening_days": int(e["prev_opening_days"] or 0),
+                "group_id": int(gid) if gid is not None else 0,
             })
             
         self._employee_list = formatted_emps
@@ -1212,7 +1284,12 @@ class Backend(QObject):
         
         work_map = self.active_db.get_calendar_month(d_iso(grid_start), d_iso(grid_end))
         holidays_set = self.active_db.get_holidays_month(d_iso(grid_start), d_iso(grid_end))
+        override_set = self.active_db.get_calendar_overrides(d_iso(grid_start), d_iso(grid_end))
         pre_holidays_set = self.active_db.get_pre_holidays_month(d_iso(grid_start), d_iso(grid_end))
+        shifted_checker = (
+            build_shifted_weekend_checker(self.active_db, self._selected_employee_id)
+            if self._selected_employee_id > 0 else None
+        )
         
         duty_map = {}
         comp_set = set()
@@ -1263,7 +1340,13 @@ class Backend(QObject):
         for week in month_days:
             for d in week:
                 d_str = d_iso(d)
-                is_working = work_map.get(d, d.weekday() < 5)
+                is_working = resolve_is_working(
+                    d,
+                    bool(shifted_checker and shifted_checker(d)),
+                    work_map,
+                    holidays_set,
+                    override_set,
+                )
                 is_holiday = d in holidays_set
                 grid_data.append({
                     "date_str": d_str,
@@ -1367,6 +1450,9 @@ class Backend(QObject):
         
         # МАГИЯ: Сначала загружаем ИЗ БАЗЫ весь календарь рабочих/выходных дней на этот год!
         work_map = self.active_db.get_calendar_month(y_start, y_end)
+        holidays_set = self.active_db.get_holidays_month(y_start, y_end)
+        override_set = self.active_db.get_calendar_overrides(y_start, y_end)
+        shifted_checker = build_shifted_weekend_checker(self.active_db, eid)
 
         # 1. Собираем статусы
         sts = self.active_db.conn.execute("SELECT date, status FROM employee_day_status WHERE employee_id=? AND date>=? AND date<=?", (eid, y_start, y_end)).fetchall()
@@ -1414,7 +1500,9 @@ class Backend(QObject):
                     # МАГИЯ: Смотрим в базу! Если дня нет в базе, по умолчанию Сб/Вс - выходные.
                     # Переменная work_map возвращает True (рабочий) или False (выходной).
                     # is_weekend = это когда НЕ рабочий.
-                    is_weekend = not work_map.get(cur_date, cur_date.weekday() < 5)
+                    is_weekend = not resolve_is_working(
+                        cur_date, shifted_checker(cur_date), work_map, holidays_set
+                    )
                         
                     month_row.append({
                         "is_real": True, 
@@ -2012,15 +2100,35 @@ class Backend(QObject):
             self.active_db.conn.execute("ROLLBACK;")
             self.showToast.emit(f"Ошибка хоткея: {e}", "error")
 
-    @Slot(str, bool)
-    def createGroup(self, name, is_shift):
+    @Slot(str, bool, bool)
+    def createGroup(self, name, is_shift, shifted_weekends=False):
         if not self.active_db or not name.strip(): return
         try:
             self.active_db.begin()
-            self.active_db.add_group(name, is_shift)
+            self.active_db.add_group(name, is_shift, shifted_weekends)
             self.active_db.conn.execute("COMMIT;")
             self.refresh_groups()
             self.showToast.emit("Группа создана", "success")
+        except Exception as e:
+            self.active_db.conn.execute("ROLLBACK;")
+            self.showToast.emit(f"Ошибка: {e}", "error")
+
+    @Slot(int, bool)
+    def setGroupShiftedWeekends(self, group_id, enabled):
+        if not self.active_db or not group_id:
+            return
+        try:
+            self.active_db.begin()
+            self.active_db.set_group_shifted_weekends(group_id, enabled)
+            self.active_db.conn.execute("COMMIT;")
+            self.refresh_groups()
+            self.refresh_employees()
+            self.refresh_calendar()
+            self.refresh_yearly_panorama()
+            self.showToast.emit(
+                "Смещённые выходные включены" if enabled else "Обычные выходные",
+                "success",
+            )
         except Exception as e:
             self.active_db.conn.execute("ROLLBACK;")
             self.showToast.emit(f"Ошибка: {e}", "error")
@@ -2058,6 +2166,9 @@ class Backend(QObject):
         if not self.active_db: return
         try:
             target_gid = None if group_id == 0 else group_id
+            emp = self.active_db.get_employee(emp_id)
+            if emp["group_id"] == target_gid:
+                return
             self.active_db.begin()
             self.active_db.set_employee_group(emp_id, target_gid)
             self.active_db.conn.execute("COMMIT;")
@@ -2404,55 +2515,58 @@ class Backend(QObject):
         self._year_list = years
         self.yearListChanged.emit()
 
-    @Slot(int, int)
-    def reorderGroups(self, source_id, target_id):
-        if not self.active_db: return
+    @Slot(int, int, bool)
+    def reorderGroups(self, source_id, target_id, place_after=False):
+        if not self.active_db or source_id == target_id or source_id == 0 or target_id == 0:
+            return
         groups = self.active_db.list_groups()
-        ordered_ids = [g["id"] for g in groups]
-        
-        if source_id in ordered_ids and target_id in ordered_ids:
-            idx_s = ordered_ids.index(source_id)
-            idx_t = ordered_ids.index(target_id)
-            if idx_s == idx_t: return
-            
-            # Удаляем старый элемент
-            item = ordered_ids.pop(idx_s)
-            # Находим новый индекс цели (так как список сдвинулся)
-            new_idx_t = ordered_ids.index(target_id)
-            # Вставляем строго ПЕРЕД целью
-            ordered_ids.insert(new_idx_t, item)
-            
+        ordered_ids = [int(g["id"]) for g in groups]
+        if source_id not in ordered_ids or target_id not in ordered_ids:
+            return
+        original = list(ordered_ids)
+        ordered_ids.remove(source_id)
+        idx = ordered_ids.index(target_id)
+        ordered_ids.insert(idx + (1 if place_after else 0), source_id)
+        if ordered_ids == original:
+            return
+        try:
             self.active_db.begin()
             self.active_db.update_group_orders(ordered_ids)
             self.active_db.conn.execute("COMMIT;")
-            
             self.refresh_groups()
             self.refresh_employees()
-            self.showToast.emit("Порядок групп изменен", "success")
+        except Exception as e:
+            self.active_db.conn.execute("ROLLBACK;")
+            self.showToast.emit(f"Ошибка: {e}", "error")
 
-    @Slot(int, int)
-    def reorderEmployees(self, source_id, target_id):
-        if not self.active_db: return
-        current_ids = [e["id"] for e in self._employee_list if not e["is_header"]]
-        
-        if source_id in current_ids and target_id in current_ids:
-            idx_s = current_ids.index(source_id)
-            idx_t = current_ids.index(target_id)
-            if idx_s == idx_t: return
-            
-            # Удаляем старый элемент
-            item = current_ids.pop(idx_s)
-            # Находим новый индекс цели
-            new_idx_t = current_ids.index(target_id)
-            # Вставляем строго ПЕРЕД целью
-            current_ids.insert(new_idx_t, item)
-            
+    @Slot(int, int, bool)
+    def reorderEmployees(self, source_id, target_id, place_after=False):
+        """Только внутри одной группы. В другую группу — перетаскивание на значок слева."""
+        if not self.active_db or source_id == target_id:
+            return
+        try:
+            src = self.active_db.get_employee(source_id)
+            tgt = self.active_db.get_employee(target_id)
+        except Exception:
+            return
+        if src["group_id"] != tgt["group_id"]:
+            return
+        original = self.active_db.list_employee_ids_in_group(src["group_id"])
+        if source_id not in original or target_id not in original:
+            return
+        ids = [i for i in original if i != source_id]
+        idx = ids.index(target_id)
+        ids.insert(idx + (1 if place_after else 0), source_id)
+        if ids == original:
+            return
+        try:
             self.active_db.begin()
-            self.active_db.update_employee_orders(current_ids)
+            self.active_db.update_employee_orders(ids)
             self.active_db.conn.execute("COMMIT;")
-            
             self.refresh_employees()
-            self.showToast.emit("Порядок сотрудников изменен", "success")
+        except Exception as e:
+            self.active_db.conn.execute("ROLLBACK;")
+            self.showToast.emit(f"Ошибка: {e}", "error")
 
     @Slot(str)
     def setTimeInputMode(self, mode):
@@ -2751,6 +2865,321 @@ class Backend(QObject):
         except Exception as e:
             self.showToast.emit(f"Ошибка переноса: {e}", "error")
 
+    # ====================================================
+    # ОБНОВЛЕНИЕ ПРОГРАММЫ (офлайн, как кнопка в Telegram)
+    # data/ не трогаем: базы, хоткеи и тема остаются на месте.
+    # ====================================================
+
+    def _read_qrc_theme(self) -> str:
+        try:
+            from PySide6.QtCore import QFile, QIODevice
+            f = QFile(":/components/AppTheme.qml")
+            if f.open(QIODevice.ReadOnly):
+                text = bytes(f.readAll()).decode("utf-8", errors="replace")
+                f.close()
+                return text
+        except Exception:
+            return ""
+        return ""
+
+    def _read_qrc_version(self) -> str:
+        return app_update._read_version_from_text(self._read_qrc_theme())
+
+    def _read_qrc_build(self) -> int:
+        try:
+            m = __import__("re").search(r"appBuild:\s*(\d+)", self._read_qrc_theme())
+            return int(m.group(1)) if m else 0
+        except Exception:
+            return 0
+
+    def _version_key(self) -> str:
+        ver = self._app_version or ""
+        bld = int(self._app_build or 0)
+        return f"{ver}+{bld}" if ver and bld else ver
+
+    def _version_label(self, version: str = "", build: int = 0) -> str:
+        return app_update.format_version_label(
+            version or self._app_version or "",
+            int(build or self._app_build or 0),
+        )
+
+    def _init_updates(self):
+        qrc_ver = self._read_qrc_version()
+        qrc_bld = self._read_qrc_build()
+        if qrc_ver:
+            self._app_version = qrc_ver
+        if qrc_bld:
+            self._app_build = qrc_bld
+        if self._app_version:
+            try:
+                root = app_update.install_root(self.app_dir)
+                app_update.write_version_json(root / "version.json", self._app_version, self._app_build)
+                if root != Path(self.app_dir):
+                    app_update.write_version_json(Path(self.app_dir) / "version.json", self._app_version, self._app_build)
+            except Exception:
+                pass
+        # Если прошлый раз уже обновились — подчистить хвосты
+        staged = app_update.staged_info(self.app_dir)
+        if staged:
+            ver = staged.get("version") or ""
+            bld = int(staged.get("build") or 0)
+            if ver and not app_update.is_newer(ver, self._app_version, bld, self._app_build):
+                app_update.cleanup_pending(self.app_dir)
+        try:
+            app_update.cleanup_obsolete_zips(self.app_dir, self._app_version, self._app_build)
+        except Exception:
+            pass
+        self._prepare_whats_new()
+        self.scanForUpdates()
+
+    @Property(str, notify=appVersionChanged)
+    def appVersion(self):
+        return self._app_version or ""
+
+    @Property(int, notify=appVersionChanged)
+    def appBuild(self):
+        return int(self._app_build or 0)
+
+    @Property(bool, notify=updateReadyChanged)
+    def updateReady(self):
+        return self._update_ready
+
+    @Property(bool, notify=updateBusyChanged)
+    def updateBusy(self):
+        return self._update_busy
+
+    @Property(str, notify=updateVersionChanged)
+    def updateVersion(self):
+        return self._update_version
+
+    @Property(str, notify=updateStatusTextChanged)
+    def updateStatusText(self):
+        return self._update_status
+
+    @Property(list, notify=whatsNewChanged)
+    def whatsNew(self):
+        return self._whats_new
+
+    @Property(int, notify=updateReadyChanged)
+    def updateChromeExtra(self):
+        return 52 if (self._update_ready or self._update_busy) else 0
+
+    def _set_update_busy(self, busy, text=""):
+        self._update_busy = bool(busy)
+        self._update_status = text or ""
+        self.updateBusyChanged.emit()
+        self.updateStatusTextChanged.emit()
+        self.updateReadyChanged.emit()  # высота полоски тоже зависит от busy
+
+    def _set_update_ready(self, ready, version=""):
+        self._update_ready = bool(ready)
+        if version:
+            self._update_version = version
+            self.updateVersionChanged.emit()
+        self.updateReadyChanged.emit()
+
+    def _read_changelog_text(self) -> str:
+        try:
+            from PySide6.QtCore import QFile, QIODevice
+            f = QFile(":/CHANGELOG.md")
+            if f.open(QIODevice.ReadOnly):
+                text = bytes(f.readAll()).decode("utf-8", errors="replace")
+                f.close()
+                if text.strip():
+                    return text
+        except Exception:
+            pass
+        here = Path(__file__).resolve().parent
+        for cand in (
+            here / "CHANGELOG.md",
+            app_update.install_root(self.app_dir) / "CHANGELOG.md",
+            Path(self.app_dir) / "CHANGELOG.md",
+        ):
+            try:
+                if cand.is_file():
+                    return cand.read_text(encoding="utf-8")
+            except Exception:
+                continue
+        return ""
+
+    def _prepare_whats_new(self):
+        last = ""
+        try:
+            if self.config_path.exists():
+                data = json.loads(self.config_path.read_text(encoding="utf-8"))
+                last = str(data.get("ui", {}).get("last_changelog_version") or "")
+        except Exception:
+            last = ""
+        current_key = self._version_key()
+        if last and last == current_key:
+            self._whats_new = []
+            return
+        text = self._read_changelog_text()
+        # Одна версия — один список. Сборка 71→72 внутри 20 показывает весь блок 20.
+        blocks = app_update.changelog_for_version(text, self._app_version or "")
+        self._whats_new = app_update.changelog_for_qml(blocks)
+
+    @Slot()
+    def ackWhatsNew(self):
+        """Закрыли «Что нового» — больше не показываем эту сборку."""
+        try:
+            self.config_path.parent.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
+        if self._app_version:
+            self._write_ui_config("last_changelog_version", self._version_key())
+        self._whats_new = []
+        self.whatsNewChanged.emit()
+
+    @Slot()
+    def scanForUpdates(self):
+        """Ищет zip/папку новой версии рядом с программой и на флешках."""
+        if self._update_busy or self._scan_running:
+            return
+        staged = app_update.staged_info(self.app_dir)
+        staged_ver = (staged or {}).get("version") or ""
+        staged_bld = int((staged or {}).get("build") or 0)
+        if staged and staged_ver and app_update.is_newer(staged_ver, self._app_version, staged_bld, self._app_build):
+            dismissed = self._dismissed_update_version()
+            label = self._version_label(staged.get("display") or staged_ver, staged_bld)
+            if label != dismissed:
+                self._update_source = staged["root"]
+                self._set_update_ready(True, label)
+            return
+        self._scan_running = True
+        self._scan_thread = UpdateScanWorker(str(self.app_dir), self._app_version, self._app_build)
+        self._scan_thread.finished_signal.connect(self._on_update_scanned)
+        self._scan_thread.start()
+
+    def _dismissed_update_version(self) -> str:
+        try:
+            if self.config_path.exists():
+                data = json.loads(self.config_path.read_text(encoding="utf-8"))
+                return str(data.get("ui", {}).get("dismissed_update_version") or "")
+        except Exception:
+            return ""
+        return ""
+
+    def _on_update_scanned(self, found):
+        self._scan_running = False
+        if self._update_busy:
+            return
+        if not found:
+            return
+        dismissed = self._dismissed_update_version()
+        label = self._version_label(
+            found.get("display") or found.get("version") or "",
+            int(found.get("build") or 0),
+        )
+        if label and label == dismissed:
+            return
+        if found.get("already_staged"):
+            self._update_source = found["root"]
+            self._set_update_ready(True, label or found.get("version") or "")
+            return
+        self.prepareUpdateFromPath(found["root"])
+
+    @Slot(str)
+    def prepareUpdateFromPath(self, file_url):
+        """Готовит обновление из zip или папки. Можно вызвать из диалога настроек."""
+        if not file_url or self._update_busy:
+            return
+        path = QUrl(file_url).toLocalFile() if str(file_url).startswith("file:") else file_url
+        if not path:
+            path = file_url
+        try:
+            info = app_update.describe_package(Path(path))
+        except Exception as e:
+            self.showToast.emit(str(e), "error")
+            return
+
+        ver = info.get("version") or ""
+        bld = int(info.get("build") or 0)
+        shown = info.get("display") or ver
+        if not ver:
+            self.showToast.emit("В архиве нет номера версии — так обновляться нельзя", "error")
+            return
+        if not app_update.is_newer(ver, self._app_version, bld, int(self._app_build or 0)):
+            cand = self._version_label(shown, bld)
+            here = self._version_label()
+            if bld and bld == int(self._app_build or 0):
+                self.showToast.emit(f"Это та же сборка ({cand})", "error")
+            elif ver == self._app_version and not bld:
+                self.showToast.emit(f"Это та же версия ({cand})", "error")
+            else:
+                self.showToast.emit(f"Откат запрещён: {cand} старше текущей {here}", "error")
+            return
+
+        self._set_update_busy(True, "Готовим обновление…")
+        self.showToast.emit("Готовим обновление. Можно продолжать работу.", "success")
+        self.update_thread = UpdateStageWorker(info["root"], str(self.app_dir))
+        self.update_thread.finished_signal.connect(self._on_update_staged)
+        self.update_thread.start()
+
+    def _on_update_staged(self, ok, message, version):
+        self._set_update_busy(False, "")
+        if not ok:
+            self.showToast.emit(f"Не удалось подготовить обновление: {message}", "error")
+            return
+        staged = app_update.staged_info(self.app_dir)
+        self._update_source = staged["root"] if staged else ""
+        label = self._version_label(
+            (staged or {}).get("display") or version or (staged or {}).get("version") or "",
+            int((staged or {}).get("build") or 0),
+        )
+        self._set_update_ready(True, label)
+        self.showToast.emit(f"Готово. Можно обновить до {label or 'новой версии'}", "success")
+
+    @Slot()
+    def applyReadyUpdate(self):
+        """Кнопка «Обновить»: переодеваем коробку и перезапускаемся. data/ не трогаем."""
+        staged = app_update.staged_info(self.app_dir)
+        if not staged:
+            self.showToast.emit("Сначала укажите файл или папку новой версии", "error")
+            return
+        staged_ver = staged.get("version") or ""
+        staged_bld = int(staged.get("build") or 0)
+        if not staged_ver or not app_update.is_newer(staged_ver, self._app_version, staged_bld, self._app_build):
+            self.showToast.emit("Откат на старую версию запрещён", "error")
+            return
+        dest_root = app_update.install_root(self.app_dir)
+        if not (dest_root / "OVERTIMETAB.exe").exists() and not IS_FROZEN:
+            self.showToast.emit("Обновление ставится в собранную программу, не из редактора кода", "error")
+            return
+        try:
+            if self.active_db:
+                try:
+                    self.active_db.close()
+                except Exception:
+                    pass
+                self.active_db = None
+            app_update.launch_file_swap(
+                Path(staged["root"]),
+                dest_root,
+                os.getpid(),
+            )
+            # Помощник ждёт смерти PID. Не прячемся в трей и не ждём таймер —
+            # иначе старый процесс живёт, а консоль обновления крутится вечно.
+            os._exit(0)
+        except Exception as e:
+            self.showToast.emit(f"Не удалось запустить обновление: {e}", "error")
+
+    @Slot()
+    def dismissUpdate(self):
+        """Спрятать кнопку до следующего более нового файла."""
+        try:
+            data = {"db_paths": [], "last_db_path": None, "ui": {}}
+            if self.config_path.exists():
+                data = json.loads(self.config_path.read_text(encoding="utf-8"))
+            ui_cfg = data.get("ui", {})
+            ui_cfg["dismissed_update_version"] = self._update_version or ""
+            data["ui"] = ui_cfg
+            self.config_path.parent.mkdir(parents=True, exist_ok=True)
+            self.config_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+        self._set_update_ready(False)
+
 import ctypes # <--- Добавляем системную библиотеку Windows
 
 # Уникальный ID сервера для общения между процессами
@@ -2844,4 +3273,16 @@ def main():
     sys.exit(exit_code)
 
 if __name__ == "__main__":
+    apply = app_update.parse_apply_argv(sys.argv)
+    if apply:
+        try:
+            app_update.apply_update_inplace(
+                Path(apply["source"]),
+                Path(apply["dest"]),
+                apply.get("wait_pid") or None,
+            )
+        except Exception as e:
+            print(f"Ошибка применения обновления: {e}")
+            sys.exit(1)
+        sys.exit(0)
     main()

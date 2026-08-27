@@ -5,6 +5,8 @@ __pycache__/
 resources.qrc
 resources_rc.py
 app_icon.ico
+version.json
 dist/
 build/
 *.spec
+!tools/overtimetab.spec

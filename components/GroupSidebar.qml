@@ -15,7 +15,7 @@ Rectangle {
     // ==========================================
     Rectangle {
         id: headerArea
-        height: 60 
+        height: AppTheme.barHeight 
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
@@ -68,18 +68,26 @@ Rectangle {
         anchors.right: parent.right
         anchors.topMargin: AppTheme.spaceM
         
-        bottomMargin: 140 
+        bottomMargin: 140 + backend.updateChromeExtra 
         clip: true
         model: backend.groupList
         
+        displaced: Transition { NumberAnimation { properties: "y"; duration: 180; easing.type: Easing.OutCubic } }
+        move: Transition { NumberAnimation { properties: "y"; duration: 180; easing.type: Easing.OutCubic } }
+
         delegate: Item {
             id: grpDelegateItem
             width: ListView.view.width
-            height: 56 + grpGap.height 
+            height: 56
 
             DropArea {
                 id: groupDropArea
                 anchors.fill: parent
+                keys: ["group", "employee"]
+                property bool insertAfter: false
+                readonly property bool isGroupDrag: drag.source && drag.source.groupId !== undefined
+                readonly property bool isEmpDrag: drag.source && drag.source.empId !== undefined
+                onPositionChanged: (drag) => { insertAfter = drag.y > height * 0.5 }
                 onDropped: (drop) => {
                     if (drop.source && drop.source.empId !== undefined) {
                         if (drop.source.isShiftPressed) {
@@ -89,38 +97,26 @@ Rectangle {
                         } else {
                             backend.moveEmployeeToGroup(drop.source.empId, modelData.id)
                         }
-                    } else if (drop.source && drop.source.groupId !== undefined) {
-                        backend.reorderGroups(drop.source.groupId, modelData.id)
+                    } else if (drop.source && drop.source.groupId !== undefined && modelData.id !== 0 && drop.source.groupId !== modelData.id) {
+                        backend.reorderGroups(drop.source.groupId, modelData.id, insertAfter)
                     }
                     drop.accept()
                 }
             }
 
+            Rectangle {
+                visible: groupDropArea.containsDrag && groupDropArea.isGroupDrag && groupDropArea.drag.source.groupId !== modelData.id && modelData.id !== 0
+                width: 28
+                height: 3
+                radius: AppTheme.radiusPill
+                color: AppTheme.accentBrand
+                anchors.horizontalCenter: parent.horizontalCenter
+                y: groupDropArea.insertAfter ? parent.height - 4 : 2
+                z: 20
+            }
+
             Column {
                 anchors.fill: parent
-
-                // ==========================================
-                // ЗАЗОР (При перетаскивании групп)
-                // ==========================================
-                Rectangle {
-                    id: grpGap
-                    width: parent.width
-                    property bool isGroupDrag: groupDropArea.drag.source && groupDropArea.drag.source.groupId !== undefined
-                    property bool showGap: groupDropArea.containsDrag && isGroupDrag && groupDropArea.drag.source.groupId !== modelData.id && modelData.id !== 0
-                    
-                    height: showGap ? AppTheme.spaceM : 0
-                    color: "transparent"
-                    clip: true
-                    Behavior on height { NumberAnimation { duration: AppTheme.durFast; easing.type: AppTheme.easeStandard } }
-
-                    Rectangle { 
-                        anchors.centerIn: parent
-                        width: 32
-                        height: 4
-                        radius: AppTheme.radiusPill
-                        color: AppTheme.accentBrand 
-                    }
-                }
 
                 // ==========================================
                 // КНОПКА ГРУППЫ
@@ -165,6 +161,13 @@ Rectangle {
                     AppMenu {
                         id: groupMenu
                         AppMenuItem {
+                            visible: modelData.id !== 0
+                            text: modelData.shifted_weekends ? "Обычные выходные" : "Смещённые выходные"
+                            iconSource: "../icons/calendar.svg"
+                            onClicked: backend.setGroupShiftedWeekends(modelData.id, !modelData.shifted_weekends)
+                        }
+                        AppMenuSeparator { visible: modelData.id !== 0 }
+                        AppMenuItem {
                             visible: modelData.id !== 0 
                             text: "Удалить группу"
                             isDanger: true 
@@ -190,9 +193,9 @@ Rectangle {
                         anchors.fill: parent
                         hoverEnabled: true
                         acceptedButtons: Qt.LeftButton | Qt.RightButton
-                        cursorShape: Qt.PointingHandCursor
-                        
+                        cursorShape: drag.active ? Qt.ClosedHandCursor : Qt.PointingHandCursor
                         drag.target: modelData.id !== 0 ? dragGroupProxy : null
+                        drag.threshold: 10
                         
                         onPositionChanged: (mouse) => {
                             if (drag.active && root.workspace) {
@@ -220,7 +223,7 @@ Rectangle {
                         anchors.left: parent.right
                         anchors.leftMargin: AppTheme.spaceXS
                         anchors.verticalCenter: parent.verticalCenter
-                        text: modelData.name // Здесь лежит ПОЛНОЕ имя группы
+                        text: modelData.name + (modelData.shifted_weekends ? " · смещённые выходные" : "")
                         isVisible: btnMouseArea.containsMouse && !btnMouseArea.drag.active
                     }
 
@@ -234,6 +237,7 @@ Rectangle {
                         
                         property int groupId: modelData.id 
                         Drag.active: btnMouseArea.drag.active
+                        Drag.keys: ["group"]
                         Drag.hotSpot.x: 24; Drag.hotSpot.y: 24
                         visible: btnMouseArea.drag.active
                         

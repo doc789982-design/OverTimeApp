@@ -10,6 +10,30 @@ Rectangle {
     color: AppTheme.bgPanel
     
     property Item workspace: null
+
+    function blurSearch() {
+        searchInput.focus = false
+    }
+
+    function clearSearch() {
+        searchInput.text = ""
+        searchInput.forceActiveFocus()
+    }
+
+    function dismissSearchIfOutside(srcItem, x, y) {
+        if (!searchFieldBox)
+            return
+        var p = searchFieldBox.mapFromItem(srcItem, x, y)
+        if (p.x >= 0 && p.y >= 0 && p.x <= searchFieldBox.width && p.y <= searchFieldBox.height)
+            return
+        blurSearch()
+    }
+
+    Shortcut {
+        sequence: "Escape"
+        enabled: searchInput.activeFocus
+        onActivated: root.blurSearch()
+    }
     
     Rectangle { 
         width: 1
@@ -25,7 +49,7 @@ Rectangle {
     // ==========================================
     Rectangle {
         id: headerArea
-        height: 60 
+        height: AppTheme.barHeight 
         anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right
         color: "transparent"
 
@@ -35,19 +59,86 @@ Rectangle {
             anchors.fill: parent; anchors.margins: AppTheme.spaceS; spacing: AppTheme.spaceM
 
             Rectangle {
+                id: searchFieldBox
                 Layout.fillWidth: true; Layout.fillHeight: true
                 radius: AppTheme.radiusMedium
-                color: searchInput.activeFocus ? AppTheme.bgInput : AppTheme.bgDisabled
-                border.color: searchInput.activeFocus ? AppTheme.borderFocus : "transparent"
+                color: searchInput.activeFocus ? AppTheme.bgElevated : AppTheme.bgBase
+                border.color: searchInput.activeFocus ? AppTheme.borderFocus : AppTheme.borderDivider
                 border.width: searchInput.activeFocus ? AppTheme.focusWidth : 1
-                
+                Behavior on color { ColorAnimation { duration: AppTheme.durNormal; easing.type: AppTheme.easeColor } }
+                Behavior on border.color { ColorAnimation { duration: AppTheme.durNormal; easing.type: AppTheme.easeColor } }
+                Behavior on border.width { NumberAnimation { duration: AppTheme.durFast; easing.type: AppTheme.easeStandard } }
+
+                Rectangle {
+                    anchors.fill: parent
+                    anchors.margins: -3
+                    radius: parent.radius + 2
+                    color: "transparent"
+                    border.color: AppTheme.accentBrand
+                    border.width: 2
+                    opacity: searchInput.activeFocus ? 0.22 : 0
+                    z: -1
+                    Behavior on opacity { NumberAnimation { duration: AppTheme.durNormal; easing.type: AppTheme.easeStandard } }
+                }
+
                 RowLayout {
-                    anchors.fill: parent; anchors.leftMargin: AppTheme.spaceM; anchors.rightMargin: AppTheme.spaceM; spacing: AppTheme.spaceS
-                    IconImage { source: "../icons/search.svg"; width: AppTheme.iconMedium; height: AppTheme.iconMedium; color: searchInput.activeFocus ? AppTheme.accentBrand : AppTheme.textSecondary }
+                    anchors.fill: parent
+                    anchors.leftMargin: AppTheme.spaceM
+                    anchors.rightMargin: AppTheme.spaceXS
+                    spacing: AppTheme.spaceS
+
+                    IconImage {
+                        source: "../icons/search.svg"
+                        width: AppTheme.iconMedium
+                        height: AppTheme.iconMedium
+                        color: searchInput.activeFocus ? AppTheme.accentBrand : AppTheme.textSecondary
+                        Behavior on color { ColorAnimation { duration: AppTheme.durNormal } }
+                    }
                     TextInput {
-                        id: searchInput; Layout.fillWidth: true; color: AppTheme.textPrimary; font.family: AppTheme.fontFamily; font.pixelSize: AppTheme.sizeBody; verticalAlignment: TextInput.AlignVCenter
-                        Text { text: "Поиск сотрудника"; color: AppTheme.textTertiary; visible: !parent.text && !parent.activeFocus; anchors.verticalCenter: parent.verticalCenter }
+                        id: searchInput
+                        Layout.fillWidth: true
+                        color: AppTheme.textPrimary
+                        font.family: AppTheme.fontFamily
+                        font.pixelSize: AppTheme.sizeBody
+                        verticalAlignment: TextInput.AlignVCenter
+                        selectByMouse: true
+                        Text {
+                            text: "Поиск сотрудника"
+                            color: AppTheme.textTertiary
+                            visible: !parent.text && !parent.activeFocus
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
                         onTextChanged: backend.setSearchText(text)
+                    }
+                    Item {
+                        Layout.preferredWidth: searchInput.text.length > 0 ? 22 : 0
+                        Layout.preferredHeight: 22
+                        visible: Layout.preferredWidth > 0
+                        clip: true
+
+                        Behavior on Layout.preferredWidth {
+                            NumberAnimation { duration: AppTheme.durFast; easing.type: AppTheme.easeStandard }
+                        }
+
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: AppTheme.radiusPill
+                            color: clearSearchMouse.containsMouse ? AppTheme.stateHover : "transparent"
+                            IconImage {
+                                anchors.centerIn: parent
+                                source: "../icons/close.svg"
+                                width: AppTheme.iconSmall
+                                height: AppTheme.iconSmall
+                                color: clearSearchMouse.containsMouse ? AppTheme.textPrimary : AppTheme.textTertiary
+                            }
+                            MouseArea {
+                                id: clearSearchMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.clearSearch()
+                            }
+                        }
                     }
                 }
             }
@@ -64,39 +155,91 @@ Rectangle {
     // ==========================================
     // 2. СПИСОК СОТРУДНИКОВ
     // ==========================================
+    Item {
+        id: empListWrap
+        anchors.top: headerArea.bottom
+        anchors.bottom: parent.bottom
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottomMargin: 140 + backend.updateChromeExtra
+
     ListView {
         id: empList
-        anchors.top: headerArea.bottom; anchors.bottom: parent.bottom; anchors.left: parent.left; anchors.right: parent.right
-        bottomMargin: 140; clip: true; model: backend.employeeList
+        anchors.fill: parent
+        clip: true
+        model: backend.employeeList
+
+        property int draggingEmpId: 0
+        property int draggingGroupId: -999
+        property real dropLineY: -1
+        property bool restoringScroll: false
+        property real keepContentY: 0
+
+        onContentYChanged: if (!restoringScroll) keepContentY = contentY
+
+        Connections {
+            target: backend
+            function onEmployeeListChanged() {
+                empList.restoringScroll = true
+                Qt.callLater(function() {
+                    var maxY = Math.max(0, empList.contentHeight - empList.height)
+                    empList.contentY = Math.min(Math.max(0, empList.keepContentY), maxY)
+                    empList.restoringScroll = false
+                })
+            }
+        }
         
         delegate: Item {
             id: empDelegateItem
             width: ListView.view.width
-            height: (modelData.is_header ? 40 : 64) + gapRect.height
+            readonly property int empCardHeight: Math.max(AppTheme.rowHeight, empTextCol.implicitHeight + AppTheme.spaceM)
+            height: modelData.is_header ? 40 : empCardHeight
+            readonly property int rowGroupId: modelData.group_id === undefined ? 0 : modelData.group_id
 
             DropArea {
                 id: empDropArea
                 anchors.fill: parent
+                keys: ["employee"]
+                enabled: !modelData.is_header
+                property bool insertAfter: false
+                readonly property bool acceptSameGroup: {
+                    if (modelData.is_header) return false
+                    var src = empDropArea.drag.source
+                    if (!src || src.empId === undefined || src.empId === modelData.id) return false
+                    return src.empGroupId === empDelegateItem.rowGroupId
+                }
+                function syncInsertLine() {
+                    if (!containsDrag || !acceptSameGroup) return
+                    var p = mapToItem(empList, 0, insertAfter ? height : 0)
+                    empList.dropLineY = p.y
+                }
+                onPositionChanged: (drag) => {
+                    if (!acceptSameGroup) {
+                        empList.dropLineY = -1
+                        return
+                    }
+                    insertAfter = drag.y > height * 0.5
+                    syncInsertLine()
+                }
+                onEntered: (drag) => {
+                    if (!acceptSameGroup) {
+                        empList.dropLineY = -1
+                        return
+                    }
+                    insertAfter = drag.y > height * 0.5
+                    syncInsertLine()
+                }
                 onDropped: (drop) => {
-                    if (drop.source && drop.source.empId !== undefined) {
-                        backend.reorderEmployees(drop.source.empId, modelData.id)
+                    if (acceptSameGroup) {
+                        backend.reorderEmployees(drop.source.empId, modelData.id, insertAfter)
                         drop.accept()
                     }
+                    empList.dropLineY = -1
                 }
             }
 
             Column {
                 anchors.fill: parent
-
-                Rectangle {
-                    id: gapRect
-                    width: parent.width
-                    property bool showGap: empDropArea.containsDrag && empDropArea.drag.source && empDropArea.drag.source.empId !== undefined && empDropArea.drag.source.empId !== modelData.id && !modelData.is_header
-                    height: showGap ? AppTheme.spaceM : 0
-                    color: "transparent"; clip: true
-                    Behavior on height { NumberAnimation { duration: AppTheme.durFast; easing.type: AppTheme.easeStandard } }
-                    Rectangle { anchors.centerIn: parent; width: parent.width - AppTheme.spaceXL; height: 2; radius: 1; color: AppTheme.accentBrand }
-                }
 
                 // ЗАГОЛОВОК ГРУППЫ
                 Rectangle {
@@ -112,7 +255,10 @@ Rectangle {
                     id: cardContainer
                     visible: !modelData.is_header
                     width: parent.width
-                    height: 64
+                    height: modelData.is_header ? 0 : empDelegateItem.empCardHeight
+                    clip: true
+                    opacity: empMouseArea.drag.active ? 0.35 : 1
+                    Behavior on opacity { NumberAnimation { duration: AppTheme.durFast } }
 
                     property bool isSelected: backend.selectedEmployeeId === modelData.id
 
@@ -140,28 +286,42 @@ Rectangle {
                     }
 
                     // 2. КОНТЕНТ
-                    Text { 
-                        id: empName
-                        anchors.left: parent.left; anchors.leftMargin: AppTheme.spaceL
-                        anchors.right: parent.right; anchors.rightMargin: AppTheme.spaceL
-                        anchors.top: parent.top; anchors.topMargin: 12
-                        text: modelData.name
-                        color: cardContainer.isSelected ? AppTheme.accentBrand : (modelData.is_active ? AppTheme.textPrimary : AppTheme.textDisabled)
-                        font.family: AppTheme.fontFamily; font.pixelSize: AppTheme.sizeBody; font.weight: cardContainer.isSelected ? AppTheme.weightBold : AppTheme.weightMedium
-                        elide: Text.ElideRight
-                        Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
-                    }
+                    Column {
+                        id: empTextCol
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.left: parent.left
+                        anchors.leftMargin: AppTheme.spaceL
+                        anchors.right: parent.right
+                        anchors.rightMargin: AppTheme.spaceL + AppTheme.spaceS
+                        spacing: 2
 
-                    Text { 
-                        anchors.left: parent.left; anchors.leftMargin: AppTheme.spaceL
-                        anchors.right: parent.right; anchors.rightMargin: AppTheme.spaceL
-                        anchors.top: empName.bottom; anchors.topMargin: 2
-                        text: modelData.subtitle
-                        color: modelData.is_active ? AppTheme.textSecondary : AppTheme.textDisabled
-                        font.family: AppTheme.fontFamily; font.pixelSize: AppTheme.sizeSmall
-                        wrapMode: Text.WordWrap
-                        maximumLineCount: 2
-                        elide: Text.ElideRight
+                        Text {
+                            id: empName
+                            width: parent.width
+                            text: modelData.name
+                            color: cardContainer.isSelected ? AppTheme.accentBrand : (modelData.is_active ? AppTheme.textPrimary : AppTheme.textDisabled)
+                            font.family: AppTheme.fontFamily
+                            font.pixelSize: AppTheme.sizeBody
+                            font.weight: cardContainer.isSelected ? AppTheme.weightBold : AppTheme.weightMedium
+                            elide: Text.ElideRight
+                            maximumLineCount: 1
+                            lineHeight: 1.15
+                            lineHeightMode: Text.ProportionalHeight
+                            Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
+                        }
+
+                        Text {
+                            width: parent.width
+                            text: modelData.subtitle
+                            color: modelData.is_active ? AppTheme.textSecondary : AppTheme.textDisabled
+                            font.family: AppTheme.fontFamily
+                            font.pixelSize: AppTheme.sizeSmall
+                            wrapMode: Text.WordWrap
+                            maximumLineCount: 2
+                            elide: Text.ElideRight
+                            lineHeight: 1.15
+                            lineHeightMode: Text.ProportionalHeight
+                        }
                     }
                     
                     // ИНДИКАТОР НОРМЫ — тонкая полоска справа, как термометр
@@ -169,11 +329,11 @@ Rectangle {
                         visible: modelData.has_overtime
                         width: 3
                         anchors.right: parent.right
-                        anchors.rightMargin: 10
+                        anchors.rightMargin: AppTheme.spaceS
                         anchors.top: parent.top
-                        anchors.topMargin: 10
+                        anchors.topMargin: AppTheme.spaceS
                         anchors.bottom: parent.bottom
-                        anchors.bottomMargin: 10
+                        anchors.bottomMargin: AppTheme.spaceS
 
                         property real ratio: cardContainer.isSelected
                             ? backend.selectedEmployeeRatio
@@ -259,24 +419,116 @@ Rectangle {
                     MouseArea { 
                         id: empMouseArea
                         anchors.fill: parent; hoverEnabled: true; acceptedButtons: Qt.LeftButton | Qt.RightButton
+                        cursorShape: drag.active ? Qt.ClosedHandCursor : Qt.PointingHandCursor
                         drag.target: dragProxy
-                        onPositionChanged: (mouse) => { if (drag.active && root.workspace) { let pt = mapToItem(root.workspace, mouse.x, mouse.y); dragProxy.x = pt.x - (dragProxy.width / 2); dragProxy.y = pt.y - (dragProxy.height / 2) } }
-                        onPressed: (mouse) => { if (mouse.button === Qt.LeftButton && root.workspace) { dragProxy.isShiftPressed = (mouse.modifiers & Qt.ShiftModifier) !== 0; dragProxy.parent = root.workspace; let pt = mapToItem(root.workspace, mouse.x, mouse.y); dragProxy.x = pt.x - (dragProxy.width / 2); dragProxy.y = pt.y - (dragProxy.height / 2) } }
-                        onReleased: { dragProxy.Drag.drop(); dragProxy.parent = cardContainer; dragProxy.x = 0; dragProxy.y = 0 }
-                        onClicked: (mouse) => { if (mouse.button === Qt.RightButton) empContextMenu.popup(); else backend.selectEmployee(modelData.id) }
+                        drag.threshold: 10
+                        property bool didDrag: false
+                        onPositionChanged: (mouse) => {
+                            if (drag.active && root.workspace) {
+                                didDrag = true
+                                let pt = mapToItem(root.workspace, mouse.x, mouse.y)
+                                dragProxy.x = pt.x - (dragProxy.width / 2)
+                                dragProxy.y = pt.y - (dragProxy.height / 2)
+                            }
+                        }
+                        onPressed: (mouse) => {
+                            didDrag = false
+                            if (mouse.button === Qt.LeftButton && root.workspace) {
+                                dragProxy.isShiftPressed = (mouse.modifiers & Qt.ShiftModifier) !== 0
+                                dragProxy.parent = root.workspace
+                                let pt = mapToItem(root.workspace, mouse.x, mouse.y)
+                                dragProxy.x = pt.x - (dragProxy.width / 2)
+                                dragProxy.y = pt.y - (dragProxy.height / 2)
+                            }
+                        }
+                        onReleased: {
+                            dragProxy.Drag.drop()
+                            dragProxy.parent = cardContainer
+                            dragProxy.x = 0
+                            dragProxy.y = 0
+                            empList.dropLineY = -1
+                            empList.draggingEmpId = 0
+                            empList.draggingGroupId = -999
+                        }
+                        onClicked: (mouse) => {
+                            if (didDrag) return
+                            if (mouse.button === Qt.RightButton) empContextMenu.popup()
+                            else backend.selectEmployee(modelData.id)
+                        }
                     }
 
                     AppToolTip { anchors.horizontalCenter: parent.horizontalCenter; anchors.bottom: parent.top; anchors.bottomMargin: AppTheme.spaceXXS; text: modelData.inactive_reason || ""; isVisible: !modelData.is_active && empMouseArea.containsMouse && text !== "" }
 
                     Rectangle {
                         id: dragProxy
-                        width: empDelegateItem.width - 32; height: 56; color: AppTheme.bgElevated; radius: AppTheme.radiusLarge
-                        border.color: AppTheme.accentBrand; border.width: 1; opacity: 0.95     
-                        property int empId: modelData.id; property bool isShiftPressed: false
-                        Drag.active: empMouseArea.drag.active; Drag.keys: ["employee"]; Drag.hotSpot.x: width / 2; Drag.hotSpot.y: height / 2; visible: empMouseArea.drag.active
+                        width: Math.min(empDelegateItem.width - 24, 280)
+                        height: 48
+                        color: AppTheme.bgElevated
+                        radius: AppTheme.radiusLarge
+                        border.color: AppTheme.accentBrand
+                        border.width: 1
+                        opacity: 0.96
+                        property int empId: modelData.id
+                        property int empGroupId: empDelegateItem.rowGroupId
+                        property bool isShiftPressed: false
+                        Drag.active: empMouseArea.drag.active
+                        Drag.keys: ["employee"]
+                        Drag.hotSpot.x: width / 2
+                        Drag.hotSpot.y: height / 2
+                        visible: empMouseArea.drag.active
+                        onVisibleChanged: {
+                            if (visible) {
+                                empList.draggingEmpId = empId
+                                empList.draggingGroupId = empGroupId
+                            } else if (empList.draggingEmpId === empId) {
+                                empList.draggingEmpId = 0
+                                empList.draggingGroupId = -999
+                                empList.dropLineY = -1
+                            }
+                        }
                         AppShadow { level: 4 }
-                        Text { anchors.left: parent.left; anchors.leftMargin: AppTheme.spaceM; anchors.verticalCenter: parent.verticalCenter; text: modelData.name; color: AppTheme.textPrimary; font.pixelSize: AppTheme.sizeBody; font.weight: AppTheme.weightBold }
+                        Text {
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.leftMargin: AppTheme.spaceM
+                            anchors.rightMargin: AppTheme.spaceM
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: modelData.name
+                            elide: Text.ElideRight
+                            color: AppTheme.textPrimary
+                            font.pixelSize: AppTheme.sizeBody
+                            font.weight: AppTheme.weightBold
+                        }
                     }
+                }
+            }
+        }
+    }
+
+        Item {
+            id: empInsertOverlay
+            anchors.fill: empList
+            z: 80
+            visible: empList.dropLineY >= 0 && empList.draggingEmpId !== 0
+            clip: true
+
+            Row {
+                x: AppTheme.spaceM
+                y: empList.dropLineY - 3
+                spacing: 0
+                width: parent.width - AppTheme.spaceM * 2
+
+                Rectangle {
+                    width: 6; height: 6; radius: 3
+                    color: AppTheme.accentBrand
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+                Rectangle {
+                    width: parent.width - 6
+                    height: 2
+                    radius: 1
+                    color: AppTheme.accentBrand
+                    anchors.verticalCenter: parent.verticalCenter
                 }
             }
         }

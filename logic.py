@@ -41,11 +41,90 @@ def build_shift_checker(db, employee_id: int):
 def is_employee_shift(db, employee_id: int, target_date: Optional[date] = None) -> bool:
     return build_shift_checker(db, employee_id)(target_date)
 
+def default_is_working(d: date, shifted: bool = False) -> bool:
+    """Шаблон недели, если дня нет в calendar_day.
+    Обычный: Пн–Пт. Смещённый: Вт–Сб (пн и вс выходные)."""
+    wd = d.weekday()
+    if shifted:
+        return wd not in (0, 6)
+    return wd < 5
+
+def resolve_is_working(
+    d: date,
+    shifted: bool,
+    work_map: dict,
+    holidays_set: Optional[set] = None,
+    override_set: Optional[set] = None,
+) -> bool:
+    """Рабочий ли день для этого сотрудника.
+
+    Шаблон группы (обычная пятидневка или смещённые выходные) — только старт.
+    Праздники и дни, которые поставили вручную (is_override), общие и главнее шаблона.
+    Старые строки calendar_day без пометки «вручную», если они просто повторяют
+    пн–пт / сб–вс, шаблон смещённой группы не затирают.
+    """
+    holidays_set = holidays_set or set()
+    override_set = override_set or set()
+    stored = work_map.get(d)
+    if d in holidays_set:
+        return False if stored is None else bool(stored)
+    if d in override_set and stored is not None:
+        return bool(stored)
+    if stored is None:
+        return default_is_working(d, shifted)
+    if not shifted:
+        return bool(stored)
+    if bool(stored) != default_is_working(d, False):
+        return bool(stored)
+    return default_is_working(d, True)
+
+def _row_flag(row, key: str) -> bool:
+    try:
+        if key not in row.keys():
+            return False
+        val = row[key]
+        if val is None:
+            return False
+        return bool(int(val))
+    except Exception:
+        return False
+
+def build_shifted_weekend_checker(db, employee_id: int):
+    groups = db.list_groups()
+    flag_map = {g["id"]: _row_flag(g, "shifted_weekends") for g in groups}
+    transfers = db.conn.execute(
+        "SELECT transfer_date, group_id FROM employee_transfer WHERE employee_id=? ORDER BY transfer_date DESC",
+        (employee_id,),
+    ).fetchall()
+    history = [(d_parse(t["transfer_date"]), t["group_id"]) for t in transfers]
+    emp = db.get_employee(employee_id)
+    current_gid = emp["group_id"]
+
+    def check(target_date: Optional[date] = None) -> bool:
+        current = flag_map.get(current_gid, False)
+        if target_date is None or not history:
+            return current
+        latest_date, latest_gid = history[0]
+        # Простое перетаскивание не пишет приказ, но меняет текущую группу.
+        if current_gid != latest_gid and target_date >= latest_date:
+            return current
+        for t_date, gid in history:
+            if target_date >= t_date:
+                return flag_map.get(gid, False)
+        return current
+
+    return check
+
+def is_employee_shifted_weekends(db, employee_id: int, target_date: Optional[date] = None) -> bool:
+    return build_shifted_weekend_checker(db, employee_id)(target_date)
+
 def compute_month_norm_minutes(db, employee_id: int, year: int, month: int, shift_checker=None) -> int:
     if shift_checker is None: shift_checker = build_shift_checker(db, employee_id)
+    shifted_checker = build_shifted_weekend_checker(db, employee_id)
     start_dt, end_dt = month_bounds_dt(year, month)
     cur, last = start_dt.date(), (end_dt - timedelta(days=1)).date()
     work_map = db.get_calendar_month(d_iso(cur), d_iso(last))
+    override_set = db.get_calendar_overrides(d_iso(cur), d_iso(last))
 
     # Собираем праздники текущего месяца И первого дня следующего месяца
     # Это нужно чтобы поймать случай: праздник 1-го числа следующего месяца,
@@ -69,10 +148,22 @@ def compute_month_norm_minutes(db, employee_id: int, year: int, month: int, shif
         ).fetchone()
 
         if row:
-            is_working = bool(int(row["is_working"]))
+            row_override = set()
+            try:
+                if "is_override" in row.keys() and int(row["is_override"] or 0):
+                    row_override.add(candidate)
+            except Exception:
+                pass
+            is_working = resolve_is_working(
+                candidate,
+                shifted_checker(candidate),
+                {candidate: bool(int(row["is_working"]))},
+                holidays_extended,
+                row_override,
+            )
             is_holiday = bool(int(row["is_holiday"] if row["is_holiday"] is not None else 0))
         else:
-            is_working = candidate.weekday() < 5
+            is_working = default_is_working(candidate, shifted_checker(candidate))
             is_holiday = False
 
         if is_working and not is_holiday:
@@ -102,7 +193,7 @@ def compute_month_norm_minutes(db, employee_id: int, year: int, month: int, shif
     total_minutes = 0
 
     while cur <= last:
-        is_working = work_map.get(cur, cur.weekday() < 5)
+        is_working = resolve_is_working(cur, shifted_checker(cur), work_map, holidays_set, override_set)
         is_holiday = cur in holidays_set
 
         # Считаем только рабочие не-праздничные дни для сменщика
@@ -131,6 +222,7 @@ def compute_month_norm_minutes(db, employee_id: int, year: int, month: int, shif
 def _get_accruals_for_period(db, employee_id, start_dt, end_dt, shift_checker, holidays_set):
     duties = db.list_duties_for_period(employee_id, start_dt, end_dt)
     breaks_map = db.breaks_for_duty_ids([int(d["id"]) for d in duties])
+    shifted_checker = build_shifted_weekend_checker(db, employee_id)
     res = {"night": 0, "overtime_acc": 0, "days": 0, "shift_night": 0, "shift_holiday": 0}
     counted_days = set()
 
@@ -187,7 +279,7 @@ def _get_accruals_for_period(db, employee_id, start_dt, end_dt, shift_checker, h
 
                     cd = ps.date()
                     while cd <= pe.date():
-                        is_w = db.get_calendar_month(d_iso(cd), d_iso(cd)).get(cd, cd.weekday() < 5)
+                        is_w = db.get_calendar_month(d_iso(cd), d_iso(cd)).get(cd, default_is_working(cd, shifted_checker(cd)))
                         if not is_w or cd in holidays_set:
                             if intersect(ps, pe, datetime.combine(cd, time(6,0)), datetime.combine(cd, time(22,0))):
                                 counted_days.add(cd)

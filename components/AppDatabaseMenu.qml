@@ -6,14 +6,18 @@ import "."
 Menu {
     id: root
     
+    transformOrigin: Item.TopLeft
+    padding: 0
     topPadding: AppTheme.spaceXS
     bottomPadding: AppTheme.spaceXS
+    leftPadding: AppTheme.spaceXXS
+    rightPadding: AppTheme.spaceXXS
     
     // Используем AppMenuItem как делегат для единообразного стиля
     delegate: AppMenuItem {}
     
     background: Rectangle {
-        implicitWidth: 260
+        implicitWidth: 200
         color: AppTheme.bgElevated
         border.color: AppTheme.borderDivider
         border.width: 1

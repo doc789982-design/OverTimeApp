@@ -89,7 +89,7 @@ Popup {
                 text: root.title
                 color: AppTheme.textPrimary
                 font.family: AppTheme.fontFamily
-                font.pixelSize: AppTheme.sizeH2 
+                font.pixelSize: AppTheme.sizeH4 
                 font.weight: AppTheme.weightBold
                 visible: text !== ""
                 elide: Text.ElideRight
@@ -110,7 +110,10 @@ Popup {
         // КОНТЕНТ (Скроллируемый)
         ScrollView {
             Layout.fillWidth: true
-            Layout.fillHeight: true
+            Layout.preferredHeight: Math.min(
+                contentArea.implicitHeight,
+                ApplicationWindow.window ? ApplicationWindow.window.height - 280 : 520
+            )
             clip: true
             ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
 

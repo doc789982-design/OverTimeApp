@@ -34,7 +34,7 @@ AppSidePanel {
             model: backend.dayDuties
             // КАРТОЧКА ДЕЖУРСТВА
             Rectangle {
-                width: parent.width; height: modelData.comment !== "" ? 90 : 65 
+                width: parent.width; height: AppTheme.rowHeight + AppTheme.spaceS 
                 color: AppTheme.bgSurface 
                 radius: AppTheme.radiusMedium
                 border.color: AppTheme.borderDivider; border.width: 1
@@ -43,7 +43,7 @@ AppSidePanel {
                 AppShadow { level: 1 }
                 
                 RowLayout {
-                    anchors.fill: parent; anchors.margins: AppTheme.spaceM; anchors.rightMargin: 80
+                    anchors.fill: parent; anchors.margins: AppTheme.spaceM; anchors.rightMargin: AppTheme.cardActionReserve
                     spacing: AppTheme.spaceM
                     IconImage { source: "../icons/clock.svg"; width: AppTheme.iconMedium; height: AppTheme.iconMedium; color: AppTheme.accentBrand }
                     Text { 
@@ -101,7 +101,7 @@ AppSidePanel {
             model: backend.dayComps
             // КАРТОЧКА КОМПЕНСАЦИИ
             Rectangle {
-                width: parent.width; height: 50
+                width: parent.width; height: AppTheme.rowHeight + AppTheme.spaceS
                 color: AppTheme.bgSurface 
                 radius: AppTheme.radiusMedium
                 border.color: AppTheme.borderDivider; border.width: 1
@@ -110,7 +110,7 @@ AppSidePanel {
                 AppShadow { level: 1 }
                 
                 RowLayout {
-                    anchors.fill: parent; anchors.margins: AppTheme.spaceM; anchors.rightMargin: 80
+                    anchors.fill: parent; anchors.margins: AppTheme.spaceM; anchors.rightMargin: AppTheme.cardActionReserve
                     spacing: AppTheme.spaceM
 
                     IconImage {

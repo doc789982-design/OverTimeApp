@@ -73,7 +73,8 @@ AppLargeModal {
                         { title: "Горячие клавиши",      icon: "../icons/command.svg",   desc: "Сочетания клавиш" },
                         { title: "Управление базами",    icon: "../icons/database.svg",  desc: "Подключение и экспорт" },
                         { title: "Данные подразделения", icon: "../icons/briefcase.svg", desc: "Реквизиты отдела" },
-                        { title: "Уведомления",          icon: "../icons/bell.svg",      desc: "Напоминания программы" }
+                        { title: "Уведомления",          icon: "../icons/bell.svg",      desc: "Напоминания программы" },
+                        { title: "Обновление",           icon: "../icons/sparkle.svg",   desc: "Новая версия с флешки" }
                     ]
 
                     delegate: Item {
@@ -120,7 +121,7 @@ AppLargeModal {
                                     source: modelData.icon
                                     width: AppTheme.iconMedium
                                     height: AppTheme.iconMedium
-                                    color: isSelected ? "#FFFFFF" : AppTheme.textSecondary
+                                    color: isSelected ? AppTheme.textOnAccent : AppTheme.textSecondary
                                 }
                             }
 
@@ -342,7 +343,7 @@ AppLargeModal {
                                             source: "../icons/database.svg"
                                             width: AppTheme.iconMedium
                                             height: AppTheme.iconMedium
-                                            color: isActive ? "#FFFFFF" : AppTheme.textSecondary
+                                            color: isActive ? AppTheme.textOnAccent : AppTheme.textSecondary
                                         }
                                     }
 
@@ -373,7 +374,7 @@ AppLargeModal {
                                                     id: activeLabel
                                                     anchors.centerIn: parent
                                                     text: "Активна"
-                                                    color: "#FFFFFF"
+                                                    color: AppTheme.textOnAccent
                                                     font.family: AppTheme.fontFamily
                                                     font.pixelSize: AppTheme.sizeMicro
                                                     font.weight: AppTheme.weightBold
@@ -401,13 +402,13 @@ AppLargeModal {
 
                                     AppButton {
                                         text: "Папка"
-                                        width: 76
+                                        width: 80
                                         variant: "secondary"
                                         onClicked: backend.openDbFolder(modelData.path)
                                     }
                                     AppButton {
                                         text: "Экспорт"
-                                        width: 76
+                                        width: 80
                                         variant: "secondary"
                                         onClicked: {
                                             exportFolderDialog.pathToExport = modelData.path
@@ -416,7 +417,7 @@ AppLargeModal {
                                     }
                                     AppButton {
                                         text: "Открыть"
-                                        width: 84
+                                        width: 80
                                         variant: "primary"
                                         onClicked: {
                                             backend.openDatabase(modelData.path)
@@ -425,7 +426,7 @@ AppLargeModal {
                                     }
                                     AppButton {
                                         text: "Убрать"
-                                        width: 76
+                                        width: 80
                                         variant: "danger"
                                         onClicked: {
                                             let dbPath = modelData.path
@@ -697,6 +698,83 @@ AppLargeModal {
                     text: "Напоминать о сдаче табеля"
                     checked: backend.reminderEnabled
                     onCheckedChanged: backend.setReminderEnabled(checked)
+                }
+            }
+
+            // ── 6. Обновление ─────────────────────────
+            Item {
+                FileDialog {
+                    id: updateZipDialog
+                    title: "Выберите архив новой версии"
+                    nameFilters: ["Архивы OVERTIMETAB (*.zip)", "Все файлы (*)"]
+                    onAccepted: backend.prepareUpdateFromPath(updateZipDialog.selectedFile)
+                }
+                FolderDialog {
+                    id: updateFolderDialog
+                    title: "Выберите папку с новой версией"
+                    onAccepted: backend.prepareUpdateFromPath(updateFolderDialog.selectedFolder)
+                }
+
+                SettingsPage {
+                    anchors.fill: parent
+                    title: "Обновление"
+                    description: "Базы, горячие клавиши и тема остаются на месте. Меняется только сама программа."
+
+                    Text {
+                        width: parent.width
+                        text: "Сейчас стоит " + AppTheme.appVersionFull
+                        color: AppTheme.textPrimary
+                        font.family: AppTheme.fontFamily
+                        font.pixelSize: AppTheme.sizeBodyLarge
+                        font.weight: AppTheme.weightBold
+                    }
+                    Text {
+                        width: parent.width
+                        text: "Положите zip рядом с OVERTIMETAB.exe или на флешку — программа сама её заметит (имя файла не важно, смотрим содержимое) и покажет кнопку внизу слева. Либо укажите файл вручную."
+                        color: AppTheme.textSecondary
+                        font.family: AppTheme.fontFamily
+                        font.pixelSize: AppTheme.sizeBody
+                        wrapMode: Text.WordWrap
+                    }
+
+                    RowLayout {
+                        width: parent.width
+                        spacing: AppTheme.spaceS
+
+                        AppButton {
+                            text: "Указать архив .zip"
+                            variant: "secondary"
+                            Layout.preferredWidth: 200
+                            enabled: !backend.updateBusy
+                            onClicked: updateZipDialog.open()
+                        }
+                        AppButton {
+                            text: "Указать папку"
+                            variant: "secondary"
+                            Layout.preferredWidth: 170
+                            enabled: !backend.updateBusy
+                            onClicked: updateFolderDialog.open()
+                        }
+                    }
+
+                    AppButton {
+                        visible: backend.updateReady
+                        text: backend.updateVersion
+                              ? ("Перезапустить и обновить до " + backend.updateVersion)
+                              : "Перезапустить и обновить"
+                        variant: "primary"
+                        width: Math.min(parent.width, 420)
+                        onClicked: backend.applyReadyUpdate()
+                    }
+
+                    Text {
+                        visible: backend.updateBusy
+                        width: parent.width
+                        text: backend.updateStatusText || "Готовим обновление…"
+                        color: AppTheme.accentBrand
+                        font.family: AppTheme.fontFamily
+                        font.pixelSize: AppTheme.sizeBody
+                    }
                 }
             }
         }

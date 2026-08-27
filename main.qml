@@ -17,7 +17,7 @@ ApplicationWindow {
     // интерфейс не превратится в кашу
     minimumWidth: 940
     minimumHeight: 620
-    title: "OVERTIMETAB " + AppUI.AppTheme.appVersion
+    title: "OVERTIMETAB " + AppUI.AppTheme.appVersionFull
 
     // Прозрачный фон самого окна
     color: AppUI.AppTheme.bgBase
@@ -64,9 +64,6 @@ ApplicationWindow {
         function onDatabaseOpened() { 
             stackView.replace(mainWorkspacePage) 
         }
-        function onShowToast(message, type) { 
-            toastPopup.show(message, type) 
-        }
         function onItemDeleted(dateStr, colorHex) {
             let workspace = stackView.currentItem
             if (workspace && workspace.calendarPanel) {
@@ -92,7 +89,7 @@ ApplicationWindow {
             Rectangle {
                 anchors.fill: parent
                 color: "transparent"
-                border.color: AppUI.AppTheme.isDark ? "#333333" : "#DDDDDD"
+                border.color: AppUI.AppTheme.borderDivider
                 border.width: 1
                 z: 999
             }
@@ -123,7 +120,7 @@ ApplicationWindow {
                     anchors.left: parent.left
                     anchors.leftMargin: AppUI.AppTheme.spaceM
                     anchors.verticalCenter: parent.verticalCenter
-                    text: "OVERTIMETAB " + AppUI.AppTheme.appVersion
+                    text: "OVERTIMETAB " + AppUI.AppTheme.appVersionFull
                     color: AppUI.AppTheme.textTertiary
                     font.family: AppUI.AppTheme.fontFamily
                     font.pixelSize: AppUI.AppTheme.sizeSmall
@@ -217,7 +214,7 @@ ApplicationWindow {
                             anchors.centerIn: parent
                             text: "✕"
                             color: closeHov.containsMouse ? AppUI.AppTheme.textOnAccent : AppUI.AppTheme.textSecondary
-                            font.pixelSize: 12
+                            font.pixelSize: AppUI.AppTheme.sizeSmall
                             font.weight: AppUI.AppTheme.weightBold
                         }
                         MouseArea {
@@ -387,19 +384,19 @@ ApplicationWindow {
                     model: backend.dbList
                     delegate: Rectangle {
                         width: ListView.view.width
-                        height: 72
+                        height: AppUI.AppTheme.startCardHeight
                         radius: AppUI.AppTheme.radiusLarge
-                        color: AppUI.AppTheme.bgSurface
+                        color: AppUI.AppTheme.bgElevated
                         border.color: AppUI.AppTheme.borderDivider
                         border.width: 1
-                        Rectangle { 
+                        Rectangle {
                             anchors.fill: parent
                             radius: parent.radius
                             color: mouseArea.pressed
                                    ? AppUI.AppTheme.statePress
                                    : (mouseArea.containsMouse ? AppUI.AppTheme.stateHover : "transparent")
                         }
-                        Rectangle { 
+                        Rectangle {
                             id: iconRect
                             width: 44; height: 44
                             radius: AppUI.AppTheme.radiusPill
@@ -407,34 +404,39 @@ ApplicationWindow {
                             anchors.left: parent.left
                             anchors.leftMargin: AppUI.AppTheme.spaceM
                             anchors.verticalCenter: parent.verticalCenter
-                            Text { 
+                            Text {
                                 anchors.centerIn: parent
                                 text: modelData.name.charAt(0).toUpperCase()
                                 color: AppUI.AppTheme.accentBrand
                                 font.weight: AppUI.AppTheme.weightBold
-                                font.pixelSize: AppUI.AppTheme.sizeH2 
-                            } 
+                                font.pixelSize: AppUI.AppTheme.sizeH4
+                            }
                         }
-                        Text { 
+                        Column {
                             anchors.left: iconRect.right
                             anchors.leftMargin: AppUI.AppTheme.spaceM
-                            anchors.top: parent.top
-                            anchors.topMargin: 16
-                            text: modelData.name
-                            color: AppUI.AppTheme.textPrimary
-                            font.pixelSize: AppUI.AppTheme.sizeBodyLarge
-                            font.weight: AppUI.AppTheme.weightBold 
+                            anchors.right: folderBtn.left
+                            anchors.rightMargin: AppUI.AppTheme.spaceS
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 2
+                            Text {
+                                width: parent.width
+                                text: modelData.name
+                                color: AppUI.AppTheme.textPrimary
+                                font.pixelSize: AppUI.AppTheme.sizeBodyLarge
+                                font.weight: AppUI.AppTheme.weightBold
+                                elide: Text.ElideRight
+                            }
+                            Text {
+                                width: parent.width
+                                text: modelData.path
+                                color: AppUI.AppTheme.textSecondary
+                                font.pixelSize: AppUI.AppTheme.sizeSmall
+                                elide: Text.ElideMiddle
+                            }
                         }
-                        Text { 
-                            anchors.left: iconRect.right
-                            anchors.leftMargin: AppUI.AppTheme.spaceM
-                            anchors.bottom: parent.bottom
-                            anchors.bottomMargin: 16
-                            text: modelData.path
-                            color: AppUI.AppTheme.textSecondary
-                            font.pixelSize: AppUI.AppTheme.sizeSmall 
-                        }
-                        Rectangle { 
+                        Rectangle {
+                            id: folderBtn
                             width: 36; height: 36
                             radius: AppUI.AppTheme.radiusPill
                             anchors.right: parent.right
@@ -443,26 +445,26 @@ ApplicationWindow {
                             color: folderHov.pressed
                                    ? AppUI.AppTheme.statePress
                                    : (folderHov.containsMouse ? AppUI.AppTheme.stateHover : "transparent")
-                            IconImage { 
+                            IconImage {
                                 anchors.centerIn: parent
                                 source: "icons/folder.svg"
                                 width: AppUI.AppTheme.iconMedium
                                 height: AppUI.AppTheme.iconMedium
-                                color: AppUI.AppTheme.textSecondary 
+                                color: AppUI.AppTheme.textSecondary
                             }
-                            MouseArea { 
+                            MouseArea {
                                 id: folderHov
                                 anchors.fill: parent
                                 hoverEnabled: true
-                                onClicked: backend.openDbFolder(modelData.path) 
-                            } 
+                                onClicked: backend.openDbFolder(modelData.path)
+                            }
                         }
-                        MouseArea { 
+                        MouseArea {
                             id: mouseArea
                             anchors.fill: parent
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
-                            onClicked: dbPageRoot.openDbAnimated(modelData.path) 
+                            onClicked: dbPageRoot.openDbAnimated(modelData.path)
                         }
                     }
                 }
@@ -474,21 +476,24 @@ ApplicationWindow {
                     anchors.right: parent.right
                     anchors.leftMargin: AppUI.AppTheme.spaceXXL
                     anchors.rightMargin: AppUI.AppTheme.spaceXXL
-                    Row { 
+                    Row {
                         anchors.verticalCenter: parent.verticalCenter
                         spacing: AppUI.AppTheme.spaceM
-                        AppUI.AppButton { 
-                            width: 200; variant: "primary"
+                        AppUI.AppButton {
+                            width: 200
+                            variant: "primary"
                             text: "Создать подразделение"
-                            onClicked: createDbDialog.showCentered() 
-                        }
-                        AppUI.AppButton { 
-                            width: 330; variant: "secondary"
-                            text: "Подключить базу данных"
-                            onClicked: fileDialog.open() 
+                            onClicked: createDbDialog.showCentered()
                         }
                         AppUI.AppButton {
-                            width: 330; variant: "secondary"
+                            width: 330
+                            variant: "secondary"
+                            text: "Подключить базу данных"
+                            onClicked: fileDialog.open()
+                        }
+                        AppUI.AppButton {
+                            width: 330
+                            variant: "secondary"
                             text: "Перенести базы в другую папку"
                             onClicked: globalFolderDialog.open()
                         }
@@ -538,19 +543,38 @@ ApplicationWindow {
                         anchors.horizontalCenter: parent.horizontalCenter
                         width: 180; height: 180
                     }
-                    Text {
+                    Column {
                         id: logoText
                         width: parent.width
-                        text: "OVERTIMETAB " + AppUI.AppTheme.appVersion
-                        color: AppUI.AppTheme.accentBrand
-                        font.family: AppUI.AppTheme.fontFamily
-                        font.pixelSize: AppUI.AppTheme.sizeH4
-                        font.weight: AppUI.AppTheme.weightBold
-                        font.letterSpacing: 1
-                        horizontalAlignment: Text.AlignHCenter
-                        wrapMode: Text.WordWrap
-                        lineHeight: 1.2
+                        spacing: AppUI.AppTheme.spaceXXS
+                        Text {
+                            width: parent.width
+                            text: "OVERTIMETAB"
+                            color: AppUI.AppTheme.accentBrand
+                            font.family: AppUI.AppTheme.fontFamily
+                            font.pixelSize: AppUI.AppTheme.sizeH4
+                            font.weight: AppUI.AppTheme.weightBold
+                            font.letterSpacing: 1
+                            horizontalAlignment: Text.AlignHCenter
+                        }
+                        Text {
+                            width: parent.width
+                            text: AppUI.AppTheme.appVersionFull
+                            color: AppUI.AppTheme.textTertiary
+                            font.family: AppUI.AppTheme.fontFamily
+                            font.pixelSize: AppUI.AppTheme.sizeSmall
+                            font.weight: AppUI.AppTheme.weightMedium
+                            horizontalAlignment: Text.AlignHCenter
+                        }
                     }
+                }
+                Column {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    anchors.bottomMargin: AppUI.AppTheme.spaceS
+                    AppUI.ToastHost { width: parent.width }
+                    AppUI.UpdateBanner { width: parent.width }
                 }
             }
 
@@ -575,8 +599,18 @@ ApplicationWindow {
         Item {
             id: workspaceRoot
             property alias calendarPanel: calendarPanelId
+            MouseArea {
+                anchors.fill: parent
+                z: 1
+                propagateComposedEvents: true
+                onPressed: (mouse) => {
+                    empListPanel.dismissSearchIfOutside(this, mouse.x, mouse.y)
+                    mouse.accepted = false
+                }
+            }
             SplitView {
                 anchors.fill: parent
+                z: 0
                 orientation: Qt.Horizontal
                 handle: Rectangle { 
                     implicitWidth: 1
@@ -602,15 +636,19 @@ ApplicationWindow {
                             workspace: workspaceRoot
                         }
                         AppUI.EmployeeListPanel {
+                            id: empListPanel
                             SplitView.fillWidth: true
                             workspace: workspaceRoot
                         }
                     }
-                    AppUI.LeftControlPanel {
+                    Column {
                         anchors.left: parent.left
                         anchors.right: parent.right
                         anchors.bottom: parent.bottom
                         z: AppUI.AppTheme.zSticky
+                        AppUI.ToastHost { width: parent.width }
+                        AppUI.UpdateBanner { width: parent.width }
+                        AppUI.LeftControlPanel { width: parent.width }
                     }
                 }
                 AppUI.CalendarWorkspace {
@@ -718,6 +756,7 @@ ApplicationWindow {
     // ==========================================
     // ДИАЛОГИ
     // ==========================================
+    AppUI.WhatsNewDialog    { id: whatsNewDialog }
     AppUI.HelpDialog        { id: helpDialog }
     AppUI.DayInspector      { id: dayInspector }
     AppUI.MoneyInspector    { 
@@ -729,7 +768,7 @@ ApplicationWindow {
     AppUI.EndStatusDialog   { id: endStatusDialog }
     AppUI.TransferDialog    { id: transferDialog }
     AppUI.MoneyDialog       { id: moneyDialog }
-    AppUI.AppToast          { id: toastPopup }
+
     AppUI.AppConfirmDialog  {
         id: confirmDialog
         onAccepted: {
@@ -793,6 +832,16 @@ FileDialog {
         interval: 5000; running: true; repeat: false
         onTriggered: { if (backend.reminderEnabled) checkAndNotify() }
     }
+    Timer {
+        id: updateScanTimer
+        interval: 5000; running: true; repeat: true
+        onTriggered: backend.scanForUpdates()
+    }
+    Timer {
+        id: whatsNewTimer
+        interval: 700; running: true; repeat: false
+        onTriggered: whatsNewDialog.showIfNeeded()
+    }
 
     function checkAndNotify() {
         let d = new Date()
@@ -801,4 +850,4 @@ FileDialog {
             systemAlert.showNotification()
         }
     }
-} 
+}
