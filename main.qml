@@ -662,13 +662,18 @@ ApplicationWindow {
     // ==========================================
     // ОВЕРЕИ И ЭФФЕКТЫ
     // ==========================================
+    // Размытие фона за окном убрали: окно просто открывается.
+    // (Оверлей оставлен, но выключен, чтобы не трогать остальную механику.)
     AppUI.SpotlightOverlay {
         id: spotlightOverlay
         backgroundSource: visualRoot
         targetItem: mainWindow.activeSpotlightCell
-        isActive: dayEventDialog.opened
+        isActive: false
     }
     AppUI.ThemeTransition { id: themeTransition; targetItem: visualRoot }
+
+    // Морфинг-окно дня: ячейка расширяется в меню и дорастает до диалогов
+    AppUI.AppDayMorphDialog { id: dayMorph }
 
     property var pendingBackendCall: null
 

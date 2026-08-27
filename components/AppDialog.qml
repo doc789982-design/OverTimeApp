@@ -19,12 +19,17 @@ Popup {
     signal accepted()
     signal rejected()
 
+    // Режим «морфинга»: диалог открывается сразу в заданном месте
+    // без анимации масштаба, чтобы плавно продолжить рост ячейки дня.
+    property bool morphOpen: false
+
     // Зона для вставки контента
     default property alias dialogContent: contentArea.data
 
     width: 380 
     // Окно не может быть выше экрана, вычитаем 100px для комфортного отступа
-    height: Math.min(mainLayout.implicitHeight + 40, ApplicationWindow.window ? ApplicationWindow.window.height - 100 : 800)
+    property real effectiveHeight: Math.min(mainLayout.implicitHeight + 40, ApplicationWindow.window ? ApplicationWindow.window.height - 100 : 800)
+    height: effectiveHeight
     
     z: AppTheme.zModal
     modal: false 
@@ -39,7 +44,9 @@ Popup {
     enter: Transition {
         ParallelAnimation {
             NumberAnimation { property: "opacity"; from: 0.0; to: 1.0; duration: AppTheme.durStandard; easing.type: AppTheme.easeEnter }
-            NumberAnimation { property: "scale"; from: 0.95; to: 1.0; duration: AppTheme.durStandard; easing.type: AppTheme.easeEnter }
+            // При морфинге масштаб уже 1.0 (from == to) — анимации роста нет,
+            // окно просто продолжает рост ячейки как единое целое.
+            NumberAnimation { property: "scale"; from: root.morphOpen ? 1.0 : 0.95; to: 1.0; duration: AppTheme.durStandard; easing.type: AppTheme.easeEnter }
         }
     }
     exit: Transition {
@@ -155,9 +162,22 @@ Popup {
     
     // Функции показа (оставляем как были)
     function showAt(callerItem, mouseX, mouseY) {
+        root.morphOpen = false
+        root.height = root.effectiveHeight
         var clickPoint = callerItem.mapToItem(null, mouseX, mouseY)
         root.x = Math.max(AppTheme.spaceL, Math.min(clickPoint.x, ApplicationWindow.window.width - root.width - AppTheme.spaceL))
         root.y = Math.max(AppTheme.spaceL, Math.min(clickPoint.y + AppTheme.spaceM, ApplicationWindow.window.height - root.height - AppTheme.spaceL))
+        root.open()
+    }
+
+    // Открытие после «морфинга»: диалог появляется сразу в заданном прямоугольнике,
+    // без анимации масштаба — продолжает рост ячейки дня как одно целое окно.
+    function openMorph(x, y, w, h) {
+        root.morphOpen = true
+        root.x = x
+        root.y = y
+        root.width = w
+        root.height = h
         root.open()
     }
     

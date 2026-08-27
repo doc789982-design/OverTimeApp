@@ -617,18 +617,16 @@ AppDialog {
     // ФУНКЦИИ ОТКРЫТИЯ
     // ==========================================
 
-    function openForDuty(dateStr, callerItem, mouseX, mouseY) {
+    function prepareForDuty(dateStr) {
         root.targetDate = dateStr
         root.currentTab = 0
         root.editDutyId = 0
         root.editCompId = 0
         dutyCommentInput.text = ""
         root.activeBreaks = []
-        mainWindow.activeSpotlightCell = callerItem
-        root.showAt(callerItem, mouseX, mouseY)
     }
 
-    function openForComp(dateStr, callerItem, mouseX, mouseY) {
+    function prepareForComp(dateStr) {
         root.targetDate = dateStr
         root.currentTab = 1
         root.editDutyId = 0
@@ -643,8 +641,32 @@ AppDialog {
         compCol.recalcEndFromDays()
         compCommentInput.text = ""
         compPrevYearCheck.checked = false
+    }
+
+    function openForDuty(dateStr, callerItem, mouseX, mouseY) {
+        prepareForDuty(dateStr)
         mainWindow.activeSpotlightCell = callerItem
         root.showAt(callerItem, mouseX, mouseY)
+    }
+
+    function openForComp(dateStr, callerItem, mouseX, mouseY) {
+        prepareForComp(dateStr)
+        mainWindow.activeSpotlightCell = callerItem
+        root.showAt(callerItem, mouseX, mouseY)
+    }
+
+    // Версии для «морфинга»: окно сразу встаёт в нужный прямоугольник,
+    // без анимации масштаба и без размытия фона.
+    function openForDutyMorph(dateStr, x, y, w, h) {
+        prepareForDuty(dateStr)
+        mainWindow.activeSpotlightCell = null
+        root.openMorph(x, y, w, h)
+    }
+
+    function openForCompMorph(dateStr, x, y, w, h) {
+        prepareForComp(dateStr)
+        mainWindow.activeSpotlightCell = null
+        root.openMorph(x, y, w, h)
     }
 
     function openForDutyEdit(dutyData, dateStr, callerItem, mouseX, mouseY) {
