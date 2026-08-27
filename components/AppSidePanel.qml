@@ -33,12 +33,20 @@ Popup {
     // ==========================================
     enter: Transition {
         // При морфинге from == to — панель не выезжает сбоку, а остаётся на месте
+        // и проявляется прозрачностью во время роста рамки.
         NumberAnimation { 
             property: "x"
             from: root.morphOpen ? root.x : root.x + root.width
             to: root.x
             duration: AppTheme.durStandard
             easing.type: AppTheme.easeEnter 
+        }
+        NumberAnimation {
+            property: "opacity"
+            from: root.morphOpen ? 0.0 : 1.0
+            to: 1.0
+            duration: AppTheme.durStandard
+            easing.type: AppTheme.easeEnter
         }
     }
     exit: Transition {

@@ -5,11 +5,13 @@ import QtQuick.Controls.impl
 // МОРФИНГ-ОКНО ДНЯ
 //
 // Одно «живое» окно вместо старого контекстного меню + отдельных
-// попапов. Клик по ячейке дня ЛКМ — ячейка «расширяется» от своего
-// левого верхнего угла и превращается в меню. Клик по пункту меню —
-// окно плавно дорастает до размеров следующего окна (дежурство /
-// компенсация / день) и встаёт ближе к центру, не вылезая за края.
-// При «ОК» / «Отмена» окно закрывается целиком — старые не выскакивают.
+// попапов. Клик по ячейке дня ЛКМ — сама ячейка «растягивается» от
+// своего левого верхнего угла: цвет и скругление ячейки плавно
+// превращаются в цвет и скругление окна, тень появляется, внутри
+// проступают пункты меню. Клик по пункту — окно дорастает до
+// размеров следующего окна, которое начинает грузиться прямо во
+// время анимации роста (а не после). При «ОК» / «Отмена» окно
+// закрывается целиком — старые не выскакивают.
 // ============================================================
 Item {
     id: root
@@ -31,6 +33,10 @@ Item {
     // Геометрия ячейки, из которой открылись (для обратной анимации)
     property rect cellRect: Qt.rect(0, 0, 0, 0)
 
+    // Длительности (быстрее стандартных, чтобы всё было бесшовным)
+    readonly property int durGrow: 200
+    readonly property int durContent: 150
+
     visible: boxOpacity > 0
     opacity: 1
 
@@ -50,14 +56,21 @@ Item {
         width: 0; height: 0
         opacity: root.boxOpacity
 
+        // Начинаем «как ячейка» — те же скругление и цвет, без тени.
+        // По мере роста превращаемся в поверхность окна.
+        property real morphRadius: AppTheme.radiusMedium
+        property color morphColor: AppTheme.bgCell
+        property real morphShadow: 0
+
         Rectangle {
             anchors.fill: parent
-            color: AppTheme.bgModal
-            radius: AppTheme.radiusModal
+            color: box.morphColor
+            radius: box.morphRadius
             border.color: AppTheme.borderDivider
             border.width: 1
-            // Тень-картинка вместо вычисляемой
-            AppShadow { level: 4 }
+            Behavior on color { ColorAnimation { duration: root.durGrow; easing.type: AppTheme.easeStandard } }
+            Behavior on radius { NumberAnimation { duration: root.durGrow; easing.type: AppTheme.easeStandard } }
+            AppShadow { level: 4; opacity: box.morphShadow }
         }
 
         // ============================================================
@@ -69,74 +82,108 @@ Item {
             anchors.fill: parent
             clip: true
 
-        Column {
-            id: menuContent
-            x: AppTheme.spaceM
-            y: AppTheme.spaceM
-            width: root.menuW - 2 * AppTheme.spaceM
-            spacing: 4
-            opacity: 0
-            scale: 0.97
-            transformOrigin: Item.TopLeft
-            Behavior on opacity { NumberAnimation { duration: AppTheme.durStandard; easing.type: AppTheme.easeStandard } }
-            Behavior on scale { NumberAnimation { duration: AppTheme.durStandard; easing.type: AppTheme.easeStandard } }
+            Column {
+                id: menuContent
+                x: AppTheme.spaceM
+                y: AppTheme.spaceM
+                width: root.menuW - 2 * AppTheme.spaceM
+                spacing: 4
+                opacity: 0
+                scale: 0.96
+                transformOrigin: Item.TopLeft
+                Behavior on opacity { NumberAnimation { duration: root.durContent; easing.type: AppTheme.easeStandard } }
+                Behavior on scale { NumberAnimation { duration: root.durContent; easing.type: AppTheme.easeStandard } }
 
-            // ── Шапка: дата + закрыть ──
-            Row {
-                width: parent.width
-                spacing: AppTheme.spaceS
-                Text {
-                    id: dateLabel
-                    width: parent.width - 40
-                    elide: Text.ElideRight
-                    text: root.fmtDate(root.targetDate)
-                    color: AppTheme.textPrimary
-                    font.family: AppTheme.fontCondensed
-                    font.pixelSize: AppTheme.sizeH4
-                    font.weight: AppTheme.weightBold
-                    verticalAlignment: Text.AlignVCenter
-                    height: 34
-                }
-                Rectangle {
-                    width: 28; height: 28; radius: AppTheme.radiusPill
-                    anchors.verticalCenter: parent.verticalCenter
-                    color: closeHov.pressed ? AppTheme.statePress
-                          : (closeHov.containsMouse ? AppTheme.stateHover : "transparent")
-                    IconImage { anchors.centerIn: parent; source: "../icons/close.svg"; width: AppTheme.iconMedium; height: AppTheme.iconMedium; color: AppTheme.textSecondary }
-                    MouseArea { id: closeHov; anchors.fill: parent; hoverEnabled: true; onClicked: root.closeFromCell() }
-                }
-            }
-
-            // ── Быстрые статусы: К / Б / О / сброс ──
-            Row {
-                width: parent.width
-                spacing: AppTheme.spaceS
-                Repeater {
-                    model: [
-                        { "t": "К", "tool": "Командировка", "c": AppTheme.accentPurple, "st": "К" },
-                        { "t": "Б", "tool": "Больничный",     "c": AppTheme.accentDanger, "st": "Б" },
-                        { "t": "О", "tool": "Отпуск",         "c": AppTheme.accentWarning, "st": "О" }
-                    ]
+                // ── Шапка: дата + закрыть ──
+                Row {
+                    width: parent.width
+                    spacing: AppTheme.spaceS
+                    Text {
+                        id: dateLabel
+                        width: parent.width - 40
+                        elide: Text.ElideRight
+                        text: root.fmtDate(root.targetDate)
+                        color: AppTheme.textPrimary
+                        font.family: AppTheme.fontCondensed
+                        font.pixelSize: AppTheme.sizeH4
+                        font.weight: AppTheme.weightBold
+                        verticalAlignment: Text.AlignVCenter
+                        height: 34
+                    }
                     Rectangle {
-                        width: 44; height: 40; radius: AppTheme.radiusMedium
-                        color: m.pressed ? AppTheme.statePress
-                              : (m.containsMouse ? AppTheme.stateHover : AppTheme.bgSurface)
+                        width: 28; height: 28; radius: AppTheme.radiusPill
+                        anchors.verticalCenter: parent.verticalCenter
+                        color: closeHov.pressed ? AppTheme.statePress
+                              : (closeHov.containsMouse ? AppTheme.stateHover : "transparent")
+                        IconImage { anchors.centerIn: parent; source: "../icons/close.svg"; width: AppTheme.iconMedium; height: AppTheme.iconMedium; color: AppTheme.textSecondary }
+                        MouseArea { id: closeHov; anchors.fill: parent; hoverEnabled: true; onClicked: root.closeFromCell() }
+                    }
+                }
+
+                // ── Быстрые статусы: К / Б / О / сброс (круглые, как раньше) ──
+                Row {
+                    width: parent.width
+                    spacing: 8
+                    Repeater {
+                        model: [
+                            { "t": "К", "tool": "Командировка", "c": AppTheme.accentPurple, "st": "К" },
+                            { "t": "Б", "tool": "Больничный",     "c": AppTheme.accentDanger, "st": "Б" },
+                            { "t": "О", "tool": "Отпуск",         "c": AppTheme.accentWarning, "st": "О" }
+                        ]
+                        Rectangle {
+                            width: 34; height: 34; radius: AppTheme.radiusPill
+                            color: m.pressed ? AppTheme.statePress
+                                  : (m.containsMouse ? AppTheme.stateHover : AppTheme.bgSurface)
+                            border.color: AppTheme.borderDivider
+                            border.width: 1
+                            Text {
+                                anchors.centerIn: parent
+                                text: modelData.t
+                                color: modelData.c
+                                font.weight: AppTheme.weightBold
+                                font.pixelSize: AppTheme.sizeBodyLarge
+                            }
+                            MouseArea {
+                                id: m
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    backend.setDayStatus(root.targetDate, modelData.st)
+                                    root.closeFromCell()
+                                }
+                            }
+                            AppToolTip {
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                anchors.bottom: parent.top
+                                anchors.bottomMargin: AppTheme.spaceXS
+                                text: modelData.tool
+                                isVisible: m.containsMouse
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        width: 34; height: 34; radius: AppTheme.radiusPill
+                        color: clearBtn.pressed ? AppTheme.statePress
+                              : (clearBtn.containsMouse ? AppTheme.stateHover : AppTheme.bgSurface)
                         border.color: AppTheme.borderDivider
                         border.width: 1
-                        Text {
+                        IconImage {
                             anchors.centerIn: parent
-                            text: modelData.t
-                            color: modelData.c
-                            font.weight: AppTheme.weightBold
-                            font.pixelSize: AppTheme.sizeBodyLarge
+                            source: "../icons/trash.svg"
+                            width: AppTheme.iconMedium
+                            height: AppTheme.iconMedium
+                            color: clearBtn.containsMouse ? AppTheme.accentDanger : AppTheme.textSecondary
                         }
                         MouseArea {
-                            id: m
+                            id: clearBtn
                             anchors.fill: parent
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
                             onClicked: {
-                                backend.setDayStatus(root.targetDate, modelData.st)
+                                mainWindow.explodeAndDelete(root.targetDate, "status", null,
+                                    function() { backend.setDayStatus(root.targetDate, "") })
                                 root.closeFromCell()
                             }
                         }
@@ -144,140 +191,106 @@ Item {
                             anchors.horizontalCenter: parent.horizontalCenter
                             anchors.bottom: parent.top
                             anchors.bottomMargin: AppTheme.spaceXS
-                            text: modelData.tool
-                            isVisible: m.containsMouse
+                            text: "Удалить статус"
+                            isVisible: clearBtn.containsMouse
                         }
                     }
                 }
 
-                Rectangle {
-                    width: 44; height: 40; radius: AppTheme.radiusMedium
-                    color: clearBtn.pressed ? AppTheme.statePress
-                          : (clearBtn.containsMouse ? AppTheme.stateHover : AppTheme.bgSurface)
-                    border.color: AppTheme.borderDivider
-                    border.width: 1
-                    IconImage {
-                        anchors.centerIn: parent
-                        source: "../icons/trash.svg"
-                        width: AppTheme.iconMedium
-                        height: AppTheme.iconMedium
-                        color: clearBtn.containsMouse ? AppTheme.accentDanger : AppTheme.textSecondary
-                    }
-                    MouseArea {
-                        id: clearBtn
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: {
-                            mainWindow.explodeAndDelete(root.targetDate, "status", null,
-                                function() { backend.setDayStatus(root.targetDate, "") })
-                            root.closeFromCell()
-                        }
-                    }
-                    AppToolTip {
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        anchors.bottom: parent.top
-                        anchors.bottomMargin: AppTheme.spaceXS
-                        text: "Удалить статус"
-                        isVisible: clearBtn.containsMouse
+                Rectangle { width: parent.width; height: 1; color: AppTheme.borderDivider }
+
+                // ── Пункты меню ──
+                AppMenuRow {
+                    iconSource: "../icons/edit.svg"
+                    text: "Открыть день"
+                    onClicked: {
+                        backend.loadDayDetails(root.targetDate)
+                        dayInspector.targetDate = root.targetDate
+                        root.morphToDialog(450, mainWindow.height - 2 * AppTheme.spaceL,
+                            function(x, y, w, h) { dayInspector.openMorph(x, y, w, h) })
                     }
                 }
-            }
 
-            Rectangle { width: parent.width; height: 1; color: AppTheme.borderDivider }
+                AppMenuRow {
+                    iconSource: "../icons/clock.svg"
+                    text: "Добавить дежурство"
+                    showDelete: root.menuHasDuties
+                    onClicked: {
+                        // Сначала готовим вкладку, чтобы высота окна совпала с её содержимым
+                        dayEventDialog.prepareForDuty(root.targetDate)
+                        root.morphToDialog(380, dayEventDialog.effectiveHeight,
+                            function(x, y, w, h) { dayEventDialog.openForDutyMorph(root.targetDate, x, y, w, h) })
+                    }
+                    onDeleteClicked: {
+                        mainWindow.askConfirm(
+                            "Удалить все дежурства?",
+                            "Будут удалены все дежурства за " + root.fmtDate(root.targetDate) + ".\nЕсли передумаете — нажмите Ctrl+Z.",
+                            "Удалить",
+                            function() {
+                                mainWindow.explodeAndDelete(root.targetDate, "duty", null,
+                                    function() { backend.clearDayDuties(root.targetDate) })
+                            }
+                        )
+                        root.closeFromCell()
+                    }
+                }
 
-            // ── Пункты меню ──
-            AppMenuRow {
-                iconSource: "../icons/edit.svg"
-                text: "Открыть день"
-                onClicked: {
-                    backend.loadDayDetails(root.targetDate)
-                    dayInspector.targetDate = root.targetDate
-                    root.morphToDialog(450, mainWindow.height - 2 * AppTheme.spaceL,
-                        function(x, y, w, h) { dayInspector.openMorph(x, y, w, h) })
+                AppMenuRow {
+                    iconSource: "../icons/rest.svg"
+                    text: "Добавить компенсацию"
+                    showDelete: root.menuHasComps
+                    onClicked: {
+                        dayEventDialog.prepareForComp(root.targetDate)
+                        root.morphToDialog(380, dayEventDialog.effectiveHeight,
+                            function(x, y, w, h) { dayEventDialog.openForCompMorph(root.targetDate, x, y, w, h) })
+                    }
+                    onDeleteClicked: {
+                        mainWindow.askConfirm(
+                            "Удалить все компенсации?",
+                            "Будут удалены все компенсации за " + root.fmtDate(root.targetDate) + ".\nЕсли передумаете — нажмите Ctrl+Z.",
+                            "Удалить",
+                            function() {
+                                mainWindow.explodeAndDelete(root.targetDate, "comp", null,
+                                    function() { backend.clearDayCompensations(root.targetDate) })
+                            }
+                        )
+                        root.closeFromCell()
+                    }
                 }
-            }
 
-            AppMenuRow {
-                iconSource: "../icons/clock.svg"
-                text: "Добавить дежурство"
-                showDelete: root.menuHasDuties
-                onClicked: {
-                    // Сначала готовим вкладку, чтобы высота окна совпала с её содержимым
-                    dayEventDialog.prepareForDuty(root.targetDate)
-                    root.morphToDialog(380, dayEventDialog.effectiveHeight,
-                        function(x, y, w, h) { dayEventDialog.openForDutyMorph(root.targetDate, x, y, w, h) })
-                }
-                onDeleteClicked: {
-                    mainWindow.askConfirm(
-                        "Удалить все дежурства?",
-                        "Будут удалены все дежурства за " + root.fmtDate(root.targetDate) + ".\nЕсли передумаете — нажмите Ctrl+Z.",
-                        "Удалить",
-                        function() {
-                            mainWindow.explodeAndDelete(root.targetDate, "duty", null,
-                                function() { backend.clearDayDuties(root.targetDate) })
-                        }
-                    )
-                    root.closeFromCell()
-                }
-            }
+                Rectangle { width: parent.width; height: 1; color: AppTheme.borderDivider }
 
-            AppMenuRow {
-                iconSource: "../icons/rest.svg"
-                text: "Добавить компенсацию"
-                showDelete: root.menuHasComps
-                onClicked: {
-                    dayEventDialog.prepareForComp(root.targetDate)
-                    root.morphToDialog(380, dayEventDialog.effectiveHeight,
-                        function(x, y, w, h) { dayEventDialog.openForCompMorph(root.targetDate, x, y, w, h) })
+                AppMenuRow {
+                    visible: root.menuIsWeekend || root.menuIsHoliday
+                    iconSource: "../icons/calendar.svg"
+                    text: "Сделать рабочим"
+                    customColor: AppTheme.accentTeal
+                    onClicked: {
+                        backend.setDayType(root.targetDate, "work")
+                        root.closeFromCell()
+                    }
                 }
-                onDeleteClicked: {
-                    mainWindow.askConfirm(
-                        "Удалить все компенсации?",
-                        "Будут удалены все компенсации за " + root.fmtDate(root.targetDate) + ".\nЕсли передумаете — нажмите Ctrl+Z.",
-                        "Удалить",
-                        function() {
-                            mainWindow.explodeAndDelete(root.targetDate, "comp", null,
-                                function() { backend.clearDayCompensations(root.targetDate) })
-                        }
-                    )
-                    root.closeFromCell()
+                AppMenuRow {
+                    visible: !root.menuIsWeekend
+                    iconSource: "../icons/rest.svg"
+                    text: "Сделать выходным"
+                    customColor: AppTheme.accentDanger
+                    onClicked: {
+                        backend.setDayType(root.targetDate, "weekend")
+                        root.closeFromCell()
+                    }
                 }
-            }
-
-            Rectangle { width: parent.width; height: 1; color: AppTheme.borderDivider }
-
-            AppMenuRow {
-                visible: root.menuIsWeekend || root.menuIsHoliday
-                iconSource: "../icons/calendar.svg"
-                text: "Сделать рабочим"
-                customColor: AppTheme.accentTeal
-                onClicked: {
-                    backend.setDayType(root.targetDate, "work")
-                    root.closeFromCell()
+                AppMenuRow {
+                    visible: !root.menuIsHoliday
+                    iconSource: "../icons/sparkle.svg"
+                    text: "Сделать праздничным"
+                    customColor: AppTheme.accentPurple
+                    onClicked: {
+                        backend.setDayType(root.targetDate, "holiday")
+                        root.closeFromCell()
+                    }
                 }
             }
-            AppMenuRow {
-                visible: !root.menuIsWeekend
-                iconSource: "../icons/rest.svg"
-                text: "Сделать выходным"
-                customColor: AppTheme.accentDanger
-                onClicked: {
-                    backend.setDayType(root.targetDate, "weekend")
-                    root.closeFromCell()
-                }
-            }
-            AppMenuRow {
-                visible: !root.menuIsHoliday
-                iconSource: "../icons/sparkle.svg"
-                text: "Сделать праздничным"
-                customColor: AppTheme.accentPurple
-                onClicked: {
-                    backend.setDayType(root.targetDate, "holiday")
-                    root.closeFromCell()
-                }
-            }
-        }
         }
     }
 
@@ -289,10 +302,13 @@ Item {
 
     ParallelAnimation {
         id: growAnim
-        NumberAnimation { id: gx; target: box; property: "x";      duration: AppTheme.durSlow; easing.type: AppTheme.easeStandard }
-        NumberAnimation { id: gy; target: box; property: "y";      duration: AppTheme.durSlow; easing.type: AppTheme.easeStandard }
-        NumberAnimation { id: gw; target: box; property: "width";  duration: AppTheme.durSlow; easing.type: AppTheme.easeStandard }
-        NumberAnimation { id: gh; target: box; property: "height"; duration: AppTheme.durSlow; easing.type: AppTheme.easeStandard }
+        NumberAnimation { id: gx; target: box; property: "x";          duration: root.durGrow; easing.type: AppTheme.easeStandard }
+        NumberAnimation { id: gy; target: box; property: "y";          duration: root.durGrow; easing.type: AppTheme.easeStandard }
+        NumberAnimation { id: gw; target: box; property: "width";      duration: root.durGrow; easing.type: AppTheme.easeStandard }
+        NumberAnimation { id: gh; target: box; property: "height";     duration: root.durGrow; easing.type: AppTheme.easeStandard }
+        NumberAnimation { id: gColor; target: box; property: "morphColor"; duration: root.durGrow; easing.type: AppTheme.easeStandard }
+        NumberAnimation { id: gRadius; target: box; property: "morphRadius"; duration: root.durGrow; easing.type: AppTheme.easeStandard }
+        NumberAnimation { id: gShadow; target: box; property: "morphShadow"; duration: root.durGrow; easing.type: AppTheme.easeStandard }
         onStopped: {
             var cb = root._growCb
             root._growCb = null
@@ -301,7 +317,7 @@ Item {
     }
     property var _growCb: null
 
-    Timer { id: revealTimer; interval: 140; repeat: false; onTriggered: { menuContent.opacity = 1.0; menuContent.scale = 1.0 } }
+    Timer { id: revealTimer; interval: 60; repeat: false; onTriggered: { menuContent.opacity = 1.0; menuContent.scale = 1.0 } }
 
     // ============================================================
     // ФОРМАТ ДАТЫ
@@ -339,17 +355,23 @@ Item {
         let tX = Math.min(Math.max(pt.x, margin), mainWindow.width - menuW - margin)
         let tY = Math.min(Math.max(pt.y, margin), mainWindow.height - menuH - margin)
 
-        // Сброс и подготовка
+        // Сброс и подготовка — начинаем точь-в-точь как сама ячейка
         root._growCb = null
         menuContent.opacity = 0
-        menuContent.scale = 0.97
+        menuContent.scale = 0.96
         box.x = pt.x; box.y = pt.y
         box.width = cellItem.width; box.height = cellItem.height
+        box.morphRadius = AppTheme.radiusMedium
+        box.morphColor = (isWeekend || isHoliday) ? AppTheme.bgDangerSoft : AppTheme.bgCell
+        box.morphShadow = 0
         root.boxOpacity = 1
         root.mode = 1
 
         revealTimer.restart()
         gx.to = tX; gy.to = tY; gw.to = menuW; gh.to = menuH
+        gColor.to = AppTheme.bgModal
+        gRadius.to = AppTheme.radiusModal
+        gShadow.to = 1
         growAnim.restart()
     }
 
@@ -368,13 +390,19 @@ Item {
         let y = margin + (mainWindow.height - 2 * margin - h) / 2
 
         root.mode = 2
+
+        // Сразу открываем целевое окно: оно проявляется (opacity) во время
+        // роста рамки, а не после — получается бесшовный переход.
         root._growCb = function() {
-            if (done) done(x, y, w, h)
-            // Прячем рамку — её место занял настоящий диалог
+            // Рамка достигла размеров окна — прячем её, осталось настоящее окно
             root.boxOpacity = 0
             root.mode = 0
         }
+        if (done) done(x, y, w, h)
+
         gx.to = x; gy.to = y; gw.to = w; gh.to = h
+        gColor.to = AppTheme.bgModal
+        gRadius.to = AppTheme.radiusModal
         growAnim.restart()
     }
 
