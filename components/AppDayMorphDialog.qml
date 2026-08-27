@@ -2,17 +2,14 @@ import QtQuick
 import QtQuick.Controls.impl
 
 // ============================================================
-// МОРФИНГ-ОКНО ДНЯ
+// МОРФИНГ-ОКНО ДНЯ (карточный вариант)
 //
-// Клик по ячейке дня ЛКМ — ПРЯМО САМА ЯЧЕЙКА «растягивается» от
-// своего левого верхнего угла. Для этого окно на первом кадре —
-// это живой клон настоящей ячейки (ShaderEffectSource), поэтому
-// визуально ничего нового не появляется: растёт именно клетка со
-// своим днём, цветом и рамкой (тема подхватывается сама). По мере
-// роста клон клетки растворяется, а внутри проступают пункты меню.
-// Клик по пункту — окно дорастает до следующего окна, которое
-// начинает грузиться прямо во время анимации роста. При «ОК» /
-// «Отмена» окно закрывается целиком — старые не выскакивают.
+// Клик по ячейке дня ЛКМ — из позиции ячейки растягивается обычная
+// карточка-меню (не скрин ячейки): рамка с тенью, внутри которой
+// проступают пункты меню. Клик по пункту — окно дорастает до
+// следующего окна, которое начинает грузиться прямо во время
+// анимации роста. При «ОК» / «Отмена» окно закрывается целиком —
+// старые не выскакивают.
 // ============================================================
 Item {
     id: root
@@ -31,13 +28,12 @@ Item {
 
     property real menuW: 256
 
-    // Настоящая ячейка, которую «растягиваем»
-    property Item sourceCell: null
+    // Геометрия ячейки, из которой открылись (для обратной анимации)
     property rect cellRect: Qt.rect(0, 0, 0, 0)
 
-    // Длительности (быстрые, чтобы всё было бесшовным)
-    readonly property int durGrow: 200
-    readonly property int durContent: 140
+    // Длительности — как в первой итерации (плавно, но не дольше)
+    readonly property int durGrow: AppTheme.durSlow
+    readonly property int durContent: AppTheme.durStandard
 
     visible: boxOpacity > 0
     opacity: 1
@@ -58,36 +54,19 @@ Item {
         width: 0; height: 0
         opacity: root.boxOpacity
 
-        // Скругление растёт от радиуса ячейки до радиуса окна,
-        // тень проявляется по мере роста.
-        property real morphRadius: AppTheme.radiusMedium
-        property real morphShadow: 0
-
         Rectangle {
             anchors.fill: parent
             color: AppTheme.bgModal
-            radius: box.morphRadius
+            radius: AppTheme.radiusModal
             border.color: AppTheme.borderDivider
             border.width: 1
-            Behavior on radius { NumberAnimation { duration: root.durGrow; easing.type: AppTheme.easeStandard } }
-            AppShadow { level: 4; opacity: box.morphShadow }
-        }
-
-        // Живой клон настоящей ячейки: первые кадры — это и есть клетка.
-        // Растворяется, когда внутри проявляется меню.
-        ShaderEffectSource {
-            id: cellClone
-            anchors.fill: parent
-            sourceItem: root.sourceCell
-            live: root.mode === 1
-            visible: opacity > 0.01
-            opacity: root.cellOpacity
-            smooth: true
-            Behavior on opacity { NumberAnimation { duration: root.durContent; easing.type: AppTheme.easeStandard } }
+            // Тень-картинка вместо вычисляемой
+            AppShadow { level: 4 }
         }
 
         // ============================================================
-        // СОДЕРЖИМОЕ МЕНЮ
+        // СОДЕРЖИМОЕ МЕНЮ (клипится, чтобы во время роста не вылезать
+        // за рамку, а тень осталась видна)
         // ============================================================
         Item {
             id: contentClip
@@ -101,7 +80,7 @@ Item {
                 width: root.menuW - 2 * AppTheme.spaceM
                 spacing: 4
                 opacity: 0
-                scale: 0.96
+                scale: 0.97
                 transformOrigin: Item.TopLeft
                 Behavior on opacity { NumberAnimation { duration: root.durContent; easing.type: AppTheme.easeStandard } }
                 Behavior on scale { NumberAnimation { duration: root.durContent; easing.type: AppTheme.easeStandard } }
@@ -132,10 +111,10 @@ Item {
                     }
                 }
 
-                // ── Быстрые статусы: К / Б / О / сброс (круглые, как раньше) ──
+                // ── Быстрые статусы: К / Б / О / сброс (круглые) ──
                 Row {
                     width: parent.width
-                    spacing: 8
+                    spacing: AppTheme.spaceS
                     Repeater {
                         model: [
                             { "t": "К", "tool": "Командировка", "c": AppTheme.accentPurple, "st": "К" },
@@ -311,17 +290,12 @@ Item {
     property real boxOpacity: 0
     Behavior on boxOpacity { NumberAnimation { duration: AppTheme.durFast; easing.type: AppTheme.easeExit } }
 
-    property real cellOpacity: 1
-
     ParallelAnimation {
         id: growAnim
-        NumberAnimation { id: gx; target: box; property: "x";          duration: root.durGrow; easing.type: AppTheme.easeStandard }
-        NumberAnimation { id: gy; target: box; property: "y";          duration: root.durGrow; easing.type: AppTheme.easeStandard }
-        NumberAnimation { id: gw; target: box; property: "width";      duration: root.durGrow; easing.type: AppTheme.easeStandard }
-        NumberAnimation { id: gh; target: box; property: "height";     duration: root.durGrow; easing.type: AppTheme.easeStandard }
-        NumberAnimation { id: gRadius; target: box; property: "morphRadius"; duration: root.durGrow; easing.type: AppTheme.easeStandard }
-        NumberAnimation { id: gShadow; target: box; property: "morphShadow"; duration: root.durGrow; easing.type: AppTheme.easeStandard }
-        NumberAnimation { id: gCell; target: root; property: "cellOpacity"; duration: root.durGrow; easing.type: AppTheme.easeStandard }
+        NumberAnimation { id: gx; target: box; property: "x";      duration: root.durGrow; easing.type: AppTheme.easeStandard }
+        NumberAnimation { id: gy; target: box; property: "y";      duration: root.durGrow; easing.type: AppTheme.easeStandard }
+        NumberAnimation { id: gw; target: box; property: "width";  duration: root.durGrow; easing.type: AppTheme.easeStandard }
+        NumberAnimation { id: gh; target: box; property: "height"; duration: root.durGrow; easing.type: AppTheme.easeStandard }
         onStopped: {
             var cb = root._growCb
             root._growCb = null
@@ -330,7 +304,7 @@ Item {
     }
     property var _growCb: null
 
-    Timer { id: revealTimer; interval: 50; repeat: false; onTriggered: { menuContent.opacity = 1.0; menuContent.scale = 1.0 } }
+    Timer { id: revealTimer; interval: 140; repeat: false; onTriggered: { menuContent.opacity = 1.0; menuContent.scale = 1.0 } }
 
     // ============================================================
     // ФОРМАТ ДАТЫ
@@ -368,25 +342,17 @@ Item {
         let tX = Math.min(Math.max(pt.x, margin), mainWindow.width - menuW - margin)
         let tY = Math.min(Math.max(pt.y, margin), mainWindow.height - menuH - margin)
 
-        // Сброс и подготовка — первые кадры: живой клон самой ячейки
+        // Сброс и подготовка
         root._growCb = null
-        root.sourceCell = cellItem
         menuContent.opacity = 0
-        menuContent.scale = 0.96
-        cellClone.opacity = 1
-        root.cellOpacity = 1
+        menuContent.scale = 0.97
         box.x = pt.x; box.y = pt.y
         box.width = cellItem.width; box.height = cellItem.height
-        box.morphRadius = AppTheme.radiusMedium
-        box.morphShadow = 0
         root.boxOpacity = 1
         root.mode = 1
 
         revealTimer.restart()
         gx.to = tX; gy.to = tY; gw.to = menuW; gh.to = menuH
-        gRadius.to = AppTheme.radiusModal
-        gShadow.to = 1
-        gCell.to = 0
         growAnim.restart()
     }
 
@@ -397,7 +363,6 @@ Item {
         // Прячем содержимое меню — останется чистая рамка, которая растёт в диалог
         menuContent.opacity = 0
         revealTimer.stop()
-        cellClone.opacity = 0
 
         let margin = AppTheme.spaceL
         let w = Math.min(dialogW, mainWindow.width - 2 * margin)
@@ -416,8 +381,6 @@ Item {
         if (done) done(x, y, w, h)
 
         gx.to = x; gy.to = y; gw.to = w; gh.to = h
-        gRadius.to = AppTheme.radiusModal
-        gShadow.to = 1
         growAnim.restart()
     }
 
@@ -429,7 +392,5 @@ Item {
         root.mode = 0
         revealTimer.stop()
         menuContent.opacity = 0
-        cellClone.opacity = 0
-        root.sourceCell = null
     }
 }
