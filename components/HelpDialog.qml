@@ -7,6 +7,8 @@ AppSidePanel {
     width: 550 // Сделали чуть шире для комфортного чтения
     title: "О программе и справка"
 
+    readonly property string githubUrl: "https://github.com/doc789982-design/OverTimeApp/releases/latest"
+
     // Человекочитаемое описание действия горячей клавиши.
     // Если пользователь дал имени название — показываем его, иначе собираем сами.
     function describeHotkey(hk) {
@@ -54,6 +56,88 @@ AppSidePanel {
             font.pixelSize: AppTheme.sizeSmall
             font.weight: AppTheme.weightMedium
             horizontalAlignment: Text.AlignHCenter
+        }
+
+        // ==========================================
+        // СКАЧАТЬ АКТУАЛЬНУЮ ВЕРСИЮ (GitHub + QR)
+        // ==========================================
+        Rectangle {
+            width: parent.width
+            height: githubRow.implicitHeight + (AppTheme.spaceM * 2)
+            color: githubHov.containsMouse ? AppTheme.bgElevated : AppTheme.bgSurface
+            radius: AppTheme.radiusMedium
+            border.color: AppTheme.borderDivider
+            border.width: 1
+            Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
+
+            Row {
+                id: githubRow
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.margins: AppTheme.spaceM
+                spacing: AppTheme.spaceM
+
+                Rectangle {
+                    width: 128
+                    height: 128
+                    color: "#FFFFFF"
+                    radius: AppTheme.radiusSmall
+                    border.color: AppTheme.borderDivider
+                    border.width: 1
+
+                    Image {
+                        anchors.fill: parent
+                        anchors.margins: 8
+                        source: "../icons/github_qr.png"
+                        fillMode: Image.PreserveAspectFit
+                        smooth: false
+                        mipmap: false
+                        asynchronous: true
+                    }
+                }
+
+                Column {
+                    width: parent.width - 128 - AppTheme.spaceM
+                    spacing: AppTheme.spaceXS
+                    y: (parent.height - height) / 2
+
+                    Text {
+                        width: parent.width
+                        text: "Скачать актуальную версию"
+                        color: AppTheme.accentBrand
+                        font.family: AppTheme.fontFamily
+                        font.pixelSize: AppTheme.sizeBodyLarge
+                        font.weight: AppTheme.weightBold
+                        wrapMode: Text.WordWrap
+                    }
+                    Text {
+                        width: parent.width
+                        text: "Актуальную версию программы всегда можно скачать по ссылке на GitHub."
+                        color: AppTheme.textSecondary
+                        font.family: AppTheme.fontFamily
+                        font.pixelSize: AppTheme.sizeBody
+                        wrapMode: Text.WordWrap
+                    }
+                    Text {
+                        width: parent.width
+                        text: "github.com/doc789982-design/OverTimeApp"
+                        color: AppTheme.accentBrand
+                        font.family: AppTheme.fontFamily
+                        font.pixelSize: AppTheme.sizeSmall
+                        font.weight: AppTheme.weightMedium
+                        wrapMode: Text.WrapAnywhere
+                    }
+                }
+            }
+
+            MouseArea {
+                id: githubHov
+                anchors.fill: parent
+                cursorShape: Qt.PointingHandCursor
+                hoverEnabled: true
+                onClicked: Qt.openUrlExternally(root.githubUrl)
+            }
         }
 
         // ==========================================

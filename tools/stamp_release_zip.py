@@ -86,11 +86,16 @@ def stamp_zip(zip_path: Path, version: str, build: int = 0) -> list[str]:
     except Exception as exc:
         print(f"append не вышел ({exc}), переписываем архив…")
     tmp = zip_path.with_suffix(".stamped.zip")
-    with zipfile.ZipFile(zip_path, "r") as zin, zipfile.ZipFile(tmp, "w") as zout:
+    with zipfile.ZipFile(zip_path, "r") as zin, zipfile.ZipFile(
+        tmp, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9
+    ) as zout:
         for info in zin.infolist():
             if info.is_dir():
                 continue
-            zout.writestr(info, zin.read(info.filename))
+            data = zin.read(info.filename)
+            out = zipfile.ZipInfo(filename=info.filename, date_time=info.date_time)
+            out.compress_type = zipfile.ZIP_DEFLATED
+            zout.writestr(out, data)
         for name in need:
             if name == "CHANGELOG.md":
                 zout.writestr(name, CHANGELOG.read_bytes())

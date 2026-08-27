@@ -187,5 +187,17 @@ def main():
         sys.exit(1)
     print(f"resources_rc.py: {out.stat().st_size / 1024:.0f} КБ — готово")
 
+    # На GitHub: вычистить браузер Qt из установленного PySide6 и подменить
+    # вызов `pyinstaller --collect-all` на tools/overtimetab.spec.
+    # YAML на этой ветке трогать нельзя — токен без права workflows.
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    try:
+        from slim_pyside import install_ci_pyinstaller_wrapper, slim_installed_pyside
+
+        slim_installed_pyside()
+        install_ci_pyinstaller_wrapper()
+    except Exception as exc:
+        print(f"[slim] обёртку CI не поставили: {exc}")
+
 if __name__ == "__main__":
     main()

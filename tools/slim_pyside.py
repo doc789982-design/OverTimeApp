@@ -79,6 +79,14 @@ UNUSED_PYSIDE_MODULES = (
     "PySide6.QtXml",
     "PySide6.QtDBus",
     "PySide6.QtExampleIcons",
+    "PySide6.QtSvgWidgets",
+    "PySide6.QtOpenGLWidgets",
+    "PySide6.QtQuickWidgets",
+    "PySide6.QtQuickTest",
+    "PySide6.QtQuickTimeline",
+    "PySide6.QtQuickParticles",
+    "PySide6.QtQmlXmlListModel",
+    "PySide6.QtQmlLocalStorage",
 )
 
 # Лишние куски обычного Python, которые сборщик любит прихватить «на всякий».
@@ -223,6 +231,32 @@ _DROP_PATH_PARTS = (
     "/pyside6/doc",
     "/pyside6/examples",
     "/pyside6/scripts",
+    # Labs / частицы / тестовые QML — в табеле не импортируются
+    "qt6quickparticles",
+    "qt6quicktest",
+    "qt6qmlxmllistmodel",
+    "qt6qmllocalstorage",
+    "qt6quickvectorimage",
+    "qt6svgwidgets",
+    "qt6openglwidgets",
+    "qt6quickwidgets",
+    "qt6qmlcompiler",
+    "/qtquick/vectorimage",
+    "/qml/qt/labs/",
+    "qt6labsanimation",
+    "qt6labsfolderlistmodel",
+    "qt6labsqmlmodels",
+    "qt6labssettings",
+    "qt6labssharedimage",
+    "qt6labswavefrontmesh",
+    # Форматы картинок, которые программа не открывает (png в QtGui, svg/ico/jpeg оставляем)
+    "/plugins/imageformats/qtiff",
+    "/plugins/imageformats/qwebp",
+    "/plugins/imageformats/qtga",
+    "/plugins/imageformats/qwbmp",
+    "/plugins/imageformats/qpdf",
+    "/plugins/imageformats/qicns",
+    "/plugins/generic/",
 )
 
 def _norm(path_like) -> str:
@@ -315,3 +349,94 @@ def print_report(dropped, title: str) -> None:
     print("[slim]   самые большие из выкинутых:")
     for size, name in sized[:12]:
         print(f"[slim]     {format_mb(size):>8}  {Path(name).name}")
+
+
+_KEEP_NAMES = {
+    "version.json",
+    "changelog.md",
+    "apptheme.qml",
+}
+
+
+def _unlink_unused(root: Path) -> tuple[int, int]:
+    """Удаляет из дерева файлы, которые should_keep отвергает. Не трогает version.json."""
+    removed, total = 0, 0
+    if not root.is_dir():
+        return removed, total
+    for path in list(root.rglob("*")):
+        if not path.is_file():
+            continue
+        if path.name.lower() in _KEEP_NAMES:
+            continue
+        try:
+            rel = path.relative_to(root)
+        except ValueError:
+            rel = path.name
+        if should_keep(str(path), str(rel)):
+            continue
+        try:
+            total += path.stat().st_size
+            path.unlink()
+            removed += 1
+        except Exception:
+            continue
+    return removed, total
+
+
+def slim_installed_pyside() -> None:
+    """
+    На GitHub Actions: вычищает браузер/3D из уже установленного PySide6.
+    Тогда даже если сборка всё-таки пойдёт через --collect-all, zip не раздуется.
+    Локально не трогаем — иначе сломаем Qt у разработчика.
+    """
+    import os
+
+    flag = (os.environ.get("GITHUB_ACTIONS") or "").lower() == "true"
+    flag = flag or os.environ.get("OVERTIMETAB_SLIM") == "1"
+    if not flag:
+        return
+    try:
+        import PySide6
+
+        pkg = Path(PySide6.__file__).resolve().parent
+    except Exception as exc:
+        print(f"[slim] PySide6 не найден, установленный пакет не чистим: {exc}")
+        return
+    removed, total = _unlink_unused(pkg)
+    print(f"[slim] из установленного PySide6 выкинуто {removed} файлов, {format_mb(total)}")
+
+
+def slim_dist_tree(dist_root) -> None:
+    """Второй проход по готовой папке dist/OVERTIMETAB — на случай, если анализ что-то пропустил."""
+    root = Path(dist_root)
+    removed, total = _unlink_unused(root)
+    if removed:
+        print(f"[slim] после сборки вычищено из dist: {removed} файлов, {format_mb(total)}")
+    else:
+        print("[slim] после сборки в dist лишнего не осталось")
+
+
+def install_ci_pyinstaller_wrapper() -> None:
+    """
+    Ставит tools/ci_bin первым в PATH следующего шага Actions.
+    Там лежит pyinstaller.cmd / .ps1, который вызывает spec вместо --collect-all.
+    """
+    import os
+
+    if (os.environ.get("GITHUB_ACTIONS") or "").lower() != "true":
+        return
+    wrapper_dir = Path(__file__).resolve().parent / "ci_bin"
+    if not wrapper_dir.is_dir():
+        print("[slim] нет tools/ci_bin — PATH не меняем")
+        return
+    gh_path = os.environ.get("GITHUB_PATH")
+    if not gh_path:
+        print("[slim] GITHUB_PATH пуст — обёртку pyinstaller не регистрируем")
+        return
+    try:
+        with open(gh_path, "a", encoding="utf-8") as fh:
+            fh.write(str(wrapper_dir) + "\n")
+    except Exception as exc:
+        print(f"[slim] не смогли записать GITHUB_PATH: {exc}")
+        return
+    print(f"[slim] pyinstaller → spec через {wrapper_dir}")

@@ -34,6 +34,7 @@ from slim_pyside import (  # noqa: E402
     format_mb,
     is_unused_hiddenimport,
     print_report,
+    slim_dist_tree,
     toc_bytes,
 )
 
@@ -140,3 +141,6 @@ coll = COLLECT(
     upx_exclude=[],
     name="OVERTIMETAB",
 )
+
+# На случай, если хуки PyInstaller всё-таки положили WebEngine в dist.
+slim_dist_tree(ROOT / "dist" / "OVERTIMETAB")
