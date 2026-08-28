@@ -768,7 +768,8 @@ ApplicationWindow {
         id: moneyInspector
         onRequestAddMoneyDialog: moneyDialog.openNew(moneyInspector.contentItem, 20, 20) 
     }
-    AppUI.DayEventDialog    { id: dayEventDialog }
+    AppUI.DayDutyDialog     { id: dayDutyDialog }
+    AppUI.DayCompDialog     { id: dayCompDialog }
     AppUI.EmpDialog         { id: empDialog }
     AppUI.EndStatusDialog   { id: endStatusDialog }
     AppUI.TransferDialog    { id: transferDialog }

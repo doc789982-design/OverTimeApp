@@ -207,9 +207,9 @@ Item {
                     text: "Добавить дежурство"
                     showDelete: root.menuHasDuties
                     onClicked: {
-                        dayEventDialog.prepareForDuty(root.targetDate)
-                        root.morphToDialog(380, dayEventDialog.effectiveHeight,
-                            function(x, y, w, h) { dayEventDialog.openForDutyMorph(root.targetDate, x, y, w, h) })
+                        dayDutyDialog.prepareForDuty(root.targetDate)
+                        root.morphToDialog(380, dayDutyDialog.effectiveHeight,
+                            function(x, y, w, h) { dayDutyDialog.openForDutyMorph(root.targetDate, x, y, w, h) })
                     }
                     onDeleteClicked: {
                         mainWindow.askConfirm(
@@ -230,9 +230,9 @@ Item {
                     text: "Добавить компенсацию"
                     showDelete: root.menuHasComps
                     onClicked: {
-                        dayEventDialog.prepareForComp(root.targetDate)
-                        root.morphToDialog(380, dayEventDialog.effectiveHeight,
-                            function(x, y, w, h) { dayEventDialog.openForCompMorph(root.targetDate, x, y, w, h) })
+                        dayCompDialog.prepareForComp(root.targetDate)
+                        root.morphToDialog(380, dayCompDialog.effectiveHeight,
+                            function(x, y, w, h) { dayCompDialog.openForCompMorph(root.targetDate, x, y, w, h) })
                     }
                     onDeleteClicked: {
                         mainWindow.askConfirm(
@@ -322,7 +322,8 @@ Item {
     // ОТКРЫТИЕ ИЗ ЯЧЕЙКИ
     // ============================================================
     function openAtCell(cellItem, dateStr, isWeekend, isHoliday, hasDuties, hasComps) {
-        if (dayEventDialog.opened) dayEventDialog.close()
+        if (dayDutyDialog.opened) dayDutyDialog.close()
+        if (dayCompDialog.opened) dayCompDialog.close()
         if (dayInspector.opened) dayInspector.close()
 
         root.targetDate = dateStr

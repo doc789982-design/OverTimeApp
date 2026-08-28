@@ -2781,7 +2781,7 @@ class Backend(QObject):
     def getShiftDatesForPeriod(self, start_date_str: str, end_date_str: str):
         """
         Анализирует паттерн сменщика и возвращает даты его рабочих дней
-        в заданном периоде. Вызывается из DayEventDialog.
+        в заданном периоде. Вызывается из окна компенсации (DayCompDialog).
         """
         if not self.active_db or self._selected_employee_id == 0:
             return {"dates": [], "error": "Нет активного сотрудника", "confidence": 0.0}
