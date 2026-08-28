@@ -8,7 +8,7 @@ AppDialog {
 
     title: "Денежная выплата"
     acceptText: "Сохранить"
-    acceptVariant: "success"
+    acceptVariant: "primary"
 
     // Массив добавленных компенсаций: [{ unit: "hours", label: "Ночные", amount: 8 }]
     property var activeComps: []

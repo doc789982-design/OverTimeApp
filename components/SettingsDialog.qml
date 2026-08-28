@@ -494,7 +494,7 @@ AppLargeModal {
                                     text: "Создать базу"
                                     iconSource: "../icons/database.svg"
                                     Layout.preferredWidth: 140
-                                    variant: "success"
+                                    variant: "primary"
                                     onClicked: {
                                         backend.createNewDatabase(newDbNameInput.text)
                                         newDbNameInput.text = ""

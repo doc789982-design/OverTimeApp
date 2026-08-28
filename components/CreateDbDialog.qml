@@ -7,7 +7,7 @@ AppDialog {
     
     title: "Новое подразделение"
     acceptText: "Создать"
-    acceptVariant: "success" 
+    acceptVariant: "primary" 
 
     AppTextField { 
         id: startupNewDbNameInput

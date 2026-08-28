@@ -17,7 +17,7 @@ AppDialog {
     heightFraction: 2/3
     title: "Приказы и выплаты"
     acceptText: "Добавить выплату"
-    acceptVariant: "success"
+    acceptVariant: "primary"
     rejectText: "Закрыть"
 
     signal requestAddMoneyDialog()

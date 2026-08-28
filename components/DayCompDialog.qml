@@ -22,7 +22,7 @@ AppDialog {
     // чтобы в содержимом осталось только само редактирование.
     title: formatBeautifulDate(targetDate)
     acceptText: "Сохранить"
-    acceptVariant: "success"
+    acceptVariant: "primary"
 
     onClosed: {
         mainWindow.activeSpotlightCell = null

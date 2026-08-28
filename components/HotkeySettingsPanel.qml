@@ -122,7 +122,7 @@ Item {
                         Layout.preferredHeight: 44
                         Layout.preferredWidth: 120
                         text: "Добавить"
-                        variant: "success"
+                        variant: "primary"
                         onClicked: {
                             if (hotkeyPageRoot.capturedKey === "") { backend.showToast("Укажите клавишу!", "error"); return; }
                             
