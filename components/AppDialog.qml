@@ -98,7 +98,8 @@ Popup {
                 anchors.rightMargin: 56
                 text: root.title
                 color: AppTheme.textPrimary
-                font.family: AppTheme.fontFamily
+                // Тот же конденсатный жирный шрифт, что и дата в меню дня
+                font.family: AppTheme.fontCondensed
                 font.pixelSize: AppTheme.sizeH4
                 font.weight: AppTheme.weightBold
                 visible: text !== ""
@@ -155,8 +156,7 @@ Popup {
             Layout.preferredHeight: 60
 
             Row {
-                anchors.right: parent.right
-                anchors.rightMargin: AppTheme.spaceL
+                anchors.horizontalCenter: parent.horizontalCenter
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: AppTheme.spaceM
 
@@ -179,7 +179,6 @@ Popup {
     // Функции показа (оставляем как были)
     function showAt(callerItem, mouseX, mouseY) {
         root.morphOpen = false
-        root.height = root.effectiveHeight
         var clickPoint = callerItem.mapToItem(null, mouseX, mouseY)
         root.x = Math.max(AppTheme.spaceL, Math.min(clickPoint.x, ApplicationWindow.window.width - root.width - AppTheme.spaceL))
         root.y = Math.max(AppTheme.spaceL, Math.min(clickPoint.y + AppTheme.spaceM, ApplicationWindow.window.height - root.height - AppTheme.spaceL))
@@ -203,5 +202,23 @@ Popup {
             root.y = (ApplicationWindow.window.height - root.height) / 2
         }
         root.open()
+    }
+
+    // При открытии раскладка ещё может не успеть досчитаться: если выставлять
+    // высоту по implicitHeight сразу, окно получается короче контента и нижние
+    // поля (в т.ч. тумблер «Период» и кнопки) уходят за край. Дожидаемся кадра,
+    // перечитываем реальную высоту под контент и не даём окну вылезти за экран.
+    onOpened: {
+        Qt.callLater(function() {
+            root.height = root.effectiveHeight
+            if (ApplicationWindow.window) {
+                var maxY = ApplicationWindow.window.height - root.height - AppTheme.spaceL
+                if (root.y > maxY)
+                    root.y = Math.max(AppTheme.spaceL, maxY)
+                var maxX = ApplicationWindow.window.width - root.width - AppTheme.spaceL
+                if (root.x > maxX)
+                    root.x = Math.max(AppTheme.spaceL, maxX)
+            }
+        })
     }
 }
