@@ -14,6 +14,8 @@ Popup {
     property string acceptVariant: "primary"
     property string rejectVariant: "secondary"
     property bool showFooter: true
+    property bool showAccept: true
+    property bool showReject: true
     
     // --- Сигналы ---
     signal accepted()
@@ -132,29 +134,27 @@ Popup {
                 // Немного отступа сверху для красоты внутри скролла
                 topPadding: AppTheme.spaceXS 
                 bottomPadding: AppTheme.spaceL
-            }
-        }
 
-        // ПОДВАЛ
-        Item {
-            visible: root.showFooter
-            Layout.fillWidth: true
-            Layout.preferredHeight: 60 
-            
-            Row {
-                anchors.centerIn: parent
-                spacing: AppTheme.spaceM
-                
-                AppButton { 
-                    text: root.rejectText
-                    variant: root.rejectVariant
-                    onClicked: { root.rejected(); root.close() } 
-                }
-                
-                AppButton { 
-                    text: root.acceptText
-                    variant: root.acceptVariant
-                    onClicked: root.accepted() 
+                // ПОДВАЛ (кнопки «Отмена» / «Сохранить») — едут вместе с
+                // содержимым в скролле, чтобы при длинном контенте не
+                // вылезать за края окна.
+                Row {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    spacing: AppTheme.spaceM
+                    visible: root.showFooter
+
+                    AppButton {
+                        visible: root.showReject
+                        text: root.rejectText
+                        variant: root.rejectVariant
+                        onClicked: { root.rejected(); root.close() }
+                    }
+                    AppButton {
+                        visible: root.showAccept
+                        text: root.acceptText
+                        variant: root.acceptVariant
+                        onClicked: root.accepted()
+                    }
                 }
             }
         }

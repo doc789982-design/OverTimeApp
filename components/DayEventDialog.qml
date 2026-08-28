@@ -12,7 +12,9 @@ AppDialog {
     property int editDutyId: 0
     property int editCompId: 0
 
-    title: ""
+    // Дата живёт в заголовке окна (слева от крестика закрытия),
+    // чтобы в содержимом осталось только само редактирование.
+    title: formatBeautifulDate(targetDate)
     acceptText: "Сохранить"
     acceptVariant: currentTab === 0 ? "primary" : "success"
 
@@ -30,50 +32,6 @@ AppDialog {
         let months = ["января", "февраля", "марта", "апреля", "мая", "июня",
                       "июля", "августа", "сентября", "октября", "ноября", "декабря"]
         return day + " " + months[month - 1] + " " + year + " г."
-    }
-
-    // ==========================================
-    // ЗАГОЛОВОК
-    // ==========================================
-    Flow {
-        id: customHeader
-        width: parent.width - 40
-        spacing: AppTheme.spaceS
-
-        Text {
-            width: Math.min(implicitWidth, parent.width)
-            text: root.formatBeautifulDate(root.targetDate)
-            color: AppTheme.textPrimary
-            font.family: AppTheme.fontCondensed
-            font.pixelSize: AppTheme.sizeH2
-            font.weight: AppTheme.weightBold
-            wrapMode: Text.WordWrap
-        }
-
-        Item {
-            width: tabTitle.implicitWidth
-            height: tabTitle.implicitHeight
-
-            Text {
-                id: tabTitle
-                text: root.currentTab === 0 ? " /  Дежурство ▾" : " /  Компенсация ▾"
-                color: headerHover.containsMouse ? AppTheme.accentBrand : AppTheme.textSecondary
-                font.family: AppTheme.fontFamily
-                font.pixelSize: AppTheme.sizeBodyLarge
-                font.weight: AppTheme.weightMedium
-                anchors.verticalCenter: parent.verticalCenter
-                anchors.verticalCenterOffset: 2
-                Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
-            }
-
-            MouseArea {
-                id: headerHover
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: root.currentTab = root.currentTab === 0 ? 1 : 0
-            }
-        }
     }
 
     // ==========================================

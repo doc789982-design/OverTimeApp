@@ -197,7 +197,7 @@ Item {
                     onClicked: {
                         backend.loadDayDetails(root.targetDate)
                         dayInspector.targetDate = root.targetDate
-                        root.morphToDialog(450, mainWindow.height - 2 * AppTheme.spaceL,
+                        root.morphToDialog(450, dayInspector.effectiveHeight,
                             function(x, y, w, h) { dayInspector.openMorph(x, y, w, h) })
                     }
                 }
