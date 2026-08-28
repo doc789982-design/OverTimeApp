@@ -85,23 +85,25 @@ Popup {
         id: mainLayout
         spacing: 0
 
-        // ШАПКА
+        // ================= ШАПКА =================
         Item {
             Layout.fillWidth: true
             Layout.preferredHeight: 60
-            
+
             Text {
                 anchors.left: parent.left
                 anchors.leftMargin: AppTheme.spaceL
                 anchors.verticalCenter: parent.verticalCenter
-                width: parent.width - 80 
+                anchors.right: parent.right
+                anchors.rightMargin: 56
                 text: root.title
                 color: AppTheme.textPrimary
                 font.family: AppTheme.fontFamily
-                font.pixelSize: AppTheme.sizeH4 
+                font.pixelSize: AppTheme.sizeH4
                 font.weight: AppTheme.weightBold
                 visible: text !== ""
                 elide: Text.ElideRight
+                verticalAlignment: Text.AlignVCenter
             }
 
             Rectangle {
@@ -109,57 +111,71 @@ Popup {
                 anchors.right: parent.right
                 anchors.rightMargin: AppTheme.spaceM
                 anchors.verticalCenter: parent.verticalCenter
-                
+
                 color: closeHov.pressed ? AppTheme.statePress : (closeHov.containsMouse ? AppTheme.stateHover : "transparent")
                 IconImage { anchors.centerIn: parent; source: "../icons/close.svg"; width: AppTheme.iconMedium; height: AppTheme.iconMedium; color: AppTheme.textSecondary }
                 MouseArea { id: closeHov; anchors.fill: parent; hoverEnabled: true; onClicked: { root.rejected(); root.close() } }
             }
         }
 
-        // КОНТЕНТ (Скроллируемый)
+        Rectangle {
+            Layout.fillWidth: true
+            height: 1
+            color: AppTheme.borderDivider
+        }
+
+        // ================= КОНТЕНТ (скроллируемый) =================
         ScrollView {
             Layout.fillWidth: true
-            Layout.preferredHeight: Math.min(
-                contentArea.implicitHeight,
-                ApplicationWindow.window ? ApplicationWindow.window.height - 280 : 520
-            )
+            Layout.fillHeight: true
             clip: true
             ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+            ScrollBar.vertical.policy: ScrollBar.AsNeeded
 
             Column {
                 id: contentArea
                 width: root.width - (AppTheme.spaceL * 2)
                 x: AppTheme.spaceL
                 spacing: AppTheme.spaceM
-                // Немного отступа сверху для красоты внутри скролла
-                topPadding: AppTheme.spaceXS 
-                bottomPadding: AppTheme.spaceL
+                topPadding: AppTheme.spaceM
+                bottomPadding: AppTheme.spaceM
+            }
+        }
 
-                // ПОДВАЛ (кнопки «Отмена» / «Сохранить») — едут вместе с
-                // содержимым в скролле, чтобы при длинном контенте не
-                // вылезать за края окна.
-                Row {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    spacing: AppTheme.spaceM
-                    visible: root.showFooter
+        Rectangle {
+            Layout.fillWidth: true
+            height: 1
+            color: AppTheme.borderDivider
+        }
 
-                    AppButton {
-                        visible: root.showReject
-                        text: root.rejectText
-                        variant: root.rejectVariant
-                        onClicked: { root.rejected(); root.close() }
-                    }
-                    AppButton {
-                        visible: root.showAccept
-                        text: root.acceptText
-                        variant: root.acceptVariant
-                        onClicked: root.accepted()
-                    }
+        // ================= ПОДВАЛ (кнопки внизу, как в дизайн-системе) =================
+        Item {
+            visible: root.showFooter
+            Layout.fillWidth: true
+            Layout.preferredHeight: 60
+
+            Row {
+                anchors.right: parent.right
+                anchors.rightMargin: AppTheme.spaceL
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: AppTheme.spaceM
+
+                AppButton {
+                    visible: root.showReject
+                    text: root.rejectText
+                    variant: root.rejectVariant
+                    onClicked: { root.rejected(); root.close() }
+                }
+                AppButton {
+                    visible: root.showAccept
+                    text: root.acceptText
+                    variant: root.acceptVariant
+                    onClicked: root.accepted()
                 }
             }
         }
     }
-    
+
     // Функции показа (оставляем как были)
     function showAt(callerItem, mouseX, mouseY) {
         root.morphOpen = false
