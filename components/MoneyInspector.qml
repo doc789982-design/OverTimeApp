@@ -4,21 +4,35 @@ import QtQuick.Layouts
 import QtQuick.Controls.impl
 import Qt5Compat.GraphicalEffects
 
-AppSidePanel {
+// ============================================================
+// ОКНО «ПРИКАЗЫ И ВЫПЛАТЫ» (денежные компенсации)
+//
+// Обычное окно в стиле остальных (AppDialog), а не выезжающая
+// боковая панель: шапка с заголовком и крестиком, скроллируемое
+// содержимое со списком выплат и подвал с кнопкой добавления.
+// ============================================================
+AppDialog {
     id: root
-    width: 450 
+    width: 450
     title: "Приказы и выплаты"
-    
+    acceptText: "Добавить выплату"
+    acceptVariant: "success"
+    rejectText: "Закрыть"
+
     signal requestAddMoneyDialog()
 
-    AppButton {
-        text: "+ Добавить выплату"
-        width: parent.width
-        variant: "success" 
-        onClicked: root.requestAddMoneyDialog()
+    onClosed: {
+        mainWindow.activeSpotlightCell = null
     }
 
-    Item { width: parent.width; implicitHeight: AppTheme.spaceM; visible: backend.moneyComps.length > 0 }
+    // Кнопка «Добавить выплату» в подвале открывает диалог выплаты,
+    // не закрывая это окно — после сохранения список сразу обновится.
+    onAccepted: {
+        root.requestAddMoneyDialog()
+    }
+
+    // Совместимость со старым вызовом (из сводной панели)
+    function show() { root.showCentered() }
 
     Column {
         width: parent.width
