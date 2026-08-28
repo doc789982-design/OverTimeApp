@@ -223,7 +223,9 @@ Rectangle {
                         anchors.left: parent.right
                         anchors.leftMargin: AppTheme.spaceXS
                         anchors.verticalCenter: parent.verticalCenter
-                        text: modelData.name + (modelData.shifted_weekends ? " · смещённые выходные" : "")
+                        text: modelData.name
+                              + (modelData.shifted_weekends ? " · смещённые выходные" : "")
+                              + (modelData.is_shift ? " · сменный график" : "")
                         isVisible: btnMouseArea.containsMouse && !btnMouseArea.drag.active
                     }
 

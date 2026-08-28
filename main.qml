@@ -161,6 +161,65 @@ ApplicationWindow {
                             dropDown: true             
                             isVisible: helpHov.containsMouse
                             text: "Справка и горячие клавиши (F1)"
+
+                            // Список горячих клавиш из настроек
+                            Rectangle {
+                                visible: backend.hotkeysList.length > 0
+                                width: 260
+                                height: 1
+                                color: AppUI.AppTheme.borderDivider
+                            }
+
+                            Column {
+                                width: 260
+                                spacing: AppUI.AppTheme.spaceXS
+                                visible: backend.hotkeysList.length > 0
+
+                                Text {
+                                    text: "Горячие клавиши:"
+                                    color: AppUI.AppTheme.textPrimary
+                                    font.family: AppUI.AppTheme.fontFamily
+                                    font.pixelSize: AppUI.AppTheme.sizeSmall
+                                    font.weight: AppUI.AppTheme.weightBold
+                                }
+
+                                Repeater {
+                                    model: backend.hotkeysList
+                                    RowLayout {
+                                        width: parent.width
+                                        spacing: AppUI.AppTheme.spaceS
+
+                                        Rectangle {
+                                            Layout.preferredWidth: Math.max(44, hkKey.implicitWidth + 16)
+                                            Layout.preferredHeight: 26
+                                            radius: AppUI.AppTheme.radiusSmall
+                                            color: AppUI.AppTheme.bgBase
+                                            border.color: AppUI.AppTheme.borderInput
+                                            border.width: 1
+                                            Text {
+                                                id: hkKey
+                                                anchors.centerIn: parent
+                                                text: modelData.key
+                                                color: AppUI.AppTheme.accentBrand
+                                                font.family: AppUI.AppTheme.fontFamily
+                                                font.pixelSize: AppUI.AppTheme.sizeSmall
+                                                font.weight: AppUI.AppTheme.weightBold
+                                            }
+                                        }
+
+                                        Text {
+                                            Layout.fillWidth: true
+                                            text: helpDialog.describeHotkey(modelData)
+                                            color: AppUI.AppTheme.textSecondary
+                                            font.family: AppUI.AppTheme.fontFamily
+                                            font.pixelSize: AppUI.AppTheme.sizeSmall
+                                            wrapMode: Text.WordWrap
+                                            elide: Text.ElideRight
+                                            maximumLineCount: 2
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
 
