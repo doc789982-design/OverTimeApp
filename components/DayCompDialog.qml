@@ -13,6 +13,7 @@ import QtQuick.Layouts
 AppDialog {
     id: root
     width: 380
+    heightFraction: 2/3
 
     property string targetDate: ""
     property int editCompId: 0

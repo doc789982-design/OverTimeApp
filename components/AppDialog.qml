@@ -29,8 +29,12 @@ Popup {
     default property alias dialogContent: contentArea.data
 
     width: 380 
-    // Окно не может быть выше экрана, вычитаем 100px для комфортного отступа
-    property real effectiveHeight: Math.min(mainLayout.implicitHeight + 40, ApplicationWindow.window ? ApplicationWindow.window.height - 100 : 800)
+    // По умолчанию окно подстраивает высоту под содержимое (не выше экрана).
+    // Если задать heightFraction > 0 — фиксированная высота = доля высоты экрана.
+    property real heightFraction: 0
+    property real effectiveHeight: heightFraction > 0
+        ? Math.max(200, (ApplicationWindow.window ? ApplicationWindow.window.height : 720) * heightFraction)
+        : Math.min(mainLayout.implicitHeight + 40, ApplicationWindow.window ? ApplicationWindow.window.height - 100 : 800)
     height: effectiveHeight
     
     z: AppTheme.zModal
