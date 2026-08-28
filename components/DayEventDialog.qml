@@ -147,11 +147,11 @@ AppDialog {
             property var shiftDates: []
 
             // ── Переключатель режима ──────────────────
-            // Период скрыт для сменщиков
+            // Переключатель «Этот день / Период» — всегда доступен
             Row {
                 width: parent.width
                 spacing: AppTheme.spaceM
-                visible: !backend.isSelectedEmployeeShift
+                visible: true
 
                 Rectangle {
                     width: 120; height: 36

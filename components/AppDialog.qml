@@ -127,6 +127,7 @@ Popup {
 
         // ================= КОНТЕНТ (скроллируемый) =================
         ScrollView {
+            id: scrollArea
             Layout.fillWidth: true
             Layout.fillHeight: true
             clip: true
@@ -135,7 +136,7 @@ Popup {
 
             Column {
                 id: contentArea
-                width: root.width - (AppTheme.spaceL * 2)
+                width: scrollArea.width - (AppTheme.spaceL * 2)
                 x: AppTheme.spaceL
                 spacing: AppTheme.spaceM
                 topPadding: AppTheme.spaceM
