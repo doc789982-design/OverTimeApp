@@ -226,11 +226,17 @@ ApplicationWindow {
                     Rectangle {
                         width: 46
                         height: parent.height
-                        color: minHov.pressed ? AppUI.AppTheme.statePress : (minHov.containsMouse ? AppUI.AppTheme.stateHover : "transparent")
                         Rectangle {
                             anchors.centerIn: parent
-                            width: 10; height: 1
-                            color: AppUI.AppTheme.textSecondary
+                            width: 30; height: 30
+                            radius: 15
+                            color: minHov.pressed ? AppUI.AppTheme.statePress : (minHov.containsMouse ? AppUI.AppTheme.stateHover : "transparent")
+                        }
+                        Rectangle {
+                            anchors.centerIn: parent
+                            width: 12; height: 2
+                            radius: 1
+                            color: minHov.containsMouse ? AppUI.AppTheme.textPrimary : AppUI.AppTheme.textSecondary
                         }
                         MouseArea {
                             id: minHov
@@ -243,12 +249,18 @@ ApplicationWindow {
                     Rectangle {
                         width: 46
                         height: parent.height
-                        color: maxHov.pressed ? AppUI.AppTheme.statePress : (maxHov.containsMouse ? AppUI.AppTheme.stateHover : "transparent")
                         Rectangle {
                             anchors.centerIn: parent
-                            width: 10; height: 10
+                            width: 30; height: 30
+                            radius: 15
+                            color: maxHov.pressed ? AppUI.AppTheme.statePress : (maxHov.containsMouse ? AppUI.AppTheme.stateHover : "transparent")
+                        }
+                        Rectangle {
+                            anchors.centerIn: parent
+                            width: 13; height: 13
+                            radius: 1.5
                             color: "transparent"
-                            border.color: AppUI.AppTheme.textSecondary
+                            border.color: maxHov.containsMouse ? AppUI.AppTheme.textPrimary : AppUI.AppTheme.textSecondary
                             border.width: 1
                         }
                         MouseArea {
@@ -268,13 +280,18 @@ ApplicationWindow {
                     Rectangle {
                         width: 46
                         height: parent.height
-                        color: closeHov.pressed ? Qt.darker(AppUI.AppTheme.accentDanger, 1.2) : (closeHov.containsMouse ? AppUI.AppTheme.accentDanger : "transparent")
-                        Text {
+                        Rectangle {
                             anchors.centerIn: parent
-                            text: "✕"
+                            width: 30; height: 30
+                            radius: 15
+                            color: closeHov.pressed ? Qt.darker(AppUI.AppTheme.accentDanger, 1.2) : (closeHov.containsMouse ? AppUI.AppTheme.accentDanger : "transparent")
+                        }
+                        IconImage {
+                            anchors.centerIn: parent
+                            source: "icons/close.svg"
+                            width: AppUI.AppTheme.iconMedium
+                            height: AppUI.AppTheme.iconMedium
                             color: closeHov.containsMouse ? AppUI.AppTheme.textOnAccent : AppUI.AppTheme.textSecondary
-                            font.pixelSize: AppUI.AppTheme.sizeSmall
-                            font.weight: AppUI.AppTheme.weightBold
                         }
                         MouseArea {
                             id: closeHov
