@@ -210,6 +210,7 @@ AppLargeModal {
                     AppComboBox {
                         width: 340
                         label: "Режим ввода времени дежурств:"
+                        cutoutColor: AppTheme.bgBase
                         model: [
                             { text: "Горизонтальный ползунок (Слайдер)", value: "slider" },
                             { text: "Крутящиеся барабаны (Как в iOS)",   value: "tumbler" }
@@ -294,13 +295,19 @@ AppLargeModal {
                             // один фон, внутри разделы с едва заметными разделителями.
                             Rectangle {
                                 Layout.fillWidth: true
+                                // Высота панели = высота содержимого + поля, чтобы поля
+                                // не накладывались друг на друга.
+                                Layout.preferredHeight: dbPanelContent.implicitHeight + AppTheme.spaceXL * 2
                                 color: AppTheme.bgSurface
                                 radius: AppTheme.radiusLarge
                                 border.color: AppTheme.borderDivider
                                 border.width: 1
 
                                 ColumnLayout {
-                                    anchors.fill: parent
+                                    id: dbPanelContent
+                                    anchors.left: parent.left
+                                    anchors.right: parent.right
+                                    anchors.top: parent.top
                                     anchors.margins: AppTheme.spaceXL
                                     spacing: AppTheme.spaceM
 
@@ -316,7 +323,7 @@ AppLargeModal {
                                     Item {
                                         Layout.fillWidth: true
                                         // Минимум 120px — чтобы сообщение о пустом списке не пряталось
-                                        Layout.preferredHeight: Math.max(120, dbSettingsList.contentHeight)
+                                        implicitHeight: Math.max(120, dbSettingsList.contentHeight)
 
                                         Column {
                                             visible: backend.dbList.length === 0
@@ -518,6 +525,7 @@ AppLargeModal {
                                             id: newDbNameInput
                                             Layout.fillWidth: true
                                             placeholderText: "Название нового отдела..."
+                                            cutoutColor: AppTheme.bgSurface
                                             Keys.onReturnPressed: {
                                                 if (text.trim() !== "") {
                                                     backend.createNewDatabase(text)
@@ -608,13 +616,19 @@ AppLargeModal {
                             // Единая панель с разделами и разделителями
                             Rectangle {
                                 Layout.fillWidth: true
+                                // Высота панели = высота содержимого + поля, чтобы поля
+                                // не накладывались друг на друга.
+                                Layout.preferredHeight: deptPanelContent.implicitHeight + AppTheme.spaceXL * 2
                                 color: AppTheme.bgSurface
                                 radius: AppTheme.radiusLarge
                                 border.color: AppTheme.borderDivider
                                 border.width: 1
 
                                 ColumnLayout {
-                                    anchors.fill: parent
+                                    id: deptPanelContent
+                                    anchors.left: parent.left
+                                    anchors.right: parent.right
+                                    anchors.top: parent.top
                                     anchors.margins: AppTheme.spaceXL
                                     spacing: AppTheme.spaceL
 
@@ -627,6 +641,7 @@ AppLargeModal {
                                             width: parent.width * 0.65
                                             label: "Название отдела:"
                                             text: backend.departmentData.department_name || ""
+                                            cutoutColor: AppTheme.bgSurface
                                         }
                                     }
 
@@ -650,12 +665,14 @@ AppLargeModal {
                                                 Layout.fillWidth: true
                                                 label: "Должность:"
                                                 text: backend.departmentData.resp_position || ""
+                                                cutoutColor: AppTheme.bgSurface
                                             }
                                             AppTextField {
                                                 id: deptRankInput
                                                 Layout.preferredWidth: 180
                                                 label: "Звание:"
                                                 text: backend.departmentData.resp_rank || ""
+                                                cutoutColor: AppTheme.bgSurface
                                             }
                                         }
 
@@ -668,18 +685,21 @@ AppLargeModal {
                                                 Layout.fillWidth: true
                                                 label: "Фамилия:"
                                                 text: backend.departmentData.resp_last_name || ""
+                                                cutoutColor: AppTheme.bgSurface
                                             }
                                             AppTextField {
                                                 id: deptFirstInput
                                                 Layout.fillWidth: true
                                                 label: "Имя:"
                                                 text: backend.departmentData.resp_first_name || ""
+                                                cutoutColor: AppTheme.bgSurface
                                             }
                                             AppTextField {
                                                 id: deptMidInput
                                                 Layout.fillWidth: true
                                                 label: "Отчество:"
                                                 text: backend.departmentData.resp_middle_name || ""
+                                                cutoutColor: AppTheme.bgSurface
                                             }
                                         }
                                     }
