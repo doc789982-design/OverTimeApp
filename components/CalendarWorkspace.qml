@@ -210,47 +210,6 @@ Item {
                 }
             }
 
-            // МАСКОТ
-            Item {
-                anchors.top: weekDaysRow.bottom
-                anchors.bottom: parent.bottom
-                anchors.left: parent.left
-                anchors.right: parent.right
-                visible: backend.selectedEmployeeId === 0
-                z: 50
-
-                Column {
-                    anchors.centerIn: parent
-                    spacing: AppTheme.spaceL
-
-                    AppEmptyMascot {
-                        anchors.horizontalCenter: parent.horizontalCenter
-                    }
-
-                    Column {
-                        spacing: AppTheme.spaceXS
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        
-                        Text { 
-                            text: "Сотрудник не выбран"
-                            color: AppTheme.textPrimary
-                            font.family: AppTheme.fontFamily
-                            font.pixelSize: AppTheme.sizeH1 
-                            font.weight: AppTheme.weightBold
-                            anchors.horizontalCenter: parent.horizontalCenter
-                        } 
-                        
-                        Text { 
-                            text: "Выберите карточку в панели слева, чтобы открыть табель"
-                            color: AppTheme.textSecondary
-                            font.family: AppTheme.fontFamily
-                            font.pixelSize: AppTheme.sizeBody 
-                            anchors.horizontalCenter: parent.horizontalCenter
-                        } 
-                    }
-                }
-            }
-
             // СЕТКА КАЛЕНДАРЯ
             GridLayout {
                 id: calendarGrid
@@ -590,15 +549,6 @@ Item {
                 anchors.margins: AppTheme.spaceL
                 color: "transparent"
                 
-                Text { 
-                    visible: backend.yearlyData.length === 0
-                    anchors.centerIn: parent
-                    text: "Выберите сотрудника слева"
-                    color: AppTheme.textTertiary
-                    font.family: AppTheme.fontFamily
-                    font.pixelSize: AppTheme.sizeH3 
-                }
-                
                 Column {
                     id: monthLabels
                     visible: backend.yearlyData.length > 0
@@ -743,6 +693,56 @@ Item {
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // ПУСТОЕ СОСТОЯНИЕ (СОТРУДНИК НЕ ВЫБРАН)
+    // Единая накладка поверх обеих вкладок (Месяц и Год). Живёт вне
+    // StackLayout, поэтому при переключении вкладок анимация маскота
+    // не перезапускается — она идёт непрерывно, пока нет сотрудника.
+    // Когда сотрудник выбран, накладка скрывается и открывается
+    // календарь или матрица года.
+    // ═══════════════════════════════════════════════════════════════
+    Item {
+        id: emptyStateOverlay
+        anchors.top: calendarHeader.bottom
+        anchors.bottom: unifiedSummaryPanel.top
+        anchors.bottomMargin: AppTheme.spaceM
+        anchors.left: parent.left
+        anchors.right: parent.right
+        visible: backend.selectedEmployeeId === 0
+        z: 50
+
+        Column {
+            anchors.centerIn: parent
+            spacing: AppTheme.spaceL
+
+            AppEmptyMascot {
+                anchors.horizontalCenter: parent.horizontalCenter
+            }
+
+            Column {
+                spacing: AppTheme.spaceXS
+                anchors.horizontalCenter: parent.horizontalCenter
+
+                Text {
+                    text: "Сотрудник не выбран"
+                    color: AppTheme.textPrimary
+                    font.family: AppTheme.fontFamily
+                    font.pixelSize: AppTheme.sizeH1
+                    font.weight: AppTheme.weightBold
+                    anchors.horizontalCenter: parent.horizontalCenter
+                }
+
+                Text {
+                    text: "Выберите карточку в панели слева, чтобы открыть табель"
+                    color: AppTheme.textSecondary
+                    font.family: AppTheme.fontFamily
+                    font.pixelSize: AppTheme.sizeBody
+                    anchors.horizontalCenter: parent.horizontalCenter
                 }
             }
         }

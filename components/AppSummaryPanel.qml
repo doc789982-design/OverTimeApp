@@ -8,7 +8,7 @@ Item {
     id: root
     property bool isYearView: false
 
-    implicitHeight: mainRect.height
+    implicitHeight: backend.selectedEmployeeId !== 0 ? mainRect.height : 0
 
     readonly property int layoutMode: root.width > 900 ? 2 : (root.width > 600 ? 1 : 0)
 
@@ -17,15 +17,6 @@ Item {
         col2Wrapper.resetAndEnter(50)
         col3Wrapper.resetAndEnter(100)
         col4Wrapper.resetAndEnter(150)
-    }
-
-    Text {
-        visible: backend.selectedEmployeeId === 0
-        anchors.centerIn: parent
-        text: "Выберите сотрудника слева"
-        color: AppTheme.textTertiary
-        font.family: AppTheme.fontFamily
-        font.pixelSize: AppTheme.sizeH3
     }
 
     // ==========================================
