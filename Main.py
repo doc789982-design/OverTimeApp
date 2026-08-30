@@ -284,12 +284,8 @@ class Backend(QObject):
         self._data_dir = self._resolve_data_dir()
         self.config_path = self._data_dir / "config.json"
         
-        # Если есть старый конфиг из прошлых версий программы, копируем его сюда
-        old_config = Path.home() / ".overtimetab" / "config.json"
-        if old_config.exists() and not self.config_path.exists():
-            self.config_path.parent.mkdir(parents=True, exist_ok=True)
-            import shutil
-            shutil.copy2(old_config, self.config_path)
+        # Данные старых версий (включая самые старые с папкой
+        # %USERPROFILE%\.overtimetab) переносятся в Documents в _resolve_data_dir().
         self.loadHotkeys()
         self.generateYearList() # <--- Сразу вызываем функцию        
         self.active_db = None
@@ -339,70 +335,90 @@ class Backend(QObject):
     def _resolve_data_dir(self):
         """Определяет постоянную папку данных программы.
         
-        Каноническое место данных — Documents\OverTimeTab. Пользователи со старых
-        версий (где данные лежали внутри папки программы, data\) переносятся
-        сюда автоматически один раз в режиме copy: оригинал
-        остаётся в папке программы как резервная копия.
+        Каноническое место данных — Documents\OverTimeTab. Данные из старых версий
+        (и портативных с data\ рядом с exe, и самых старых с папкой в профиле
+        %USERPROFILE%\.overtimetab) переносятся сюда автоматически один раз
+        в режиме copy: оригиналы остаются на месте как резервные копии.
         """
         target = self._documents_dir() / "OverTimeTab"
-        legacy_dir = self.app_dir / "data"
-        legacy_config = legacy_dir / "config.json"
         target_config = target / "config.json"
 
-        # Если в папке программы остались данные старых версий и их ещё не переносили.
-        if (legacy_config.exists()
-                and legacy_dir.resolve() != target.resolve()
-                and not target_config.exists()):
-            already_migrated = False
+        # Источники данных старых версий по приоритету (от новых к самым старым).
+        portable = self.app_dir / "data"          # портативный: data рядом с exe
+        profile = Path.home() / ".overtimetab"    # самый старый: папка в профиле
+        sources = [
+            (portable, "data"),
+            (profile, None),
+        ]
+
+        # Если каноническое место уже заполнено — работаем оттуда и не трогаем его.
+        if target_config.exists():
+            return target
+
+        authoritative = True
+        for src, prefix in sources:
+            src_cfg = src / "config.json"
+            if not src_cfg.exists() or self._source_migrated(src_cfg):
+                continue
             try:
-                ui = json.loads(legacy_config.read_text(encoding="utf-8")).get("ui") or {}
-                already_migrated = bool(ui.get("over_time_migrated_to_documents"))
+                self._migrate_legacy_source(src, target, prefix, authoritative)
+            except Exception:
+                # Первый (главный) источник не перенёсся — не ломаем запуск,
+                # работаем прямо из него; остальные пропускаем.
+                if authoritative:
+                    return src
+                continue
+            authoritative = False
+
+        return target
+
+    def _source_migrated(self, src_cfg):
+        """Перенесён ли источник в Documents уже раньше."""
+        try:
+            ui = json.loads(src_cfg.read_text(encoding="utf-8")).get("ui") or {}
+            return bool(ui.get("over_time_migrated_to_documents"))
+        except Exception:
+            return False
+
+    def _migrate_legacy_source(self, src, target, prefix, authoritative):
+        """Копирует данные источника в Documents\OverTimeTab (режим copy) и помечает их."""
+        src_cfg = src / "config.json"
+        if not src_cfg.exists():
+            return
+        import shutil
+        target.mkdir(parents=True, exist_ok=True)
+
+        for child in src.iterdir():
+            dst = target / child.name
+            if child.is_dir():
+                shutil.copytree(child, dst, dirs_exist_ok=True)
+            elif not dst.exists():
+                shutil.copy2(child, dst)
+
+        # Пути в конфиге переписываем на новое место только для главного источника —
+        # остальные не должны затирать уже записанный канонический конфиг.
+        if authoritative:
+            try:
+                data = json.loads((target / "config.json").read_text(encoding="utf-8"))
+                self._rewrite_paths_into_target(data, src, target, prefix)
+                data.setdefault("ui", {})["over_time_migrated_to_documents"] = True
+                (target / "config.json").write_text(
+                    json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
             except Exception:
                 pass
 
-            if not already_migrated:
-                try:
-                    target.mkdir(parents=True, exist_ok=True)
-                    # Копируем всё содержимое data\ в Documents\OverTimeTab.
-                    import shutil
-                    for child in legacy_dir.iterdir():
-                        dst = target / child.name
-                        if child.is_dir():
-                            shutil.copytree(child, dst, dirs_exist_ok=True)
-                        elif not dst.exists():
-                            shutil.copy2(child, dst)
-
-                    # Переносим пути в конфиге на новое место и помечаем миграцию.
-                    try:
-                        migrated_data = json.loads(target_config.read_text(encoding="utf-8"))
-                        self._rewrite_paths_into_target(migrated_data, legacy_dir, target)
-                        migrated_data.setdefault("ui", {})["over_time_migrated_to_documents"] = True
-                        target_config.write_text(
-                            json.dumps(migrated_data, ensure_ascii=False, indent=2),
-                            encoding="utf-8")
-                    except Exception:
-                        pass
-
-                    # Помечаем в исходном конфиге, что миграция выполнена.
-                    try:
-                        legacy_data = json.loads(legacy_config.read_text(encoding="utf-8"))
-                        legacy_data.setdefault("ui", {})["over_time_migrated_to_documents"] = True
-                        legacy_config.write_text(
-                            json.dumps(legacy_data, ensure_ascii=False, indent=2),
-                            encoding="utf-8")
-                    except Exception:
-                        pass
-                except Exception:
-                    # Не смогли перенести — остаёмся на старом месте, запуск не ломаем.
-                    return legacy_dir
-
-        # Каноническое место (Documents) приоритетно, если туда уже попали данные.
-        return target
-
-    def _rewrite_paths_into_target(self, data, legacy_dir, target):
-        """Переписывает пути в конфиге со старого места (папка программы) на новое (Documents)."""
+        # Помечаем источник перенесённым, чтобы не таскать его при каждом запуске.
         try:
-            legacy_res = legacy_dir.resolve()
+            sdata = json.loads(src_cfg.read_text(encoding="utf-8"))
+            sdata.setdefault("ui", {})["over_time_migrated_to_documents"] = True
+            src_cfg.write_text(json.dumps(sdata, ensure_ascii=False, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+
+    def _rewrite_paths_into_target(self, data, src_dir, target, prefix=None):
+        """Переписывает пути в конфиге со старого места на новое (Documents)."""
+        try:
+            src_res = src_dir.resolve()
         except Exception:
             return
 
@@ -410,15 +426,17 @@ class Backend(QObject):
             p = Path(path_str)
             if p.is_absolute():
                 try:
-                    rel = p.resolve().relative_to(legacy_res)
+                    rel = p.resolve().relative_to(src_res)
                     return str(target / rel).replace("\\", "/")
                 except ValueError:
-                    return path_str  # абсолютный путь вне папки программы — оставляем
-            # Относительный путь в старой схеме начинается с "data/".
+                    return path_str  # абсолютный путь вне источника — оставляем
+            # Относительный путь. В портативной схеме он был относительно папки
+            # программы и начинался с "data/"; в старом профиле — относительно
+            # самой папки-источника, без префикса.
             parts = p.parts
-            if parts and parts[0] == "data":
+            if prefix and parts and parts[0] == prefix:
                 return str(target.joinpath(*parts[1:])).replace("\\", "/")
-            return path_str
+            return str(target.joinpath(*parts)).replace("\\", "/")
 
         if isinstance(data.get("db_paths"), list):
             data["db_paths"] = [remap(x) for x in data["db_paths"]]
@@ -429,7 +447,7 @@ class Backend(QObject):
             d = Path(ui["default_db_dir"])
             if d.is_absolute():
                 try:
-                    rel = d.resolve().relative_to(legacy_res)
+                    rel = d.resolve().relative_to(src_res)
                     ui["default_db_dir"] = str(target / rel).replace("\\", "/")
                 except ValueError:
                     pass
