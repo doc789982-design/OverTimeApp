@@ -559,20 +559,17 @@ Item {
                                     if (containsMouse) dayKeyCatcher.forceActiveFocus()
                                 }
                                 
-                                // Один клик ЛКМ — ячейка расширяется в меню дня.
-                                // ПКМ и двойной клик больше ничего не делают.
+                                // ЛКМ и ПКМ — открываем меню дня (как контекстное меню).
                                 onClicked: (mouse) => { 
                                     if (!isValid) return
-                                    if (mouse.button === Qt.LeftButton) {
-                                        dayMorph.openAtCell(
-                                            dayCell,
-                                            dayInfo.date_str,
-                                            dayInfo.is_weekend,
-                                            dayInfo.is_holiday,
-                                            dayInfo.duties.length > 0,
-                                            dayInfo.has_comp
-                                        )
-                                    }
+                                    dayMenu.openFromCell(
+                                        dayCell,
+                                        dayInfo.date_str,
+                                        dayInfo.is_weekend,
+                                        dayInfo.is_holiday,
+                                        dayInfo.duties.length > 0,
+                                        dayInfo.has_comp
+                                    )
                                 }
                             }
                         }

@@ -6,7 +6,7 @@ MenuItem {
     id: control
 
     property bool isDanger: false
-    property string customColor: ""
+    property color customColor: "transparent"
     property string iconSource: ""
     property bool showDelete: false
 
@@ -25,9 +25,9 @@ MenuItem {
     indicator: Item { implicitWidth: 0; implicitHeight: 0 }
     arrow: Item { implicitWidth: 0; implicitHeight: 0 }
 
-    readonly property color _ink: customColor !== "" ? customColor
+    readonly property color _ink: customColor.a !== 0 ? customColor
                                 : (isDanger ? AppTheme.accentDanger : AppTheme.textPrimary)
-    readonly property color _iconInk: customColor !== "" ? customColor
+    readonly property color _iconInk: customColor.a !== 0 ? customColor
                                     : (isDanger ? AppTheme.accentDanger : AppTheme.textSecondary)
 
     contentItem: Item {

@@ -731,8 +731,8 @@ ApplicationWindow {
     }
     AppUI.ThemeTransition { id: themeTransition; targetItem: visualRoot }
 
-    // Морфинг-окно дня: ячейка расширяется в меню и дорастает до диалогов
-    AppUI.AppDayMorphDialog { id: dayMorph }
+    // Меню дня: открывается ЛКМ и ПКМ по ячейке календаря (как контекстное меню)
+    AppUI.AppDayMenu { id: dayMenu }
 
     property var pendingBackendCall: null
 
