@@ -2529,6 +2529,14 @@ class Backend(QObject):
         except Exception as e:
             self.showToast.emit(f"Не удалось запустить печать: {e}", "error")
 
+    @Slot(str)
+    def copyToClipboard(self, text):
+        """Копирует текст ошибки в системный буфер обмена (ЛКМ по тосту)."""
+        try:
+            QApplication.clipboard().setText(text or "")
+        except Exception:
+            pass
+
     def on_print_finished(self, success, message):
         """Срабатывает автоматически, когда фоновая печать завершена"""
         if success:

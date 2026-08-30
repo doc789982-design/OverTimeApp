@@ -201,7 +201,13 @@ Item {
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: toastWrap.beginLeave()
+                        onClicked: {
+                            // Ошибку по клику ЛКМ копируем в буфер обмена, чтобы
+                            // не печатать её вручную.
+                            if (model.kind === "error")
+                                backend.copyToClipboard(model.message)
+                            toastWrap.beginLeave()
+                        }
                     }
 
                     HoverHandler { id: toastHover }
