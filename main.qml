@@ -226,17 +226,11 @@ ApplicationWindow {
                     Rectangle {
                         width: 46
                         height: parent.height
+                        color: minHov.pressed ? AppUI.AppTheme.statePress : (minHov.containsMouse ? AppUI.AppTheme.stateHover : "transparent")
                         Rectangle {
                             anchors.centerIn: parent
-                            width: 30; height: 30
-                            radius: 15
-                            color: minHov.pressed ? AppUI.AppTheme.statePress : (minHov.containsMouse ? AppUI.AppTheme.stateHover : "transparent")
-                        }
-                        Rectangle {
-                            anchors.centerIn: parent
-                            width: 12; height: 2
-                            radius: 1
-                            color: minHov.containsMouse ? AppUI.AppTheme.textPrimary : AppUI.AppTheme.textSecondary
+                            width: 10; height: 1
+                            color: AppUI.AppTheme.textSecondary
                         }
                         MouseArea {
                             id: minHov
@@ -249,18 +243,12 @@ ApplicationWindow {
                     Rectangle {
                         width: 46
                         height: parent.height
+                        color: maxHov.pressed ? AppUI.AppTheme.statePress : (maxHov.containsMouse ? AppUI.AppTheme.stateHover : "transparent")
                         Rectangle {
                             anchors.centerIn: parent
-                            width: 30; height: 30
-                            radius: 15
-                            color: maxHov.pressed ? AppUI.AppTheme.statePress : (maxHov.containsMouse ? AppUI.AppTheme.stateHover : "transparent")
-                        }
-                        Rectangle {
-                            anchors.centerIn: parent
-                            width: 13; height: 13
-                            radius: 1.5
+                            width: 10; height: 10
                             color: "transparent"
-                            border.color: maxHov.containsMouse ? AppUI.AppTheme.textPrimary : AppUI.AppTheme.textSecondary
+                            border.color: AppUI.AppTheme.textSecondary
                             border.width: 1
                         }
                         MouseArea {
@@ -280,18 +268,13 @@ ApplicationWindow {
                     Rectangle {
                         width: 46
                         height: parent.height
-                        Rectangle {
+                        color: closeHov.pressed ? Qt.darker(AppUI.AppTheme.accentDanger, 1.2) : (closeHov.containsMouse ? AppUI.AppTheme.accentDanger : "transparent")
+                        Text {
                             anchors.centerIn: parent
-                            width: 30; height: 30
-                            radius: 15
-                            color: closeHov.pressed ? Qt.darker(AppUI.AppTheme.accentDanger, 1.2) : (closeHov.containsMouse ? AppUI.AppTheme.accentDanger : "transparent")
-                        }
-                        IconImage {
-                            anchors.centerIn: parent
-                            source: "icons/close.svg"
-                            width: AppUI.AppTheme.iconMedium
-                            height: AppUI.AppTheme.iconMedium
+                            text: "✕"
                             color: closeHov.containsMouse ? AppUI.AppTheme.textOnAccent : AppUI.AppTheme.textSecondary
+                            font.pixelSize: AppUI.AppTheme.sizeSmall
+                            font.weight: AppUI.AppTheme.weightBold
                         }
                         MouseArea {
                             id: closeHov
@@ -688,11 +671,19 @@ ApplicationWindow {
                 anchors.fill: parent
                 z: 0
                 orientation: Qt.Horizontal
-                handle: Rectangle { 
-                    implicitWidth: 1
-                    color: SplitHandle.hovered || SplitHandle.pressed
-                           ? AppUI.AppTheme.accentBrand
-                           : AppUI.AppTheme.borderDivider
+                handle: Rectangle {
+                    // Невидим по умолчанию; при наведении проявляется полусерая
+                    // линия-«ручка», за которую можно потянуть и менять ширину.
+                    implicitWidth: 8
+                    color: "transparent"
+                    opacity: (SplitHandle.hovered || SplitHandle.pressed) ? 1.0 : 0.0
+                    Behavior on opacity { NumberAnimation { duration: 150 } }
+                    Rectangle {
+                        anchors.centerIn: parent
+                        width: 3
+                        height: parent.height
+                        color: AppUI.AppTheme.borderInput
+                    }
                 }
                 Item {
                     SplitView.preferredWidth: 350
@@ -704,6 +695,7 @@ ApplicationWindow {
                         handle: Rectangle {
                             implicitWidth: 1
                             color: AppUI.AppTheme.borderDivider
+                            opacity: 0.4
                         }
                         AppUI.GroupSidebar {
                             SplitView.preferredWidth: 72
