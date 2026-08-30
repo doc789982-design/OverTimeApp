@@ -54,7 +54,7 @@ AppSidePanel {
         // БОЛЬШОЙ QR-КОД НА ВСЁ ОКНО СПРАВКИ
         // ==========================================
         Rectangle {
-                anchors.left: parent.left
+            anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: parent.top
             anchors.bottom: textBlock.top
@@ -76,9 +76,10 @@ AppSidePanel {
             Image {
                 anchors.fill: parent
                 anchors.margins: Math.max(AppTheme.spaceM, parent.height * 0.06)
-                source: "../icons/github_qr.svg"
+                source: "../icons/github_qr.png"
                 fillMode: Image.PreserveAspectFit
                 smooth: true
+                mipmap: true
                 asynchronous: true
             }
 
@@ -95,7 +96,7 @@ AppSidePanel {
         // ТЕКСТ ПОД QR-КОДОМ
         // ==========================================
         Column {
-                id: textBlock
+            id: textBlock
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.bottom: versionText.top
@@ -136,7 +137,7 @@ AppSidePanel {
         // НОМЕР ВЕРСИИ — САМЫЙ НИЗ ОКНА
         // ==========================================
         Text {
-                id: versionText
+            id: versionText
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.bottom: parent.bottom

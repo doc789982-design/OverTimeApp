@@ -5,6 +5,7 @@ Item {
     id: root
     width: 200
     height: 200
+    antialiasing: true
 
     // ══════════════════════════════════════════════════
     //  АНИМИРУЕМЫЕ СВОЙСТВА
@@ -97,14 +98,22 @@ Item {
         scale: root.breathS
         rotation: root.tiltAngle
         transformOrigin: Item.Center
+        antialiasing: true
+
+        // Чем больше кратно масштабирование холста, тем плавнее (без «лесенки»)
+        // выглядят изогнутые края щита и свечение при масштабировании и наклоне.
+        readonly property real canvasRes: 2.0
 
         // ══════════════════════════════════════════════
         //  1. ТЕНЬ
         // ══════════════════════════════════════════════
         Canvas {
             id: shadowCanvas
-            width:  shieldRoot.width
-            height: shieldRoot.height
+            width:  shieldRoot.width  * shieldRoot.canvasRes
+            height: shieldRoot.height * shieldRoot.canvasRes
+            scale: 1.0 / shieldRoot.canvasRes
+            transformOrigin: Item.Center
+            antialiasing: true
             anchors.centerIn: parent
             anchors.verticalCenterOffset: 10
             opacity: 0.15
@@ -122,8 +131,11 @@ Item {
         // ══════════════════════════════════════════════
         Canvas {
             id: glowCanvas
-            width:  shieldRoot.width  + 32
-            height: shieldRoot.height + 32
+            width:  (shieldRoot.width  + 32) * shieldRoot.canvasRes
+            height: (shieldRoot.height + 32) * shieldRoot.canvasRes
+            scale: 1.0 / shieldRoot.canvasRes
+            transformOrigin: Item.Center
+            antialiasing: true
             anchors.centerIn: parent
             opacity: root.glowPulse * 0.30
             z: 1
@@ -133,12 +145,12 @@ Item {
                 ctx.clearRect(0, 0, width, height)
                 ctx.save()
                 ctx.shadowColor = AppTheme.accentBrand
-                ctx.shadowBlur  = 24
-                ctx.translate(16, 16)
+                ctx.shadowBlur  = 24 * shieldRoot.canvasRes
+                ctx.translate(16 * shieldRoot.canvasRes, 16 * shieldRoot.canvasRes)
                 root.paintShield(
                     ctx,
-                    shieldRoot.width,
-                    shieldRoot.height,
+                    shieldRoot.width  * shieldRoot.canvasRes,
+                    shieldRoot.height * shieldRoot.canvasRes,
                     AppTheme.accentBrand,
                     AppTheme.accentBrand,
                     0
@@ -160,9 +172,12 @@ Item {
         // ══════════════════════════════════════════════
         Canvas {
             id: shieldCanvas
-            width:  shieldRoot.width
-            height: shieldRoot.height
-            anchors.fill: parent
+            width:  shieldRoot.width  * shieldRoot.canvasRes
+            height: shieldRoot.height * shieldRoot.canvasRes
+            scale: 1.0 / shieldRoot.canvasRes
+            transformOrigin: Item.Center
+            antialiasing: true
+            anchors.centerIn: parent
             z: 2
 
             onPaint: {
@@ -174,7 +189,7 @@ Item {
                     height,
                     AppTheme.bgSurface,
                     AppTheme.accentBrand,
-                    2.0
+                    2.0 * shieldRoot.canvasRes
                 )
             }
 
