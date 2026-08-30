@@ -35,14 +35,6 @@ Rectangle {
         onActivated: root.blurSearch()
     }
     
-    Rectangle { 
-        width: 1
-        color: AppTheme.borderDivider
-        anchors.right: parent.right
-        anchors.top: parent.top
-        anchors.bottom: parent.bottom 
-        z: AppTheme.zContent
-    }
 
     // ==========================================
     // 1. ШАПКА
@@ -52,8 +44,6 @@ Rectangle {
         height: AppTheme.barHeight 
         anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right
         color: "transparent"
-
-        Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: AppTheme.borderDivider }
 
         RowLayout {
             anchors.fill: parent; anchors.margins: AppTheme.spaceS; spacing: AppTheme.spaceM

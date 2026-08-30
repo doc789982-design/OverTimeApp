@@ -30,10 +30,6 @@ Item {
         return false;
     }
 
-    Rectangle {
-        anchors.bottom: parent.bottom
-        width: parent.width; height: 1; color: AppTheme.borderDivider
-    }
 
     RowLayout {
         anchors.fill: parent

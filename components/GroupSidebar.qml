@@ -21,14 +21,6 @@ Rectangle {
         anchors.right: parent.right
         color: "transparent"
 
-        // Горизонтальный разделитель
-        Rectangle { 
-            anchors.bottom: parent.bottom
-            width: parent.width
-            height: 1
-            color: AppTheme.borderDivider 
-        }
-
         // Кнопка "+"
         Rectangle {
             id: addGroupBtn
