@@ -2,14 +2,12 @@ import QtQuick
 import QtQuick.Controls.impl
 
 // ============================================================
-// МОРФИНГ-ОКНО ДНЯ (карточный вариант)
+// ОКНО ДНЯ (открывается ЛКМ по ячейке календаря)
 //
-// Клик по ячейке дня ЛКМ — из позиции ячейки растягивается обычная
-// карточка-меню (не скрин ячейки): рамка с тенью, внутри которой
-// проступают пункты меню. Клик по пункту — окно дорастает до
-// следующего окна, которое начинает грузиться прямо во время
-// анимации роста. При «ОК» / «Отмена» окно закрывается целиком —
-// старые не выскакивают.
+// Появляется как контекстное меню: рамка с тенью и плавное появление
+// (прозрачность + масштаб), позиция — у ячейки дня. Клик по пункту —
+// окно дорастает до следующего окна (дежурство/компенсация/«Открыть день»).
+// При «ОК» / «Отмена» окно закрывается целиком — старые не выскакивают.
 // ============================================================
 Item {
     id: root
@@ -53,6 +51,9 @@ Item {
         x: 0; y: 0
         width: 0; height: 0
         opacity: root.boxOpacity
+        scale: 1.0
+        transformOrigin: Item.TopLeft
+        Behavior on scale { NumberAnimation { duration: AppTheme.durFast; easing.type: AppTheme.easeEnter } }
 
         Rectangle {
             anchors.fill: parent
@@ -288,7 +289,7 @@ Item {
     // АНИМАЦИИ РАМКИ
     // ============================================================
     property real boxOpacity: 0
-    Behavior on boxOpacity { NumberAnimation { duration: AppTheme.durFast; easing.type: AppTheme.easeExit } }
+    Behavior on boxOpacity { NumberAnimation { duration: AppTheme.durFast; easing.type: AppTheme.easeEnter } }
 
     ParallelAnimation {
         id: growAnim
@@ -339,7 +340,7 @@ Item {
         let menuW = Math.min(root.menuW, mainWindow.width - margin)
         let menuH = Math.min(menuContent.implicitHeight + 2 * AppTheme.spaceM, mainWindow.height - margin)
 
-        // Расширяемся от левого верхнего угла ячейки, но не вылезаем за окно
+        // Появляемся у ячейки, но не вылезаем за окно
         let tX = Math.min(Math.max(pt.x, margin), mainWindow.width - menuW - margin)
         let tY = Math.min(Math.max(pt.y, margin), mainWindow.height - menuH - margin)
 
@@ -347,14 +348,17 @@ Item {
         root._growCb = null
         menuContent.opacity = 0
         menuContent.scale = 0.97
-        box.x = pt.x; box.y = pt.y
-        box.width = cellItem.width; box.height = cellItem.height
-        root.boxOpacity = 1
+
+        // Сразу ставим финальный размер и включаем плавное появление
+        // как у контекстных меню (прозрачность + масштаб).
+        box.x = tX; box.y = tY
+        box.width = menuW; box.height = menuH
+        box.scale = 0.95
         root.mode = 1
+        root.boxOpacity = 1
+        box.scale = 1.0
 
         revealTimer.restart()
-        gx.to = tX; gy.to = tY; gw.to = menuW; gh.to = menuH
-        growAnim.restart()
     }
 
     // ============================================================

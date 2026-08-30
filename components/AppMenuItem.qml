@@ -113,5 +113,10 @@ MenuItem {
         anchors.rightMargin: AppTheme.spaceXXS
         anchors.topMargin: 1
         anchors.bottomMargin: 1
+
+        // Плавное выделение пункта при наведении — как в меню дня (ЛКМ по ячейке)
+        Behavior on color {
+            ColorAnimation { duration: AppTheme.durMicro; easing.type: AppTheme.easeStandard }
+        }
     }
 }

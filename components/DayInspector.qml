@@ -9,6 +9,7 @@ import Qt5Compat.GraphicalEffects
 AppDialog {
     id: root
     width: 450
+    heightFraction: 2/3
 
     property string targetDate: ""
 
