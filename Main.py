@@ -415,6 +415,76 @@ class Backend(QObject):
         except Exception:
             pass
 
+    def _relocate_external_dbs(self, target):
+        """Собирает базы в Documents\OverTimeTab\databases.
+        
+        У старых версий базы могли лежать где угодно вне папки данных
+        (их абсолютные пути записаны в config.json). Копируем их
+        в \"databases\" внутри Documents и перенаправляем путь на копию, чтобы
+        программа работала с ними в Documents. Оригиналы
+        остаются как резервные копии. Выполняется один раз.
+        """
+        cfg = target / "config.json"
+        if not cfg.exists():
+            return
+        try:
+            data = json.loads(cfg.read_text(encoding="utf-8"))
+        except Exception:
+            return
+        ui = data.get("ui") or {}
+        if ui.get("over_time_dbs_relocated"):
+            return
+        import shutil
+        db_target = target / "databases"
+
+        def src_of(path_str):
+            p = Path(path_str)
+            return (p.resolve() if p.is_absolute() else (target / p).resolve())
+
+        def relocate(path_str):
+            abs_p = src_of(path_str)
+            try:
+                abs_p.relative_to(target.resolve())
+                return str(abs_p).replace("\\", "/")  # уже внутри Documents
+            except ValueError:
+                pass
+            if not abs_p.is_file():
+                return str(abs_p).replace("\\", "/")
+            dest = db_target / abs_p.name
+            i = 2
+            while dest.exists() and dest.resolve() != abs_p.resolve():
+                dest = db_target / f"{abs_p.stem}_{i}{abs_p.suffix}"
+                i += 1
+            if not dest.exists():
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(abs_p, dest)
+            return str(dest).replace("\\", "/")
+
+        src_to_dest = {}
+        if isinstance(data.get("db_paths"), list):
+            new_paths = []
+            for x in data["db_paths"]:
+                dest = relocate(x)
+                src_to_dest[src_of(x)] = dest
+                new_paths.append(dest)
+            data["db_paths"] = new_paths
+        if isinstance(data.get("last_db_path"), str) and data["last_db_path"]:
+            lp = data["last_db_path"]
+            s = src_of(lp)
+            if s in src_to_dest:
+                data["last_db_path"] = src_to_dest[s]
+            else:
+                data["last_db_path"] = relocate(lp)
+        if ui.get("default_db_dir"):
+            dd = Path(ui["default_db_dir"])
+            if dd.is_absolute():
+                try:
+                    dd.resolve().relative_to(target.resolve())
+                except ValueError:
+                    ui["default_db_dir"] = str(db_target).replace("\\", "/")
+        data.setdefault("ui", {})["over_time_dbs_relocated"] = True
+        cfg.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
     def _rewrite_paths_into_target(self, data, src_dir, target, prefix=None):
         """Переписывает пути в конфиге со старого места на новое (Documents)."""
         try:
