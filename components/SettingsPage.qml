@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls
 import QtQuick.Layouts
 
 Item {
@@ -8,42 +9,47 @@ Item {
     property string description: ""
     default property alias content: contentColumn.data
 
-    ColumnLayout {
+    // Страница прокручивается, чтобы при маленьком окне настроек
+    // (которое масштабируется вместе с главным окном) контент не обрезался.
+    ScrollView {
+        id: pageScroll
         anchors.fill: parent
-        anchors.margins: AppTheme.spaceXL
-        spacing: AppTheme.spaceL
+        clip: true
+        ScrollBar.vertical.policy: ScrollBar.AsNeeded
+        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
 
-        Column {
-            spacing: AppTheme.spaceXS
-            Layout.fillWidth: true
+        ColumnLayout {
+            // Единые отступы слева/справа, как в остальных окнах
+            x: AppTheme.spaceXL
+            width: Math.max(0, pageScroll.availableWidth - AppTheme.spaceXL * 2)
+            spacing: AppTheme.spaceL
 
-            Text {
-                text: root.title
-                color: AppTheme.textPrimary
-                font.family: AppTheme.fontFamily
-                font.pixelSize: AppTheme.sizeH2
-                font.weight: AppTheme.weightBold
+            Column {
+                spacing: AppTheme.spaceXS
+                Layout.fillWidth: true
+
+                Text {
+                    text: root.title
+                    color: AppTheme.textPrimary
+                    font.family: AppTheme.fontFamily
+                    font.pixelSize: AppTheme.sizeH2
+                    font.weight: AppTheme.weightBold
+                }
+                Text {
+                    text: root.description
+                    color: AppTheme.textSecondary
+                    font.family: AppTheme.fontFamily
+                    font.pixelSize: AppTheme.sizeBody
+                    wrapMode: Text.WordWrap
+                    width: parent.width
+                }
             }
-            Text {
-                text: root.description
-                color: AppTheme.textSecondary
-                font.family: AppTheme.fontFamily
-                font.pixelSize: AppTheme.sizeBody
-                wrapMode: Text.WordWrap
-                width: parent.width
+
+            Column {
+                id: contentColumn
+                Layout.fillWidth: true
+                spacing: AppTheme.spaceM
             }
-        }
-
-        Column {
-            id: contentColumn
-            Layout.fillWidth: true
-            spacing: AppTheme.spaceM
-
-            // implicitHeight пробрасывается через Layout автоматически
-        }
-
-        Item {
-            Layout.fillHeight: true
         }
     }
 }

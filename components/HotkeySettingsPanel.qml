@@ -29,25 +29,30 @@ Item {
         }
 
         // =========================================================
-        // 2. БЛОК ДОБАВЛЕНИЯ НОВОЙ КЛАВИШИ 
+        // 2. ЕДИНАЯ ПАНЕЛЬ: разделы с едва заметными разделителями
         // =========================================================
         Rectangle {
             Layout.fillWidth: true
-            implicitHeight: newHkLayout.implicitHeight + (AppTheme.spaceL * 2)
-            
-            color: AppTheme.bgElevated
+            Layout.fillHeight: true
+            color: AppTheme.bgSurface
+            radius: AppTheme.radiusLarge
             border.color: AppTheme.borderDivider
             border.width: 1
-            radius: AppTheme.radiusLarge
-            
-            // Тень-картинка вместо вычисляемой (Level 1)
-            AppShadow { level: 1 }
 
             ColumnLayout {
-                id: newHkLayout
-                anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right
-                anchors.margins: AppTheme.spaceL 
-                spacing: AppTheme.spaceL 
+                anchors.fill: parent
+                anchors.margins: AppTheme.spaceXL
+                spacing: AppTheme.spaceL
+
+                // ── Раздел: Добавить клавишу ──
+                Text {
+                    text: "Добавить новую клавишу"
+                    color: AppTheme.textSecondary
+                    font.family: AppTheme.fontFamily
+                    font.pixelSize: AppTheme.sizeSmall
+                    font.weight: AppTheme.weightBold
+                    font.letterSpacing: 0.8
+                }
 
                 // ВЕРХНЯЯ СТРОКА: Название + Инпут + Выбор + Кнопка
                 RowLayout {
@@ -260,86 +265,98 @@ Item {
                         Item { Layout.fillWidth: true }
                     }
                 }
-            }
-        }
 
-        // =========================================================
-        // 3. СПИСОК ДОБАВЛЕННЫХ КЛАВИШ
-        // =========================================================
-        Rectangle {
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-            color: "transparent"
-            
-            ListView {
-                anchors.fill: parent; spacing: AppTheme.spaceS; clip: true; model: backend.hotkeysList
-                delegate: Rectangle {
-                    width: ListView.view.width; height: 56; radius: AppTheme.radiusMedium
-                    color: AppTheme.bgElevated
-                    border.color: AppTheme.borderDivider; border.width: 1
-                    
-                    RowLayout {
-                        anchors.fill: parent; anchors.margins: AppTheme.spaceM; anchors.rightMargin: 60; spacing: AppTheme.spaceL
-                        
-                        Row {
-                            spacing: AppTheme.spaceS; Layout.preferredWidth: 120
-                            IconImage { source: "../icons/command.svg"; width: AppTheme.iconMedium; height: AppTheme.iconMedium; color: AppTheme.accentBrand; anchors.verticalCenter: parent.verticalCenter }
-                            Text { text: modelData.key; color: AppTheme.accentBrand; font.family: AppTheme.fontFamily; font.pixelSize: AppTheme.sizeBodyLarge; font.weight: AppTheme.weightBold; anchors.verticalCenter: parent.verticalCenter }
-                        }
-                        
-                        Column {
-                            Layout.fillWidth: true
-                            spacing: 2
-                            Layout.alignment: Qt.AlignVCenter
+                // Разделитель между разделами
+                Rectangle {
+                    Layout.fillWidth: true
+                    height: 1
+                    color: AppTheme.borderDivider
+                    opacity: 0.6
+                }
 
-                            Text { 
-                                Layout.fillWidth: true; elide: Text.ElideRight
-                                color: AppTheme.textPrimary
-                                font.family: AppTheme.fontFamily; font.pixelSize: AppTheme.sizeBody
-                                font.weight: (modelData.name && modelData.name !== "") ? AppTheme.weightBold : AppTheme.weightMedium
-                                text: {
-                                    let hk = modelData
-                                    // Если есть название — показываем его
-                                    if (hk.name && hk.name !== "") return hk.name
-                                    
-                                    // Иначе — старый алгоритм
-                                    if (hk.type === "duty") return "Дежурство: " + hk.duty_start + " - " + hk.duty_end
-                                    if (hk.type === "status") return "Установить статус: " + hk.status_val
-                                    let unt = hk.comp_unit === "hours" ? "Ночные" : (hk.comp_unit === "days" ? "Дни" : "Сверх нормы")
-                                    return "Компенсация: " + unt + " (" + hk.comp_amount + ")"
+                // ── Раздел: Добавленные клавиши ──
+                Text {
+                    text: "Добавленные клавиши"
+                    color: AppTheme.textSecondary
+                    font.family: AppTheme.fontFamily
+                    font.pixelSize: AppTheme.sizeSmall
+                    font.weight: AppTheme.weightBold
+                    font.letterSpacing: 0.8
+                }
+
+                Item {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    clip: true
+
+                    ListView {
+                        anchors.fill: parent; spacing: AppTheme.spaceXS; clip: true; model: backend.hotkeysList
+                        delegate: Rectangle {
+                            width: ListView.view.width; height: 56; radius: AppTheme.radiusMedium
+                            color: delKeyHover.containsMouse ? AppTheme.stateHover : AppTheme.bgBase
+                            Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
+                            
+                            RowLayout {
+                                anchors.fill: parent; anchors.margins: AppTheme.spaceM; anchors.rightMargin: 60; spacing: AppTheme.spaceL
+                                
+                                Row {
+                                    spacing: AppTheme.spaceS; Layout.preferredWidth: 120
+                                    IconImage { source: "../icons/command.svg"; width: AppTheme.iconMedium; height: AppTheme.iconMedium; color: AppTheme.accentBrand; anchors.verticalCenter: parent.verticalCenter }
+                                    Text { text: modelData.key; color: AppTheme.accentBrand; font.family: AppTheme.fontFamily; font.pixelSize: AppTheme.sizeBodyLarge; font.weight: AppTheme.weightBold; anchors.verticalCenter: parent.verticalCenter }
+                                }
+                                
+                                Column {
+                                    Layout.fillWidth: true
+                                    spacing: 2
+                                    Layout.alignment: Qt.AlignVCenter
+
+                                    Text { 
+                                        Layout.fillWidth: true; elide: Text.ElideRight
+                                        color: AppTheme.textPrimary
+                                        font.family: AppTheme.fontFamily; font.pixelSize: AppTheme.sizeBody
+                                        font.weight: (modelData.name && modelData.name !== "") ? AppTheme.weightBold : AppTheme.weightMedium
+                                        text: {
+                                            let hk = modelData
+                                            if (hk.name && hk.name !== "") return hk.name
+                                            if (hk.type === "duty") return "Дежурство: " + hk.duty_start + " - " + hk.duty_end
+                                            if (hk.type === "status") return "Установить статус: " + hk.status_val
+                                            let unt = hk.comp_unit === "hours" ? "Ночные" : (hk.comp_unit === "days" ? "Дни" : "Сверх нормы")
+                                            return "Компенсация: " + unt + " (" + hk.comp_amount + ")"
+                                        }
+                                    }
+
+                                    Text {
+                                        visible: modelData.name && modelData.name !== ""
+                                        Layout.fillWidth: true; elide: Text.ElideRight
+                                        color: AppTheme.textSecondary
+                                        font.family: AppTheme.fontFamily; font.pixelSize: AppTheme.sizeSmall
+                                        text: {
+                                            let hk = modelData
+                                            if (hk.type === "duty") return "Дежурство: " + hk.duty_start + " — " + hk.duty_end
+                                            if (hk.type === "status") return "Статус: " + hk.status_val
+                                            let unt = hk.comp_unit === "hours" ? "Ночные" : (hk.comp_unit === "days" ? "Дни" : "Сверх нормы")
+                                            return "Компенсация: " + unt + " ×" + hk.comp_amount
+                                        }
+                                    }
                                 }
                             }
-
-                            Text {
-                                visible: modelData.name && modelData.name !== ""
-                                Layout.fillWidth: true; elide: Text.ElideRight
-                                color: AppTheme.textSecondary
-                                font.family: AppTheme.fontFamily; font.pixelSize: AppTheme.sizeSmall
-                                text: {
-                                    let hk = modelData
-                                    if (hk.type === "duty") return "Дежурство: " + hk.duty_start + " — " + hk.duty_end
-                                    if (hk.type === "status") return "Статус: " + hk.status_val
-                                    let unt = hk.comp_unit === "hours" ? "Ночные" : (hk.comp_unit === "days" ? "Дни" : "Сверх нормы")
-                                    return "Компенсация: " + unt + " ×" + hk.comp_amount
+                            
+                            // КНОПКА УДАЛЕНИЯ
+                            Rectangle {
+                                width: 32; height: 32; radius: AppTheme.radiusSmall; anchors.right: parent.right; anchors.rightMargin: AppTheme.spaceS; anchors.verticalCenter: parent.verticalCenter
+                                color: delKeyHover.pressed ? AppTheme.statePress : (delKeyHover.containsMouse ? AppTheme.bgDangerSoft : "transparent")
+                                Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
+                                IconImage { anchors.centerIn: parent; source: "../icons/trash.svg"; width: AppTheme.iconMedium; height: AppTheme.iconMedium; color: delKeyHover.containsMouse ? AppTheme.accentDanger : AppTheme.textSecondary }
+                                MouseArea { 
+                                    id: delKeyHover; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; 
+                                    onClicked: { let arr = []; for(let i=0; i<backend.hotkeysList.length; i++) arr.push(backend.hotkeysList[i]); arr.splice(index, 1); backend.saveHotkeys(JSON.stringify(arr)) } 
                                 }
                             }
                         }
                     }
-                    
-                    // КНОПКА УДАЛЕНИЯ
-                    Rectangle {
-                        width: 32; height: 32; radius: AppTheme.radiusSmall; anchors.right: parent.right; anchors.rightMargin: AppTheme.spaceS; anchors.verticalCenter: parent.verticalCenter
-                        color: delKeyHover.pressed ? AppTheme.statePress : (delKeyHover.containsMouse ? AppTheme.bgDangerSoft : "transparent")
-                        Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
-                        IconImage { anchors.centerIn: parent; source: "../icons/trash.svg"; width: AppTheme.iconMedium; height: AppTheme.iconMedium; color: delKeyHover.containsMouse ? AppTheme.accentDanger : AppTheme.textSecondary }
-                        MouseArea { 
-                            id: delKeyHover; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; 
-                            onClicked: { let arr = []; for(let i=0; i<backend.hotkeysList.length; i++) arr.push(backend.hotkeysList[i]); arr.splice(index, 1); backend.saveHotkeys(JSON.stringify(arr)) } 
-                        }
-                    }
+                    Text { visible: backend.hotkeysList.length === 0; anchors.centerIn: parent; text: "Горячие клавиши не настроены"; color: AppTheme.textTertiary; font.family: AppTheme.fontFamily; font.pixelSize: AppTheme.sizeBody }
                 }
             }
-            Text { visible: backend.hotkeysList.length === 0; anchors.centerIn: parent; text: "Горячие клавиши не настроены"; color: AppTheme.textTertiary; font.family: AppTheme.fontFamily; font.pixelSize: AppTheme.sizeBody }
         }
     }
 

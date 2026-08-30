@@ -295,7 +295,7 @@ class Backend(QObject):
         self._yearly_data = []
         self._month_pulse = {} # {1: True, 5: True} - значит в январе и мае есть данные        
         self._year_list = []
-        self._time_input_mode = "slider" # По умолчанию будет ползунок      
+        self._time_input_mode = "tumbler" # По умолчанию — крутящиеся барабаны      
         self._selected_employee_ratio = 0.0
         self._printer_list = []      # <--- Добавили
         self._default_printer = ""   # <--- Добавили
@@ -586,7 +586,7 @@ class Backend(QObject):
                         
                 # Читаем настройку интерфейса!
                 ui_cfg = data.get("ui", {})
-                self._time_input_mode = ui_cfg.get("time_input_mode", "slider")
+                self._time_input_mode = ui_cfg.get("time_input_mode", "tumbler")
                 self._is_dark_theme = ui_cfg.get("theme", "dark") == "dark"
                 self._reminder_enabled = ui_cfg.get("reminder_enabled", True)
                 self._tray_hint_shown = ui_cfg.get("tray_hint_shown", False)
