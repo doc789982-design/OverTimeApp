@@ -28,10 +28,11 @@ Item {
             GradientStop { position: 1.0; color: "#18C8C8" }
         }
 
+        // Тёмная подложка поверх градиента — один и тот же «приглушённый» вид
+        // и когда обновление готовится, и когда ждёт нажатия «Обновить».
         Rectangle {
             anchors.fill: parent
             radius: parent.radius
-            visible: backend.updateBusy
             color: Qt.rgba(0, 0, 0, 0.18)
         }
 

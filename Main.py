@@ -120,7 +120,7 @@ class PrintWorker(QThread):
 
             # 1. Формируем временный Excel-файл
             temp_db = DB(self.db_path)
-            template_path = Path(__file__).parent / "Template.xlsx"
+            template_path = EXCEL_TEMPLATE_PATH
             temp_dir = Path(tempfile.gettempdir())
             temp_excel_path = temp_dir / f"overtimetab_print_{uuid.uuid4().hex[:6]}.xlsx"
 
@@ -3328,7 +3328,6 @@ class Backend(QObject):
             return
 
         self._set_update_busy(True, "Готовим обновление…")
-        self.showToast.emit("Готовим обновление. Можно продолжать работу.", "success")
         self.update_thread = UpdateStageWorker(info["root"], str(self.app_dir))
         self.update_thread.finished_signal.connect(self._on_update_staged)
         self.update_thread.start()
@@ -3345,7 +3344,6 @@ class Backend(QObject):
             int((staged or {}).get("build") or 0),
         )
         self._set_update_ready(True, label)
-        self.showToast.emit(f"Готово. Можно обновить до {label or 'новой версии'}", "success")
 
     @Slot()
     def applyReadyUpdate(self):
