@@ -45,6 +45,8 @@ Rectangle {
         anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right
         color: "transparent"
 
+        Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: AppTheme.borderDivider; opacity: 0.4 }
+
         RowLayout {
             anchors.fill: parent; anchors.margins: AppTheme.spaceS; spacing: AppTheme.spaceM
 

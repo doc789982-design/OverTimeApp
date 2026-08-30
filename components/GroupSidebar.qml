@@ -21,6 +21,15 @@ Rectangle {
         anchors.right: parent.right
         color: "transparent"
 
+        // Горизонтальный разделитель (полупрозрачный, как у групп/сотрудников)
+        Rectangle { 
+            anchors.bottom: parent.bottom
+            width: parent.width
+            height: 1
+            color: AppTheme.borderDivider
+            opacity: 0.4
+        }
+
         // Кнопка "+"
         Rectangle {
             id: addGroupBtn
