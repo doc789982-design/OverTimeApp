@@ -103,6 +103,23 @@ class PrintWorker(QThread):
         self.paper_size = paper_size
         self.collate = collate
 
+    def _excel_printer_name(self, name):
+        """Превращает имя принтера в строку, которую понимает Excel: 'Имя on Порт:'.
+
+        Excel выбирает принтер по полному имени с портом. Просто имя из списка
+        (win32print) ему не подходит, поэтому собираем полное имя.
+        """
+        try:
+            import win32print
+            flags = win32print.PRINTER_ENUM_LOCAL | win32print.PRINTER_ENUM_CONNECTIONS
+            for info in win32print.EnumPrinters(flags, 2):
+                # level 2: (Server, Name, Share, Port, Driver, ...)
+                if len(info) > 3 and info[1] == name and info[3]:
+                    return f"{name} on {info[3]}:"
+        except Exception:
+            pass
+        return name
+
     def run(self):
         try:
             # МАГИЯ WINDOWS: Чтобы общаться с Excel из невидимого потока, 
@@ -146,9 +163,19 @@ class PrintWorker(QThread):
                 ws.PageSetup.Orientation = 2 if self.orientation == "landscape" else 1
                 ws.PageSetup.PaperSize = 8 if self.paper_size == "A3" else 9
                 
+                # Excel выбирает принтер по строке вида "Имя on Порт:", а не по
+                # голому имени из списка. Собираем полное имя и ставим его принтером
+                # Excel'я; в PrintOut больше не передаём (иначе Excel падает
+                # с 0x800A03EC). Если принтер выбрать не удалось — печатаем на том,
+                # что стоит по умолчанию.
+                try:
+                    if self.printer_name:
+                        excel.ActivePrinter = self._excel_printer_name(self.printer_name)
+                except Exception:
+                    pass
+
                 print_args = {
                     "Copies": self.copies,
-                    "ActivePrinter": self.printer_name,
                     "Collate": self.collate
                 }
                 
