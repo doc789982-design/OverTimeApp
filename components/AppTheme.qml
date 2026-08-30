@@ -10,7 +10,7 @@ QtObject {
     // подхватят автоматически.
     // ==========================================
     readonly property string appVersion: "2.0.0-ALPHA.20"
-    readonly property int appBuild: 122
+    readonly property int appBuild: 123
     readonly property string appVersionFull: appVersion + " · сборка " + appBuild
 
     // ==========================================
@@ -33,12 +33,14 @@ QtObject {
     // ==========================================
     // Светлая — Canvas (InstUI): белая страница, фарфор у панелей, карточки белые.
     // Тёмная — Material: #121212 и ступени elevation, календарь чуть светлее рельс.
-    property color bgBase:     isDark ? "#1C1C1E" : "#FFFFFF"
+    // Тёмная тема — Material dark surfaces (0dp→12dp) с правильным порядком
+    // elevation: фон самый тёмный, поднимающиеся поверхности светлеют.
+    property color bgBase:     isDark ? "#121212" : "#FFFFFF"
     property color bgPanel:    isDark ? "#121212" : "#F5F5F5"
-    property color bgSurface:  isDark ? "#161618" : "#F8F9FA"
-    property color bgCell:     isDark ? "#242426" : "#F4F5F7"
-    property color bgElevated: isDark ? "#2C2C2C" : "#FFFFFF"
-    property color bgModal:    isDark ? "#333333" : "#FFFFFF"
+    property color bgSurface:  isDark ? "#1E1E1E" : "#F8F9FA"   // 1dp
+    property color bgCell:     isDark ? "#242424" : "#F4F5F7"   // 3dp
+    property color bgElevated: isDark ? "#2C2C2C" : "#FFFFFF"   // 6dp
+    property color bgModal:    isDark ? "#333333" : "#FFFFFF"   // 12dp
     property color bgInput:    "transparent"
 
     property color bgDisabled:       isDark ? "#212529" : "#E9ECEF" 
@@ -48,29 +50,31 @@ QtObject {
     // ==========================================
     // 2. СЕМАНТИЧЕСКИЕ ЦВЕТА (Brand & Status)
     // ==========================================
-    property color accentBrand:   isDark ? "#4B9AEE" : "#0374B5" 
-    property color accentInfo:    isDark ? "#82B1FF" : "#0056B3" 
-    property color accentSuccess: isDark ? "#5CB85C" : "#107C3F" 
-    property color accentWarning: isDark ? "#F4AC5B" : "#E67300" 
-    property color accentDanger:  isDark ? "#E76C78" : "#DE2E43" 
-    property color accentPurple:  isDark ? "#C05C9A" : "#7C1052" 
-    property color accentTeal:    isDark ? "#50A7B5" : "#006A7C" 
+    // Светлая — палитра Canvas (Workday): blueberry / greenApple / sourLemon /
+    // cinnamon / grapeSoda / jewel. Тёмная — приглушённые для тёмного фона.
+    property color accentBrand:   isDark ? "#4B9AEE" : "#0875E1"  // blueberry400
+    property color accentInfo:    isDark ? "#82B1FF" : "#005CB9"  // blueberry500
+    property color accentSuccess: isDark ? "#5CB85C" : "#319C4C"  // greenApple500
+    property color accentWarning: isDark ? "#F4AC5B" : "#EBB400"  // sourLemon500
+    property color accentDanger:  isDark ? "#E76C78" : "#DE2E21"  // cinnamon500
+    property color accentPurple:  isDark ? "#C05C9A" : "#97499E"  // grapeSoda500
+    property color accentTeal:    isDark ? "#50A7B5" : "#1A818C"  // jewel500
 
     // Мягкие фоны (Зашиты прямо в HEX-коды: 33 = 20% opacity, 1E = 12% opacity)
     // Это 100% безопасный метод для движка QML
-    property color bgBrandSoft:   isDark ? "#334B9AEE" : "#1E0374B5"
+    property color bgBrandSoft:   isDark ? "#334B9AEE" : "#1E0875E1"
 
     // Годовая сетка: клетки ~12px. Обычное дежурство — плотный бренд.
     // Сменное — тот же цвет, вполовину прозрачнее.
     property color yearDutyExtra: accentBrand
     property color yearDutyShift: Qt.rgba(accentBrand.r, accentBrand.g, accentBrand.b, 0.5)
-    property color yearWeekend:   isDark ? "#66E76C78" : "#4DDE2E43"
-    property color bgInfoSoft:    isDark ? "#3382B1FF" : "#1E0056B3"
-    property color bgSuccessSoft: isDark ? "#335CB85C" : "#1E107C3F"
-    property color bgWarningSoft: isDark ? "#33F4AC5B" : "#1EE67300"
-    property color bgDangerSoft:  isDark ? "#33E76C78" : "#1EDE2E43"
-    property color bgPurpleSoft:  isDark ? "#33C05C9A" : "#1E7C1052"
-    property color bgTealSoft:    isDark ? "#3350A7B5" : "#1E006A7C"
+    property color yearWeekend:   isDark ? "#66E76C78" : "#4DDE2E21"
+    property color bgInfoSoft:    isDark ? "#3382B1FF" : "#1E005CB9"
+    property color bgSuccessSoft: isDark ? "#335CB85C" : "#1E319C4C"
+    property color bgWarningSoft: isDark ? "#33F4AC5B" : "#1EEBB400"
+    property color bgDangerSoft:  isDark ? "#33E76C78" : "#1EDE2E21"
+    property color bgPurpleSoft:  isDark ? "#33C05C9A" : "#1E97499E"
+    property color bgTealSoft:    isDark ? "#3350A7B5" : "#1E1A818C"
 
     // ==========================================
     // 3. ТЕКСТ (Typography Colors)
@@ -108,6 +112,14 @@ QtObject {
     property int sizeSmall:     12 
     property int sizeMicro:     10 
 
+    // Межстрочные интервалы и трекинг (как у type-уровней Canvas)
+    property real lineHeightTight:  1.2
+    property real lineHeightBody:   1.5
+    property real lineHeightLoose:  1.6
+    property real letterSpacingNone: 0.0
+    property real letterSpacingWide: 0.6
+    property real letterSpacingCaps: 1.0
+
     // ==========================================
     // 5. ГРАНИЦЫ И ФОКУС (Borders & Accessibility)
     // ==========================================
@@ -116,8 +128,8 @@ QtObject {
     property color borderDisabled: isDark ? "#353B42" : "#DDE2E5" 
     property color borderError:    accentDanger 
     
-    // Фокус с вшитой 50% прозрачностью (80 в начале HEX)
-    property color borderFocus:    isDark ? "#804B9AEE" : "#800875E1"
+    // Фокус сплошным цветом (как у Canvas: 2px + отступ)
+    property color borderFocus:    isDark ? "#4B9AEE" : "#0875E1"
     
     property int   focusWidth:     2 
     property int   focusOffset:    2 
@@ -137,11 +149,13 @@ QtObject {
     // ==========================================
     // 7. СКРУГЛЕНИЯ (Border Radii)
     // ==========================================
+    // По ролям Canvas shape: small 4 (компактные), medium 8 (формы),
+    // large 16 (карточки xl), modal 24 (диалоги xxl), pill 999 (full).
     property int radiusSharp:  0    
     property int radiusSmall:  4    
     property int radiusMedium: 8    
-    property int radiusLarge:  12   
-    property int radiusModal:  16   
+    property int radiusLarge:  16   
+    property int radiusModal:  24   
     property int radiusPill:   999  
 
     // ==========================================
@@ -207,10 +221,11 @@ QtObject {
     // ==========================================
     // 11. ИКОНКИ (Icon Sizes)
     // ==========================================
-    property int iconSmall:  12
+    property int iconSmall:  16
     property int iconMedium: 16
     property int iconLarge:  20
     property int iconXL:     24
+    property int iconXXL:    32
 
     // ==========================================
     // 12. АНИМАЦИИ И ФИЗИКА (Motion System)
@@ -224,11 +239,11 @@ QtObject {
     property int durStandard: 250 
     property int durSlow:     400 
 
-    // Оставляем идеальные экспоненциальные кривые
+    // Мягкие кривые (как у Canvas/Material) вместо резких экспонент
     property int easeColor:    Easing.Linear     
-    property int easeEnter:    Easing.OutExpo   
-    property int easeExit:     Easing.InExpo    
-    property int easeStandard: Easing.InOutExpo 
+    property int easeEnter:    Easing.OutCubic  
+    property int easeExit:     Easing.InCubic   
+    property int easeStandard: Easing.InOutCubic
 
     property int slideOffset:  20 // Чуть уменьшили разбег, чтобы соответствовало новой скорости
 

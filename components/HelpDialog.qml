@@ -4,7 +4,7 @@ import QtQuick.Layouts
 
 AppSidePanel {
     id: root
-    width: 680
+    width: 550
     title: "О программе"
 
     readonly property string githubUrl: "https://github.com/doc789982-design/OverTimeApp/releases"
@@ -43,93 +43,102 @@ AppSidePanel {
         return ""
     }
 
-    // Контент занимает всю высоту панели (без прокрутки): вверху большой QR-код,
-    // под ним текст, а номер версии прижат к самому низу окна.
+    // Небольшая плашка с QR-кодом (как было раньше), но картинка — высокого
+    // разрешения (icons/github_qr.png). Номер версии прижат к самому низу окна.
     Item {
         width: parent.width
         height: (parent && parent.parent && parent.parent.availableHeight)
                 ? parent.parent.availableHeight : root.height
 
-        // ==========================================
-        // БОЛЬШОЙ QR-КОД НА ВСЁ ОКНО СПРАВКИ
-        // ==========================================
-        Rectangle {
+        Column {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: parent.top
-            anchors.bottom: textBlock.top
-            anchors.bottomMargin: AppTheme.spaceL
-
-            color: "#FFFFFF"
-            radius: AppTheme.radiusLarge
-            border.color: AppTheme.borderDivider
-            border.width: 1
-
-            Rectangle {
-                anchors.fill: parent
-                radius: parent.radius
-                color: qrHov.pressed
-                       ? AppTheme.statePress
-                       : (qrHov.containsMouse ? Qt.rgba(0, 0, 0, 0.03) : "transparent")
-            }
-
-            Image {
-                anchors.fill: parent
-                anchors.margins: Math.max(AppTheme.spaceM, parent.height * 0.06)
-                source: "../icons/github_qr.png"
-                fillMode: Image.PreserveAspectFit
-                smooth: true
-                mipmap: true
-                asynchronous: true
-            }
-
-            MouseArea {
-                id: qrHov
-                anchors.fill: parent
-                cursorShape: Qt.PointingHandCursor
-                hoverEnabled: true
-                onClicked: Qt.openUrlExternally(root.githubUrl)
-            }
-        }
-
-        // ==========================================
-        // ТЕКСТ ПОД QR-КОДОМ
-        // ==========================================
-        Column {
-            id: textBlock
-            anchors.left: parent.left
-            anchors.right: parent.right
+            anchors.topMargin: AppTheme.spaceXL
             anchors.bottom: versionText.top
             anchors.bottomMargin: AppTheme.spaceL
-            spacing: AppTheme.spaceXS
+            spacing: AppTheme.spaceL
 
-            Text {
+            // ==========================================
+            // ПЛАШКА С QR-КОДОМ
+            // ==========================================
+            Rectangle {
                 width: parent.width
-                text: "Скачать актуальную версию"
-                color: AppTheme.accentBrand
-                font.family: AppTheme.fontFamily
-                font.pixelSize: AppTheme.sizeBodyLarge
-                font.weight: AppTheme.weightBold
-                horizontalAlignment: Text.AlignHCenter
-            }
-            Text {
-                width: parent.width
-                text: "Отсканируйте QR-код или нажмите на него, чтобы открыть страницу загрузки актуальной версии программы на GitHub."
-                color: AppTheme.textSecondary
-                font.family: AppTheme.fontFamily
-                font.pixelSize: AppTheme.sizeBody
-                horizontalAlignment: Text.AlignHCenter
-                wrapMode: Text.WordWrap
-            }
-            Text {
-                width: parent.width
-                text: "github.com/doc789982-design/OverTimeApp/releases"
-                color: AppTheme.accentBrand
-                font.family: AppTheme.fontFamily
-                font.pixelSize: AppTheme.sizeSmall
-                font.weight: AppTheme.weightMedium
-                horizontalAlignment: Text.AlignHCenter
-                wrapMode: Text.WrapAnywhere
+                height: githubRow.implicitHeight + (AppTheme.spaceM * 2)
+                color: githubHov.containsMouse ? AppTheme.bgElevated : AppTheme.bgSurface
+                radius: AppTheme.radiusMedium
+                border.color: AppTheme.borderDivider
+                border.width: 1
+                Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
+
+                Row {
+                    id: githubRow
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.margins: AppTheme.spaceM
+                    spacing: AppTheme.spaceM
+
+                    Rectangle {
+                        width: 128
+                        height: 128
+                        color: "#FFFFFF"
+                        radius: AppTheme.radiusSmall
+                        border.color: AppTheme.borderDivider
+                        border.width: 1
+
+                        Image {
+                            anchors.fill: parent
+                            anchors.margins: 8
+                            source: "../icons/github_qr.png"
+                            fillMode: Image.PreserveAspectFit
+                            smooth: true
+                            mipmap: true
+                            asynchronous: true
+                        }
+                    }
+
+                    Column {
+                        width: parent.width - 128 - AppTheme.spaceM
+                        spacing: AppTheme.spaceXS
+                        y: (parent.height - height) / 2
+
+                        Text {
+                            width: parent.width
+                            text: "Скачать актуальную версию"
+                            color: AppTheme.accentBrand
+                            font.family: AppTheme.fontFamily
+                            font.pixelSize: AppTheme.sizeBodyLarge
+                            font.weight: AppTheme.weightBold
+                            wrapMode: Text.WordWrap
+                        }
+                        Text {
+                            width: parent.width
+                            text: "Актуальную версию программы всегда можно скачать по ссылке на GitHub."
+                            color: AppTheme.textSecondary
+                            font.family: AppTheme.fontFamily
+                            font.pixelSize: AppTheme.sizeBody
+                            wrapMode: Text.WordWrap
+                        }
+                        Text {
+                            width: parent.width
+                            text: "github.com/doc789982-design/OverTimeApp/releases"
+                            color: AppTheme.accentBrand
+                            font.family: AppTheme.fontFamily
+                            font.pixelSize: AppTheme.sizeSmall
+                            font.weight: AppTheme.weightMedium
+                            wrapMode: Text.WrapAnywhere
+                        }
+                    }
+                }
+
+                MouseArea {
+                    id: githubHov
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    hoverEnabled: true
+                    onClicked: Qt.openUrlExternally(root.githubUrl)
+                }
             }
         }
 
