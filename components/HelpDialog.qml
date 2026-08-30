@@ -7,7 +7,7 @@ AppSidePanel {
     width: 550 // Сделали чуть шире для комфортного чтения
     title: "О программе и справка"
 
-    readonly property string githubUrl: "https://github.com/doc789982-design/OverTimeApp/releases/latest"
+    readonly property string githubUrl: "https://github.com/doc789982-design/OverTimeApp/releases"
 
     // Человекочитаемое описание действия горячей клавиши.
     // Если пользователь дал имени название — показываем его, иначе собираем сами.
@@ -121,7 +121,7 @@ AppSidePanel {
                     }
                     Text {
                         width: parent.width
-                        text: "github.com/doc789982-design/OverTimeApp"
+                        text: "github.com/doc789982-design/OverTimeApp/releases"
                         color: AppTheme.accentBrand
                         font.family: AppTheme.fontFamily
                         font.pixelSize: AppTheme.sizeSmall
