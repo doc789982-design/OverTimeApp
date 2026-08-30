@@ -89,7 +89,7 @@ AppSidePanel {
                     Image {
                         anchors.fill: parent
                         anchors.margins: 8
-                        source: "../icons/github_qr.svg"
+                        source: "../icons/github_qr.png"
                         fillMode: Image.PreserveAspectFit
                         smooth: true
                         mipmap: false
