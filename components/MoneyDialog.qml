@@ -20,6 +20,7 @@ AppDialog {
         root.activeComps = []
         moneyOrderInput.text = ""
         moneyCommentInput.text = ""
+        moneyErrorMsg.visible = false
         moneyDateInput.selectedDate = new Date().toISOString().split('T')[0]
         root.showAt(callerItem, mouseX, mouseY)
     }
@@ -29,6 +30,7 @@ AppDialog {
         root.activeComps = [{ unit: compData.unit, label: compData.type, amount: compData.raw_amount }]
         moneyOrderInput.text = compData.order_no
         moneyCommentInput.text = compData.comment
+        moneyErrorMsg.visible = false
         moneyDateInput.selectedDate = compData.date.split(".").reverse().join("-")
         root.showAt(callerItem, mouseX, mouseY)
     }
@@ -124,22 +126,35 @@ AppDialog {
         placeholderText: "Например: Оплата за Рождество" 
     }
 
+    // Ошибка в окне (а не тост): обязательные поля, пустой список выплат
+    Text {
+        id: moneyErrorMsg
+        visible: false
+        width: parent.width
+        color: AppTheme.accentDanger
+        font.family: AppTheme.fontFamily
+        font.pixelSize: AppTheme.sizeSmall
+        wrapMode: Text.WordWrap
+    }
+
     // ==========================================
     // 3. СОХРАНЕНИЕ
     // ==========================================
     onAccepted: {
-        // ---> ВСТАВИТЬ ЗАЩИТУ СЮДА <---
         if (moneyOrderInput.text.trim() === "" || !moneyDateInput.selectedDate) {
+            moneyErrorMsg.text = "Ошибка: Укажите дату и номер приказа"
+            moneyErrorMsg.visible = true
             root.shake()
-            backend.showToast("Ошибка: Укажите дату и номер приказа", "error")
             return
         }
 
         if (root.activeComps.length === 0) {
+            moneyErrorMsg.text = "Ошибка: Добавьте хотя бы одну выплату"
+            moneyErrorMsg.visible = true
             root.shake()
-            backend.showToast("Ошибка: Добавьте хотя бы одну выплату", "error")
             return
         }
+        moneyErrorMsg.visible = false
         // ------------------------------
 
         if (root.editCompId > 0) {
@@ -242,6 +257,8 @@ AppDialog {
         onAccepted: {
             let val = parseInt(amtInput.text)
             if (isNaN(val) || val <= 0) {
+                errorMsg.text = "Ошибка: Укажите количество"
+                errorMsg.visible = true
                 compEditDialog.shake()
                 return
             }

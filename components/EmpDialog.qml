@@ -25,6 +25,8 @@ AppDialog {
     title: root.editId === 0 ? "Новый сотрудник" : "Редактирование"
     acceptText: "Сохранить"
 
+    onAboutToShow: empErrorMsg.visible = false
+
     Column {
         width: parent.width
         spacing: AppTheme.spaceM
@@ -166,14 +168,27 @@ AppDialog {
                 visible: root.balanceYear === 1
             }
         }
+
+        // Ошибка в окне (а не тост): обязательные поля
+        Text {
+            id: empErrorMsg
+            visible: false
+            width: parent.width
+            color: AppTheme.accentDanger
+            font.family: AppTheme.fontFamily
+            font.pixelSize: AppTheme.sizeSmall
+            wrapMode: Text.WordWrap
+        }
     }
 
     onAccepted: {
         if (empLastName.text.trim() === "" || empFirstName.text.trim() === "") {
+            empErrorMsg.text = "Ошибка: Заполните обязательные поля (фамилия и имя)"
+            empErrorMsg.visible = true
             root.shake()
-            backend.showToast("Ошибка: Заполните обязательные поля!", "error")
             return
         }
+        empErrorMsg.visible = false
 
         let cur_mins = parseInt(empOpenHours.text || "0") * 60
         let cur_over = parseInt(empOpenOvertime.text || "0") * 60

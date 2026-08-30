@@ -124,7 +124,12 @@ Item {
                         text: "Добавить"
                         variant: "primary"
                         onClicked: {
-                            if (hotkeyPageRoot.capturedKey === "") { backend.showToast("Укажите клавишу!", "error"); return; }
+                            if (hotkeyPageRoot.capturedKey === "") {
+                                hkErrorMsg.text = "Сначала нажмите клавишу или сочетание в поле «Нажмите клавишу...»"
+                                hkErrorMsg.visible = true
+                                return;
+                            }
+                            hkErrorMsg.visible = false;
                             
                             let newAction = { 
                                 "key": hotkeyPageRoot.capturedKey,
@@ -168,6 +173,17 @@ Item {
                             hotkeyPageRoot.activeBreaks = [];
                         }
                     }
+                }
+
+                // Ошибка в окне (а не тост): не нажата клавиша
+                Text {
+                    id: hkErrorMsg
+                    visible: false
+                    Layout.fillWidth: true
+                    color: AppTheme.accentDanger
+                    font.family: AppTheme.fontFamily
+                    font.pixelSize: AppTheme.sizeSmall
+                    wrapMode: Text.WordWrap
                 }
 
                 // НИЖНЯЯ СТРОКА: ДИНАМИЧЕСКИЕ НАСТРОЙКИ

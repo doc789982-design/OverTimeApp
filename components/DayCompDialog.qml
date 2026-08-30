@@ -134,6 +134,10 @@ AppDialog {
                 model: backend.isSelectedEmployeeShift
                     ? ["Ночные часы", "Сверх нормы", "Дни"]
                     : ["Ночные часы", "Дни"]
+                onCurrentIndexChanged: {
+                    singleErrorMsg.visible = false
+                    compCol.validateSingleBalance()
+                }
             }
 
             // Барабан с временем — для Ночных и Сверх нормы
@@ -161,6 +165,25 @@ AppDialog {
                     id: compTumbler
                     hours: 8
                     minutes: 0
+                    onHoursChanged: {
+                        singleErrorMsg.visible = false
+                        compCol.validateSingleBalance()
+                    }
+                    onMinutesChanged: {
+                        singleErrorMsg.visible = false
+                        compCol.validateSingleBalance()
+                    }
+                }
+
+                // Ошибка проверки остатков для режима «Этот день»
+                Text {
+                    id: singleErrorMsg
+                    visible: false
+                    width: parent.width
+                    color: AppTheme.accentDanger
+                    font.family: AppTheme.fontFamily
+                    font.pixelSize: AppTheme.sizeSmall
+                    wrapMode: Text.WordWrap
                 }
             }
         }
@@ -320,7 +343,10 @@ AppDialog {
             id: compPrevYearCheck
             text: "В счет прошлого года"
             width: parent.width
-            onCheckedChanged: compCol.validateBalances()
+            onCheckedChanged: {
+                compCol.validateBalances()
+                compCol.validateSingleBalance()
+            }
         }
 
         AppTextField {
@@ -328,6 +354,17 @@ AppDialog {
             width: parent.width
             label: "Комментарий:"
             placeholderText: "Например: За работу в праздник"
+        }
+
+        // Общая ошибка в окне (а не тост): пустой период, сбой сохранения и т.п.
+        Text {
+            id: compErrorMsg
+            visible: false
+            width: parent.width
+            color: AppTheme.accentDanger
+            font.family: AppTheme.fontFamily
+            font.pixelSize: AppTheme.sizeSmall
+            wrapMode: Text.WordWrap
         }
 
         // ==========================================
@@ -465,6 +502,47 @@ AppDialog {
             }
         }
 
+        // Проверка остатков для режима «Этот день»: ночные/сверх нормы часы и дни.
+        // Показывает ошибку прямо в окне (как в денежной выплате), а не тост.
+        function validateSingleBalance() {
+            if (compCol.compMode !== 0) {
+                singleErrorMsg.visible = false
+                return
+            }
+
+            let unit = compCol.resolveCompUnit()
+            let selectedYear = parseInt(root.targetDate.split('-')[0]) || new Date().getFullYear()
+            let checkYear = compPrevYearCheck.checked ? selectedYear - 1 : selectedYear
+            let balances = backend.getAvailableBalances(checkYear)
+            let yearLabel = compPrevYearCheck.checked ? "прошлого года" : "текущего года"
+
+            if (unit === "days") {
+                let requested = 1
+                let maxAllowed = balances["days"] || 0
+                if (requested > maxAllowed) {
+                    singleErrorMsg.text = "Не хватает остатков " + yearLabel + "! Доступно дней отгула: " + maxAllowed + "."
+                    singleErrorMsg.visible = true
+                } else {
+                    singleErrorMsg.visible = false
+                }
+                return
+            }
+
+            // hours / overtime — сравниваем минуты
+            let requestedMin = compTumbler.hours * 60 + compTumbler.minutes
+            let availableMin = (balances[unit] || 0) * 60
+            let label = unit === "overtime" ? "сверх нормы" : "ночных"
+            if (requestedMin > availableMin) {
+                let availH = Math.floor(availableMin / 60)
+                let availM = availableMin % 60
+                singleErrorMsg.text = "Не хватает остатков " + yearLabel + "! Доступно " + label +
+                    ": " + availH + " ч." + (availM > 0 ? " " + availM + " мин." : "") + "."
+                singleErrorMsg.visible = true
+            } else {
+                singleErrorMsg.visible = false
+            }
+        }
+
         // Вспомогательная функция — определяет unit для сохранения
         function resolveCompUnit() {
             if (backend.isSelectedEmployeeShift) {
@@ -487,6 +565,9 @@ AppDialog {
         root.targetDate = dateStr
         root.editCompId = 0
         compCol.compMode = 0
+        singleErrorMsg.visible = false
+        compErrorMsg.visible = false
+        periodErrorMsg.visible = false
         compCol.patternConfidence = -1
         periodUseShiftPattern.checked = false
         // Сбрасываем на первый пункт
@@ -517,6 +598,9 @@ AppDialog {
         root.editCompId = compData.id
 
         compCol.compMode = 0
+        singleErrorMsg.visible = false
+        compErrorMsg.visible = false
+        periodErrorMsg.visible = false
         compCol.patternConfidence = -1
         periodUseShiftPattern.checked = false
         compPrevYearCheck.checked = false
@@ -552,6 +636,15 @@ AppDialog {
             if (compCol.compMode === 1 && periodErrorMsg.visible) {
                 root.shake()
                 return
+            }
+
+            // Режим «Этот день»: проверяем остатки прямо в окне (а не тостом)
+            if (compCol.compMode === 0) {
+                compCol.validateSingleBalance()
+                if (singleErrorMsg.visible) {
+                    root.shake()
+                    return
+                }
             }
 
             let finalDates = []
@@ -598,10 +691,12 @@ AppDialog {
             }
 
             if (finalDates.length === 0) {
+                compErrorMsg.text = "Ошибка: Нет дней в периоде"
+                compErrorMsg.visible = true
                 root.shake()
-                backend.showToast("Ошибка: Нет дней в периоде", "error")
                 return
             }
+            compErrorMsg.visible = false
 
             let commentTxt = compCommentInput.text || ""
 
@@ -620,7 +715,9 @@ AppDialog {
             root.close()
 
         } catch(e) {
-            backend.showToast("Ошибка: " + e.message, "error")
+            compErrorMsg.text = "Ошибка: " + e.message
+            compErrorMsg.visible = true
+            root.shake()
         }
     }
 }

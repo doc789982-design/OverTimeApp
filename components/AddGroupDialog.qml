@@ -12,6 +12,7 @@ AppDialog {
         grpNameInput.text = ""
         grpShiftCheck.checked = false
         grpShiftedCheck.checked = false
+        grpErrorMsg.visible = false
     }
 
     AppTextField {
@@ -45,12 +46,25 @@ AppDialog {
         }
     }
 
+    // Ошибка в окне (а не тост)
+    Text {
+        id: grpErrorMsg
+        visible: false
+        width: parent.width
+        color: AppTheme.accentDanger
+        font.family: AppTheme.fontFamily
+        font.pixelSize: AppTheme.sizeSmall
+        wrapMode: Text.WordWrap
+    }
+
     onAccepted: {
         if (grpNameInput.text.trim() === "") {
+            grpErrorMsg.text = "Ошибка: Введите название группы"
+            grpErrorMsg.visible = true
             root.shake()
-            backend.showToast("Ошибка: Введите название группы", "error")
             return
         }
+        grpErrorMsg.visible = false
 
         backend.createGroup(grpNameInput.text, grpShiftCheck.checked, grpShiftedCheck.checked)
         grpNameInput.text = ""

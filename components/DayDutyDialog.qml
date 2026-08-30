@@ -113,6 +113,17 @@ AppDialog {
             label: "Комментарий:"
             placeholderText: "Необязательно..."
         }
+
+        // Ошибка в окне (а не тост): пересечение с другим дежурством, сбой сохранения и т.п.
+        Text {
+            id: dutyErrorMsg
+            visible: false
+            width: parent.width
+            color: AppTheme.accentDanger
+            font.family: AppTheme.fontFamily
+            font.pixelSize: AppTheme.sizeSmall
+            wrapMode: Text.WordWrap
+        }
     }
 
     // ==========================================
@@ -123,6 +134,7 @@ AppDialog {
         root.targetDate = dateStr
         root.editDutyId = 0
         dutyCommentInput.text = ""
+        dutyErrorMsg.visible = false
         root.activeBreaks = []
     }
 
@@ -143,6 +155,7 @@ AppDialog {
     function openForDutyEdit(dutyData, dateStr, callerItem, mouseX, mouseY) {
         root.targetDate = dateStr
         root.editDutyId = dutyData.id
+        dutyErrorMsg.visible = false
 
         let sParts = dutyData.start.split(":")
         dutyTimeInput.startMinutes = parseInt(sParts[0]) * 60 + parseInt(sParts[1])
@@ -196,7 +209,9 @@ AppDialog {
             root.close()
 
         } catch(e) {
-            backend.showToast("Ошибка: " + e.message, "error")
+            dutyErrorMsg.text = "Ошибка: " + e.message
+            dutyErrorMsg.visible = true
+            root.shake()
         }
     }
 
