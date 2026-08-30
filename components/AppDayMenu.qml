@@ -22,6 +22,10 @@ Menu {
     leftPadding: AppTheme.spaceXXS
     rightPadding: AppTheme.spaceXXS
 
+    // Фиксированная ширина меню (как у старых меню дня): пункты и шапка
+    // выравниваются по ней, а не по авто-размеру содержимого.
+    width: 240
+
     // Параметры для открывающего дня
     property string targetDate: ""
     property bool menuIsWeekend: false
@@ -43,6 +47,7 @@ Menu {
     }
 
     background: Rectangle {
+        implicitWidth: 240
         color: AppTheme.bgElevated
         radius: AppTheme.radiusMedium
         border.color: AppTheme.borderDivider
