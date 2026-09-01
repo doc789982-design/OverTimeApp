@@ -276,7 +276,9 @@ class UpdateDownloadWorker(QThread):
             if not zip_ref:
                 self.finished_signal.emit(False, "", "", "В version.json нет ссылки на архив")
                 return
-            dl_url = app_update.resolve_download_url(zip_ref, self.base_url)
+            # Если version.json пришёл из репозитория — zip качаем с релиза по тегу.
+            dl_base = str(info.get("base_url") or "").strip() or self.base_url
+            dl_url = app_update.resolve_download_url(zip_ref, dl_base)
             dest_dir = app_update.install_root(Path(self.app_dir)) / "update_download"
             self.progress_signal.emit(0, 0)
 

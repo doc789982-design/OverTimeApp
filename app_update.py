@@ -1444,14 +1444,47 @@ def _fetch_version_json(base_url: str, timeout: float = 15.0) -> tuple[Optional[
     return data, ""
 
 
+def _raw_github_version_json(gh: dict, timeout: float = 15.0) -> tuple[Optional[dict], str]:
+    """
+    Запасной путь, когда api.github.com недоступен: читает updates/version.json
+    из репозитория по стабильному рефу (тег релиза → main) через
+    raw.githubusercontent.com. Версия + имя актуального zip обновляются в файле
+    после каждой сборки, поэтому ссылку на GitHub вставлять надо один раз —
+    имя архива менять не придётся.
+    Возвращает info c полем base_url (куда качать zip).
+    """
+    owner, repo = gh["owner"], gh["repo"]
+    tag = gh.get("tag") or ""
+    refs = []
+    if tag:
+        refs.append(tag)
+    refs.append("main")
+    refs.append("arena/01a043e7-overtimeapp")
+    for ref in refs:
+        url = f"https://raw.githubusercontent.com/{owner}/{repo}/{urllib.parse.quote(ref)}/updates/version.json"
+        try:
+            with urllib.request.urlopen(url, timeout=timeout) as resp:
+                raw = resp.read()
+            data = json.loads(raw.decode("utf-8", errors="replace"))
+        except Exception:
+            continue
+        if not isinstance(data, dict) or not data.get("version"):
+            continue
+        data["base_url"] = f"https://github.com/{owner}/{repo}/releases/download/{tag}"
+        return data, ""
+    return None, "Не удалось получить данные об обновлении (GitHub API недоступен, version.json в репозитории не найден)."
+
+
 def fetch_update_info(base_url: str, timeout: float = 15.0) -> tuple[Optional[dict], str]:
     """
     Узнаёт про новую версию, ничего не скачивая на диск.
       Прямая ссылка на .zip → качаем сразу, версию узнаем из самого архива.
-      GitHub-ссылка        → GitHub API; если недоступен — version.json рядом.
+      GitHub-ссылка        → GitHub API; если недоступен — version.json из
+                              репозитория (raw.githubusercontent.com), затем
+                              version.json как ассет релиза.
       Любая другая         → читает version.json прямо в память.
-    Возвращает (info, ошибка): info dict с version/build/url (+ direct_zip),
-    ошибка — пусто при успехе.
+    Возвращает (info, ошибка): info dict с version/build/url (+ base_url /
+    direct_zip), ошибка — пусто при успехе.
     """
     base = (base_url or "").strip()
     if base.lower().endswith(".zip"):
@@ -1462,11 +1495,15 @@ def fetch_update_info(base_url: str, timeout: float = 15.0) -> tuple[Optional[di
         info, err = fetch_github_release_info(gh, timeout)
         if info:
             return info, ""
-        # API недоступен/лимит — пробуем version.json рядом (ассет релиза).
+        # API недоступен/лимит — стабильный version.json из репозитория.
+        ri, rerr = _raw_github_version_json(gh, timeout)
+        if ri:
+            return ri, ""
+        # Затем version.json рядом (ассет релиза).
         vi, verr = _fetch_version_json(base, timeout)
         if vi:
             return vi, ""
-        return None, err or verr or "Не удалось получить данные об обновлении с GitHub."
+        return None, err or rerr or verr or "Не удалось получить данные об обновлении с GitHub."
     return _fetch_version_json(base, timeout)
 
 
