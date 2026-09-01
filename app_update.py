@@ -39,6 +39,18 @@ META_NAME = "UPDATE_META.json"
 VERSION_JSON = "version.json"
 THEME_REL = Path("components") / "AppTheme.qml"
 
+# Постоянный адрес хранилища обновлений.
+# Сейчас адрес вводится в настройках и хранится в config.json (сохраняется
+# между запусками и при обновлении программы). Если в будущем захотим убрать
+# поле из настроек — достаточно вписать сюда постоянную ссылку, и она станет
+# адресом по умолчанию для всех. Механизм читает её через resolve_update_url.
+DEFAULT_UPDATE_URL = ""
+
+
+def resolve_update_url(stored_url: str = "") -> str:
+    """Адрес хранилища: введённый в настройках, а если пусто — постоянный."""
+    return (stored_url or "").strip() or DEFAULT_UPDATE_URL
+
 VERSION_RE = re.compile(r'appVersion:\s*"([^"]+)"')
 
 # Эти папки/файлы никогда не переезжают из новой коробки поверх старой.

@@ -133,6 +133,8 @@ ApplicationWindow {
                     anchors.top: parent.top
                     anchors.bottom: parent.bottom
 
+                    UpdateDownloadButton { }
+
                     Rectangle {
                         width: 46
                         height: parent.height

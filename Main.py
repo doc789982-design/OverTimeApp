@@ -244,15 +244,13 @@ class UpdateScanWorker(QThread):
             self.finished_signal.emit(None)
 
 
-class UpdateDownloadWorker(QThread):
-    """Проверяет version.json на веб-хранилище и качает zip новой версии."""
-    finished_signal = Signal(bool, str, str, str)  # ok, local_zip_path, version, message
-    progress_signal = Signal(int, int)              # done_bytes, total_bytes (0 = неизвестно)
+class RemoteCheckWorker(QThread):
+    """Только узнаёт, есть ли новая версия на хранилище (ничего не качает)."""
+    finished_signal = Signal(object, str)  # info (или None), error
 
-    def __init__(self, base_url, app_dir, current_version, current_build=0):
+    def __init__(self, base_url, current_version, current_build=0):
         super().__init__()
         self.base_url = (base_url or "").strip()
-        self.app_dir = app_dir
         self.current_version = current_version or ""
         self.current_build = int(current_build or 0)
 
@@ -260,24 +258,42 @@ class UpdateDownloadWorker(QThread):
         try:
             info, err = app_update.fetch_update_info(self.base_url)
             if not info:
-                self.finished_signal.emit(False, "", "", err or "Не удалось получить данные об обновлении с сервера")
+                self.finished_signal.emit(None, err or "Не удалось получить данные об обновлении с сервера")
                 return
             direct_zip = bool(info.get("direct_zip"))
             ver = str(info.get("version") or "").strip()
             bld = int(info.get("build") or 0)
             if not direct_zip:
                 if not ver:
-                    self.finished_signal.emit(False, "", "", "На сервере не указан номер версии")
+                    self.finished_signal.emit(None, "На сервере не указан номер версии")
                     return
                 if not app_update.is_newer(ver, self.current_version, bld, self.current_build):
-                    self.finished_signal.emit(False, "", "", "У вас уже последняя версия")
+                    # Версия не новее — обновления нет. Это не ошибка.
+                    self.finished_signal.emit(None, "")
                     return
-            zip_ref = str(info.get("url") or info.get("zip") or "").strip()
+            self.finished_signal.emit(info, "")
+        except Exception as e:
+            self.finished_signal.emit(None, str(e))
+
+
+class RemoteDownloadWorker(QThread):
+    """Качает zip по уже известной ссылке (info получена при проверке)."""
+    finished_signal = Signal(bool, str, str)  # ok, local_zip_path, message
+    progress_signal = Signal(int, int)          # done_bytes, total_bytes
+
+    def __init__(self, base_url, info, app_dir):
+        super().__init__()
+        self.base_url = (base_url or "").strip()
+        self.info = info or {}
+        self.app_dir = app_dir
+
+    def run(self):
+        try:
+            zip_ref = str(self.info.get("url") or self.info.get("zip") or "").strip()
             if not zip_ref:
-                self.finished_signal.emit(False, "", "", "В version.json нет ссылки на архив")
+                self.finished_signal.emit(False, "", "В version.json нет ссылки на архив")
                 return
-            # Если version.json пришёл из репозитория — zip качаем с релиза по тегу.
-            dl_base = str(info.get("base_url") or "").strip() or self.base_url
+            dl_base = str(self.info.get("base_url") or "").strip() or self.base_url
             dl_url = app_update.resolve_download_url(zip_ref, dl_base)
             dest_dir = app_update.install_root(Path(self.app_dir)) / "update_download"
             self.progress_signal.emit(0, 0)
@@ -288,12 +304,13 @@ class UpdateDownloadWorker(QThread):
             local_zip = app_update.download_zip(
                 dl_url,
                 dest_dir,
-                sha256=str(info.get("sha256") or "").strip(),
+                sha256=str(self.info.get("sha256") or "").strip(),
                 progress=_prog,
             )
-            self.finished_signal.emit(True, str(local_zip), ver, "")
+            self.finished_signal.emit(True, str(local_zip), "")
         except Exception as e:
-            self.finished_signal.emit(False, "", "", str(e))
+            self.finished_signal.emit(False, "", str(e))
+
 
 # ====================================================
 
@@ -330,6 +347,9 @@ class Backend(QObject):
     updateUrlChanged = Signal()
     appVersionChanged = Signal()
     whatsNewChanged = Signal()
+    remoteUpdateAvailableChanged = Signal()   # есть ли новая версия на сайте
+    remoteDownloadingChanged = Signal()       # идёт ли скачивание
+    remoteDownloadProgressChanged = Signal()  # прогресс скачивания (0..100)
 
     def __init__(self, start_hidden=False):
         super().__init__()
@@ -390,6 +410,10 @@ class Backend(QObject):
         self._remote_check_notify = False
         self._background_auto = False   # фоновая авто-проверка: всё тихо, без тостов
         self._staging_silent = False
+        self._remote_update_available = False   # на сайте есть более новая версия
+        self._remote_downloading = False        # идёт скачивание
+        self._remote_download_progress = 0      # 0..100
+        self._remote_info = None                # данные о доступном обновлении
         self._whats_new = []
         self._scan_running = False
         self._app_version = app_update.current_app_version(self.app_dir)
@@ -3268,7 +3292,19 @@ class Backend(QObject):
 
     @Property(str, notify=updateUrlChanged)
     def updateUrl(self):
-        return self._update_url or ""
+        return app_update.resolve_update_url(self._update_url)
+
+    @Property(bool, notify=remoteUpdateAvailableChanged)
+    def remoteUpdateAvailable(self):
+        return self._remote_update_available
+
+    @Property(bool, notify=remoteDownloadingChanged)
+    def remoteDownloading(self):
+        return self._remote_downloading
+
+    @Property(int, notify=remoteDownloadProgressChanged)
+    def remoteDownloadProgress(self):
+        return self._remote_download_progress
 
     @Slot(str)
     def setUpdateUrl(self, url):
@@ -3359,52 +3395,87 @@ class Backend(QObject):
 
     @Slot()
     def checkForRemoteUpdate(self):
-        """Кнопка «Проверить обновления» в настройках: сеть + уведомление о результате."""
-        self._check_remote_update(notify=True)
+        """Кнопка «Проверить обновления» в настройках: проверить наличие + уведомить."""
+        self._check_remote_available(notify=True)
 
-    def _check_remote_update(self, notify: bool):
-        """Проверяет version.json на веб-хранилище; при наличии новой версии качает zip."""
-        if not self._update_url:
+    def _check_remote_available(self, notify: bool):
+        """Спрашивает сайт, есть ли новая версия. Ничего не качает."""
+        base_url = app_update.resolve_update_url(self._update_url)
+        if not base_url:
             if notify:
                 self.showToast.emit("Сначала укажите адрес хранилища обновлений в настройках", "error")
             return
-        if self._update_busy or self._scan_running:
+        if self._remote_downloading or self._scan_running:
             return
         self._remote_check_notify = notify
-        self._background_auto = not notify
-        self._set_update_busy(True, "Проверяем обновления в интернете…")
-        self._download_thread = UpdateDownloadWorker(
-            self._update_url, str(self.app_dir), self._app_version, self._app_build
-        )
-        self._download_thread.finished_signal.connect(self._on_remote_update_done)
-        self._download_thread.progress_signal.connect(self._on_remote_update_progress)
+        self._remote_check_thread = RemoteCheckWorker(base_url, self._app_version, self._app_build)
+        self._remote_check_thread.finished_signal.connect(self._on_remote_check_done)
+        self._remote_check_thread.start()
+
+    def _on_remote_check_done(self, info, error):
+        notify = self._remote_check_notify
+        self._remote_check_notify = False
+        if info:
+            self._remote_info = info
+            if not self._remote_update_available:
+                self._remote_update_available = True
+                self.remoteUpdateAvailableChanged.emit()
+            if notify:
+                label = self._version_label(
+                    info.get("display") or info.get("version") or "",
+                    int(info.get("build") or 0),
+                )
+                self.showToast.emit(f"Доступна новая версия: {label}", "success")
+            return
+        # Обновления нет (или ошибка).
+        self._remote_info = None
+        if self._remote_update_available:
+            self._remote_update_available = False
+            self.remoteUpdateAvailableChanged.emit()
+        if notify and error:
+            self.showToast.emit(f"Не удалось проверить обновления: {error}", "error")
+        elif notify:
+            self.showToast.emit("У вас уже установлена последняя версия", "success")
+
+    @Slot()
+    def startRemoteDownload(self):
+        """Кнопка загрузки в шапке: скачать обновление, которое уже обнаружено."""
+        base_url = app_update.resolve_update_url(self._update_url)
+        if not base_url or not self._remote_info or self._remote_downloading:
+            return
+        self._remote_downloading = True
+        self._remote_download_progress = 0
+        self.remoteDownloadingChanged.emit()
+        self.remoteDownloadProgressChanged.emit()
+        self._download_thread = RemoteDownloadWorker(base_url, self._remote_info, str(self.app_dir))
+        self._download_thread.finished_signal.connect(self._on_remote_download_done)
+        self._download_thread.progress_signal.connect(self._on_remote_download_progress)
         self._download_thread.start()
 
-    def _on_remote_update_progress(self, done, total):
-        if not self._update_busy:
+    def _on_remote_download_progress(self, done, total):
+        if not self._remote_downloading:
             return
+        pct = int((done * 100) / total) if total > 0 else 0
+        self._remote_download_progress = max(0, min(100, pct))
+        self.remoteDownloadProgressChanged.emit()
         if total > 0:
-            pct = int((done * 100) / total) if total else 0
             self._update_status = f"Скачиваем обновление… {pct}%"
         else:
             self._update_status = "Скачиваем обновление…"
         self.updateStatusTextChanged.emit()
 
-    def _on_remote_update_done(self, ok, zip_path, version, message):
-        self._set_update_busy(False, "")
-        notify = self._remote_check_notify
-        self._remote_check_notify = False
+    def _on_remote_download_done(self, ok, zip_path, message):
+        self._remote_downloading = False
+        self.remoteDownloadingChanged.emit()
         if ok and zip_path:
+            self._background_auto = False
             self.prepareUpdateFromPath(zip_path)
-            self._background_auto = False  # фоновая проверка закончилась — сброс
+            # После подготовки обновление «готово» — кнопка в шапке покажет статус.
             return
-        self._background_auto = False
-        # Фоновая авто-проверка — молчим, ничего не показываем.
-        if notify and message:
-            if message == "У вас уже последняя версия":
-                self.showToast.emit("У вас уже установлена последняя версия", "success")
-            else:
-                self.showToast.emit(f"Не удалось проверить обновления: {message}", "error")
+        if message:
+            self.showToast.emit(f"Не удалось скачать обновление: {message}", "error")
+        else:
+            self.showToast.emit("Не удалось скачать обновление", "error")
 
     @Slot()
     def scanForUpdates(self):
@@ -3440,9 +3511,10 @@ class Backend(QObject):
         if self._update_busy:
             return
         if not found:
-            # Локально ничего нет — пробуем веб-хранилище (тихо, без уведомлений).
-            if self._update_url and not self._update_busy and not self._scan_running:
-                self._check_remote_update(notify=False)
+            # Локально ничего нет — спрашиваем веб-хранилище, есть ли новая версия.
+            # Только проверка (ничего не качаем): кнопка загрузки появится в шапке.
+            if app_update.resolve_update_url(self._update_url) and not self._remote_downloading and not self._scan_running:
+                self._check_remote_available(notify=False)
             return
         dismissed = self._dismissed_update_version()
         label = self._version_label(
