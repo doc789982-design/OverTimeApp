@@ -23,20 +23,6 @@ ApplicationWindow {
     color: AppUI.AppTheme.bgBase
     flags: Qt.Window | Qt.FramelessWindowHint
 
-    // Тосты кладём в Overlay — слой, который Qt рисует ВЫШЕ всех модальных
-    // окон (настройки, печать и т.п.). Поэтому уведомления всегда всплывают
-    // поверх открытого окна, а не за ним. Одно окно, без отдельных native-окон.
-    Overlay.overlay: Item {
-        anchors.fill: parent
-        AppUI.ToastHost {
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.bottom: parent.bottom
-            anchors.bottomMargin: AppUI.AppTheme.spaceS
-            z: 10000
-        }
-    }
-
     property Item activeSpotlightCell: null
 
     // Колбэк для диалога подтверждения (хранится, пока пользователь думает)
@@ -646,6 +632,7 @@ ApplicationWindow {
                     anchors.right: parent.right
                     anchors.bottom: parent.bottom
                     anchors.bottomMargin: AppUI.AppTheme.spaceS
+                    AppUI.ToastHost { width: parent.width }
                     AppUI.UpdateBanner { width: parent.width }
                 }
             }
@@ -727,6 +714,7 @@ ApplicationWindow {
                         anchors.right: parent.right
                         anchors.bottom: parent.bottom
                         z: AppUI.AppTheme.zSticky
+                        AppUI.ToastHost { width: parent.width }
                         AppUI.UpdateBanner { width: parent.width }
                         AppUI.LeftControlPanel { width: parent.width }
                     }
