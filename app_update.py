@@ -23,6 +23,8 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.error
+import urllib.parse
 import urllib.request
 import zipfile
 import zlib
@@ -1351,26 +1353,29 @@ def _update_info_url(base_url: str) -> str:
 
 def parse_github_release_url(url: str) -> Optional[dict]:
     """
-    Понял ли это GitHub-релиз:
-      github.com/<owner>/<repo>/releases/latest
+    Понял ли это GitHub-ссылка на релиз:
+      github.com/<owner>/<repo>                          → latest
+      github.com/<owner>/<repo>/releases                 → latest
+      github.com/<owner>/<repo>/releases/latest          → latest
       github.com/<owner>/<repo>/releases/tag/<tag>
       github.com/<owner>/<repo>/releases/download/<tag>[/<asset>]
-    Возвращает {"owner","repo","tag"} (tag может быть "") или None.
+    Возвращает {"owner","repo","tag"} (tag "" = latest) или None.
     """
     u = (url or "").strip().rstrip("/")
-    m = re.match(r"^https?://github\.com/([^/]+)/([^/]+)/releases/(.*)$", u, re.IGNORECASE)
-    if not m:
+    m = re.match(r"^https?://github\.com/([^/]+)/([^/]+)(/releases)?(?:/(.*))?$", u, re.IGNORECASE)
+    if m:
+        owner, repo = m.group(1), m.group(2)
+        rest = (m.group(4) or "").strip().rstrip("/")
+        if not rest or rest == "latest":
+            return {"owner": owner, "repo": repo, "tag": ""}
+        if rest.startswith("tag/"):
+            tag = rest[4:].split("/")[0].strip()
+            return {"owner": owner, "repo": repo, "tag": tag} if tag else None
+        if rest.startswith("download/"):
+            parts = rest.split("/")
+            tag = parts[1].strip() if len(parts) > 1 else ""
+            return {"owner": owner, "repo": repo, "tag": tag} if tag else None
         return None
-    owner, repo, rest = m.group(1), m.group(2), (m.group(3) or "")
-    if rest == "latest":
-        return {"owner": owner, "repo": repo, "tag": ""}
-    if rest.startswith("tag/"):
-        tag = rest[4:].split("/")[0].strip()
-        return {"owner": owner, "repo": repo, "tag": tag} if tag else None
-    if rest.startswith("download/"):
-        parts = rest.split("/")
-        tag = parts[1].strip() if len(parts) > 1 else ""
-        return {"owner": owner, "repo": repo, "tag": tag} if tag else None
     return None
 
 
@@ -1380,13 +1385,13 @@ def _github_build_from_title(title: str) -> int:
     return int(m.group(1)) if m else 0
 
 
-def fetch_github_release_info(gh: dict, timeout: float = 15.0) -> Optional[dict]:
-    """Достаёт актуальную версию через GitHub API — version.json на GitHub не нужен."""
+def fetch_github_release_info(gh: dict, timeout: float = 15.0) -> tuple[Optional[dict], str]:
+    """Достаёт актуальную версию через GitHub API. Возвращает (info, ошибка)."""
     owner = gh["owner"]
     repo = gh["repo"]
     tag = gh.get("tag") or ""
     if tag:
-        api = f"https://api.github.com/repos/{owner}/{repo}/releases/tags/{tag}"
+        api = f"https://api.github.com/repos/{owner}/{repo}/releases/tags/{urllib.parse.quote(tag)}"
     else:
         api = f"https://api.github.com/repos/{owner}/{repo}/releases/latest"
     req = urllib.request.Request(
@@ -1396,15 +1401,22 @@ def fetch_github_release_info(gh: dict, timeout: float = 15.0) -> Optional[dict]
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             data = json.loads(resp.read().decode("utf-8", errors="replace"))
-    except Exception:
-        return None
+    except urllib.error.HTTPError as e:
+        code = e.code
+        if code == 403:
+            return None, "GitHub API временно ограничил запросы (лимит). Повторите позже."
+        if code == 404:
+            return None, "Такой релиз или тег на GitHub не найден."
+        return None, f"GitHub API ответил ошибкой {code}."
+    except Exception as e:
+        return None, f"Не удалось связаться с GitHub API ({e})."
     if not isinstance(data, dict):
-        return None
+        return None, "GitHub вернул некорректные данные."
     if data.get("draft"):
-        return None
+        return None, "Релиз помечен как черновик — обновление недоступно."
     tag_name = str(data.get("tag_name") or "").strip()
     if not tag_name:
-        return None
+        return None, "На GitHub не найден тег релиза."
     version = tag_name[1:] if tag_name.startswith("v") else tag_name
     build = _github_build_from_title(str(data.get("name") or ""))
     zip_url = ""
@@ -1413,34 +1425,49 @@ def fetch_github_release_info(gh: dict, timeout: float = 15.0) -> Optional[dict]
         if name.endswith(".zip"):
             zip_url = str(asset.get("browser_download_url") or "")
             break
-    if not version or not zip_url:
-        return None
-    return {"name": "OVERTIMETAB", "version": version, "build": build, "url": zip_url}
+    if not zip_url:
+        return None, "На релизе не найден zip-архив с программой."
+    return {"name": "OVERTIMETAB", "version": version, "build": build, "url": zip_url}, ""
 
 
-def _fetch_version_json(base_url: str, timeout: float = 15.0) -> Optional[dict]:
+def _fetch_version_json(base_url: str, timeout: float = 15.0) -> tuple[Optional[dict], str]:
     """Классический путь: читаем version.json с хранилища прямо в память."""
     url = _update_info_url(base_url)
     try:
         with urllib.request.urlopen(url, timeout=timeout) as resp:
             raw = resp.read()
         data = json.loads(raw.decode("utf-8", errors="replace"))
-        return data if isinstance(data, dict) else None
-    except Exception:
-        return None
+    except Exception as e:
+        return None, f"Не удалось прочитать version.json ({e})."
+    if not isinstance(data, dict):
+        return None, "version.json содержит некорректные данные."
+    return data, ""
 
 
-def fetch_update_info(base_url: str, timeout: float = 15.0) -> Optional[dict]:
+def fetch_update_info(base_url: str, timeout: float = 15.0) -> tuple[Optional[dict], str]:
     """
     Узнаёт про новую версию, ничего не скачивая на диск.
-    GitHub-ссылка  → данные через GitHub API (version.json не нужен).
-    Любая другая  → читает version.json прямо в память.
-    Возвращает dict с version/build/url (и, возможно, sha256) либо None.
+      Прямая ссылка на .zip → качаем сразу, версию узнаем из самого архива.
+      GitHub-ссылка        → GitHub API; если недоступен — version.json рядом.
+      Любая другая         → читает version.json прямо в память.
+    Возвращает (info, ошибка): info dict с version/build/url (+ direct_zip),
+    ошибка — пусто при успехе.
     """
-    gh = parse_github_release_url(base_url)
+    base = (base_url or "").strip()
+    if base.lower().endswith(".zip"):
+        # Точный архив: version/build узнаем после скачивания (describe_package).
+        return {"name": "OVERTIMETAB", "version": "", "build": 0, "url": base, "direct_zip": True}, ""
+    gh = parse_github_release_url(base)
     if gh:
-        return fetch_github_release_info(gh, timeout)
-    return _fetch_version_json(base_url, timeout)
+        info, err = fetch_github_release_info(gh, timeout)
+        if info:
+            return info, ""
+        # API недоступен/лимит — пробуем version.json рядом (ассет релиза).
+        vi, verr = _fetch_version_json(base, timeout)
+        if vi:
+            return vi, ""
+        return None, err or verr or "Не удалось получить данные об обновлении с GitHub."
+    return _fetch_version_json(base, timeout)
 
 
 

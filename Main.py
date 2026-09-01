@@ -258,18 +258,20 @@ class UpdateDownloadWorker(QThread):
 
     def run(self):
         try:
-            info = app_update.fetch_update_info(self.base_url)
+            info, err = app_update.fetch_update_info(self.base_url)
             if not info:
-                self.finished_signal.emit(False, "", "", "Не удалось получить данные об обновлении с сервера")
+                self.finished_signal.emit(False, "", "", err or "Не удалось получить данные об обновлении с сервера")
                 return
+            direct_zip = bool(info.get("direct_zip"))
             ver = str(info.get("version") or "").strip()
             bld = int(info.get("build") or 0)
-            if not ver:
-                self.finished_signal.emit(False, "", "", "На сервере не указан номер версии")
-                return
-            if not app_update.is_newer(ver, self.current_version, bld, self.current_build):
-                self.finished_signal.emit(False, "", "", "У вас уже последняя версия")
-                return
+            if not direct_zip:
+                if not ver:
+                    self.finished_signal.emit(False, "", "", "На сервере не указан номер версии")
+                    return
+                if not app_update.is_newer(ver, self.current_version, bld, self.current_build):
+                    self.finished_signal.emit(False, "", "", "У вас уже последняя версия")
+                    return
             zip_ref = str(info.get("url") or info.get("zip") or "").strip()
             if not zip_ref:
                 self.finished_signal.emit(False, "", "", "В version.json нет ссылки на архив")
