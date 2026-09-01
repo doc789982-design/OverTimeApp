@@ -632,7 +632,6 @@ ApplicationWindow {
                     anchors.right: parent.right
                     anchors.bottom: parent.bottom
                     anchors.bottomMargin: AppUI.AppTheme.spaceS
-                    AppUI.ToastHost { width: parent.width }
                     AppUI.UpdateBanner { width: parent.width }
                 }
             }
@@ -714,7 +713,6 @@ ApplicationWindow {
                         anchors.right: parent.right
                         anchors.bottom: parent.bottom
                         z: AppUI.AppTheme.zSticky
-                        AppUI.ToastHost { width: parent.width }
                         AppUI.UpdateBanner { width: parent.width }
                         AppUI.LeftControlPanel { width: parent.width }
                     }
@@ -856,6 +854,10 @@ ApplicationWindow {
     AppUI.AddGroupDialog    { id: addGroupDialog }
     AppUI.HistoryDialog     { id: historyDialog }
     AppUI.CreateDbDialog    { id: createDbDialog }
+
+    // Тосты в собственном всегда-поверх-всего окне: всплывают над любыми
+    // модальными окнами (настройки, печать и т.п.), а не за ними.
+    AppUI.ToastWindow { id: toastWindow }
 
 FileDialog { 
     id: exportDialog
