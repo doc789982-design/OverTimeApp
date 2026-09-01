@@ -908,7 +908,9 @@ FileDialog {
     }
     Timer {
         id: updateScanTimer
-        interval: 5000; running: true; repeat: true
+        // Редкая фоновая проверка. Частый опрос (5 сек) был незаметен-мигал
+        // полоской и дёргал сеть; теперь — раз в 30 минут, и только при старте.
+        interval: 1800000; running: true; repeat: true
         onTriggered: backend.scanForUpdates()
     }
     Timer {

@@ -4,9 +4,12 @@ import QtQuick.Controls.impl
 
 // Полоска «Обновить» — форма как раньше, заливка как кнопка в Telegram.
 // Крестика нет: если обновление готово, полоска остаётся, пока не нажмут.
+// Показываем ТОЛЬКО когда обновление готово (updateReady). Во время фоновой
+// проверки/скачивания (updateBusy) полоску не показываем — чтобы ничего
+// не мигало и не было видно, что программа что-то проверяет.
 Item {
     id: root
-    height: (backend.updateReady || backend.updateBusy) ? 52 : 0
+    height: backend.updateReady ? 52 : 0
     visible: height > 0
     clip: true
 

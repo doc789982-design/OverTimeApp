@@ -384,6 +384,8 @@ class Backend(QObject):
         self._update_source = ""
         self._update_url = ""
         self._remote_check_notify = False
+        self._background_auto = False   # фоновая авто-проверка: всё тихо, без тостов
+        self._staging_silent = False
         self._whats_new = []
         self._scan_running = False
         self._app_version = app_update.current_app_version(self.app_dir)
@@ -3280,7 +3282,9 @@ class Backend(QObject):
 
     @Property(int, notify=updateReadyChanged)
     def updateChromeExtra(self):
-        return 52 if (self._update_ready or self._update_busy) else 0
+        # Только когда обновление ГОТОВО. Во время фоновой проверки/скачивания
+        # (updateBusy) запас не нужен — иначе раскладка дёргается каждые 5 сек.
+        return 52 if self._update_ready else 0
 
     def _set_update_busy(self, busy, text=""):
         self._update_busy = bool(busy)
@@ -3363,6 +3367,7 @@ class Backend(QObject):
         if self._update_busy or self._scan_running:
             return
         self._remote_check_notify = notify
+        self._background_auto = not notify
         self._set_update_busy(True, "Проверяем обновления в интернете…")
         self._download_thread = UpdateDownloadWorker(
             self._update_url, str(self.app_dir), self._app_version, self._app_build
@@ -3387,7 +3392,10 @@ class Backend(QObject):
         self._remote_check_notify = False
         if ok and zip_path:
             self.prepareUpdateFromPath(zip_path)
+            self._background_auto = False  # фоновая проверка закончилась — сброс
             return
+        self._background_auto = False
+        # Фоновая авто-проверка — молчим, ничего не показываем.
         if notify and message:
             if message == "У вас уже последняя версия":
                 self.showToast.emit("У вас уже установлена последняя версия", "success")
@@ -3450,32 +3458,37 @@ class Backend(QObject):
         """Готовит обновление из zip или папки. Можно вызвать из диалога настроек."""
         if not file_url or self._update_busy:
             return
+        silent = self._background_auto  # фоновая проверка — ошибки не показываем
         path = QUrl(file_url).toLocalFile() if str(file_url).startswith("file:") else file_url
         if not path:
             path = file_url
         try:
             info = app_update.describe_package(Path(path))
         except Exception as e:
-            self.showToast.emit(str(e), "error")
+            if not silent:
+                self.showToast.emit(str(e), "error")
             return
 
         ver = info.get("version") or ""
         bld = int(info.get("build") or 0)
         shown = info.get("display") or ver
         if not ver:
-            self.showToast.emit("В архиве нет номера версии — так обновляться нельзя", "error")
+            if not silent:
+                self.showToast.emit("В архиве нет номера версии — так обновляться нельзя", "error")
             return
         if not app_update.is_newer(ver, self._app_version, bld, int(self._app_build or 0)):
-            cand = self._version_label(shown, bld)
-            here = self._version_label()
-            if bld and bld == int(self._app_build or 0):
-                self.showToast.emit(f"Это та же сборка ({cand})", "error")
-            elif ver == self._app_version and not bld:
-                self.showToast.emit(f"Это та же версия ({cand})", "error")
-            else:
-                self.showToast.emit(f"Откат запрещён: {cand} старше текущей {here}", "error")
+            if not silent:
+                cand = self._version_label(shown, bld)
+                here = self._version_label()
+                if bld and bld == int(self._app_build or 0):
+                    self.showToast.emit(f"Это та же сборка ({cand})", "error")
+                elif ver == self._app_version and not bld:
+                    self.showToast.emit(f"Это та же версия ({cand})", "error")
+                else:
+                    self.showToast.emit(f"Откат запрещён: {cand} старше текущей {here}", "error")
             return
 
+        self._staging_silent = silent
         self._set_update_busy(True, "Готовим обновление…")
         self.update_thread = UpdateStageWorker(info["root"], str(self.app_dir))
         self.update_thread.finished_signal.connect(self._on_update_staged)
@@ -3484,7 +3497,8 @@ class Backend(QObject):
     def _on_update_staged(self, ok, message, version):
         self._set_update_busy(False, "")
         if not ok:
-            self.showToast.emit(f"Не удалось подготовить обновление: {message}", "error")
+            if not self._staging_silent:
+                self.showToast.emit(f"Не удалось подготовить обновление: {message}", "error")
             return
         staged = app_update.staged_info(self.app_dir)
         self._update_source = staged["root"] if staged else ""
