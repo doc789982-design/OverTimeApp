@@ -61,11 +61,6 @@ def changelog_section(version: str) -> str:
     return body + "\n"
 
 
-def is_prerelease(version: str) -> bool:
-    u = version.upper()
-    return any(tag in u for tag in ("ALPHA", "BETA", "RC", "DEV"))
-
-
 def run_gh(args: list[str], check: bool = True) -> subprocess.CompletedProcess:
     return subprocess.run(
         ["gh", *args],
@@ -126,6 +121,8 @@ def cleanup_old_release_zips(tag: str, keep_sha: str) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Опубликовать GitHub Release")
     parser.add_argument("--dry-run", action="store_true", help="только показать текст, не публиковать")
+    parser.add_argument("--prerelease", action="store_true",
+                        help="пометить релиз как пререлиз (по умолчанию — обычный релиз)")
     args = parser.parse_args()
 
     version, build = read_identity()
@@ -133,7 +130,7 @@ def main() -> int:
     title = f"OVERTIMETAB {version}" + (f" · сборка {build}" if build else "")
     notes = changelog_section(version)
     branch = current_branch()
-    pre = is_prerelease(version)
+    pre = args.prerelease
 
     print(f"версия:   {version}" + (f" · сборка {build}" if build else ""))
     print(f"тег:      {tag}")
@@ -179,6 +176,8 @@ def main() -> int:
             ]
             if pre:
                 cmd.append("--prerelease")
+            else:
+                cmd.append("--latest")
             r = run_gh(cmd, check=False)
             action = "создали"
         if r.returncode != 0:

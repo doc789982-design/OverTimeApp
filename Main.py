@@ -5,6 +5,7 @@ import win32print
 import sys
 import json
 import calendar
+import traceback
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from datetime import date, datetime, timedelta, time
 from pathlib import Path
@@ -3646,6 +3647,85 @@ import ctypes # <--- Добавляем системную библиотеку 
 # Уникальный ID сервера для общения между процессами
 APP_ID = "OvertimeTab_v2_SingleInstance_Key"
 
+# ---------------------------------------------------------------------------
+# СООБЩЕНИЯ ОБ ОШИБКАХ
+# Любая непойманная ошибка: пишем лог в файл в Documents\OverTimeTab,
+# показываем окно с логом и кнопкой «Скопировать в буфер обмена».
+# ---------------------------------------------------------------------------
+
+def _data_root() -> Path:
+    try:
+        return app_update.install_root(Path(__file__).resolve().parent)
+    except Exception:
+        return Path.cwd()
+
+
+def _crash_log_path() -> Path:
+    try:
+        # Лог кладём рядом с данными пользователя (Documents\OverTimeTab),
+        # чтобы он переживал обновление и был доступен без прав администратора.
+        home = os.environ.get("USERPROFILE") or os.environ.get("HOME")
+        base = Path(home) / "Documents" if home else Path.home() / "Documents"
+        return base / "OverTimeTab" / "crash_log.txt"
+    except Exception:
+        return _data_root() / "crash_log.txt"
+
+
+def _write_crash_log(details: str) -> None:
+    try:
+        p = _crash_log_path()
+        p.parent.mkdir(parents=True, exist_ok=True)
+        header = "===== " + datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " ====="
+        with open(p, "a", encoding="utf-8") as f:
+            f.write(header + "\n" + details + "\n\n")
+    except Exception:
+        pass
+
+
+def show_error_dialog(title: str, details: str) -> None:
+    """Нативное окно с логом и кнопкой «Скопировать в буфер обмена»."""
+    try:
+        from PySide6.QtWidgets import QApplication, QMessageBox
+        from PySide6.QtCore import Qt
+        app = QApplication.instance()
+        box = QMessageBox()
+        box.setIcon(QMessageBox.Icon.Critical)
+        box.setWindowTitle(title)
+        box.setText("Произошла ошибка. Лог можно скопировать в буфер обмена и отправить разработчику.")
+        shown = details if len(details) <= 4000 else details[:4000] + "\n… (обрезка, полный лог в crash_log.txt)"
+        box.setInformativeText(shown)
+        copy_btn = box.addButton("Скопировать лог", QMessageBox.ButtonRole.ActionRole)
+        close_btn = box.addButton(QMessageBox.StandardButton.Close)
+        box.exec()
+        if box.clickedButton() == copy_btn:
+            try:
+                clip = app.clipboard()
+                if clip:
+                    clip.setText(details)
+            except Exception:
+                pass
+    except Exception:
+        # Окно не построить (например, упали до QApplication) — пишем в stderr.
+        try:
+            sys.stderr.write(details)
+        except Exception:
+            pass
+
+
+def _handle_uncaught(exc_type, exc_value, exc_tb):
+    if issubclass(exc_type, KeyboardInterrupt):
+        sys.__excepthook__(exc_type, exc_value, exc_tb)
+        return
+    details = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
+    _write_crash_log(details)
+    try:
+        show_error_dialog("Непредвиденная ошибка", details)
+    except Exception:
+        try:
+            sys.stderr.write(details)
+        except Exception:
+            pass
+
 def main():
     try:
         myappid = 'mycompany.overtimetab.version2'
@@ -3655,6 +3735,9 @@ def main():
 
     os.environ["QT_QUICK_CONTROLS_STYLE"] = "Basic" 
     
+    # Любая непойманная ошибка — окно с логом и кнопкой «Скопировать».
+    sys.excepthook = _handle_uncaught
+
     app = QApplication(sys.argv)
 
     # --- ЛОГИКА ОДНОГО ЭКЗЕМПЛЯРА ---
@@ -3721,9 +3804,25 @@ def main():
             
     tray_icon.activated.connect(tray_activated)
 
+    qml_errors: list[str] = []
+
+    def _on_qml_warnings(warnings):
+        for w in warnings:
+            try:
+                qml_errors.append(str(w.toString()))
+            except Exception:
+                pass
+
+    engine.warnings.connect(_on_qml_warnings)
+
     engine.load(QML_PATH)
-    
-    if not engine.rootObjects(): 
+
+    if not engine.rootObjects():
+        # Не удалось собрать интерфейс (чаще всего — ошибка QML).
+        # Показываем лог и даём скопировать его в буфер обмена.
+        details = "\n".join(qml_errors) if qml_errors else "Не удалось загрузить интерфейс (QML). Подробности в crash_log.txt."
+        _write_crash_log("QML load error\n" + details)
+        show_error_dialog("Не удалось запустить OverTimeTab", details)
         sys.exit(-1)
         
     app.setQuitOnLastWindowClosed(False)

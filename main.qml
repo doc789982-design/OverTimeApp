@@ -133,7 +133,7 @@ ApplicationWindow {
                     anchors.top: parent.top
                     anchors.bottom: parent.bottom
 
-                    UpdateDownloadButton { }
+                    AppUI.UpdateDownloadButton { }
 
                     Rectangle {
                         width: 46
