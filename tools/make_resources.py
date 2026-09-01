@@ -41,8 +41,34 @@ FONT_ALLOW = {
     "RobotoCondensed-Bold.ttf",
 }
 
+def _short_sha() -> str:
+    """Короткий sha коммита (первые 7 символов) — так же называет zip workflow."""
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "--short=7", "HEAD"],
+            cwd=str(ROOT),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        s = (out.stdout or "").strip()
+        if len(s) == 7 and all(c in "0123456789abcdef" for c in s):
+            return s
+    except Exception:
+        pass
+    return ""
+
+
 def write_version_json():
-    """Кладём version.json рядом с exe, чтобы обновлятор понял номер сборки."""
+    """
+    Кладём version.json рядом с exe, чтобы обновлятор понял номер сборки.
+
+    Файл «универсальный»: помимо версии/сборки (нужны для локального обновления)
+    содержит и поле url — имя готового zip (версия + короткий sha). Поэтому этот
+    же файл можно достать из собранного архива и положить на веб-сервер рядом с
+    zip — интернет-обновление заработает без пересоздания файла.
+    Хэш (sha256) не пишем.
+    """
     theme = ROOT / "components" / "AppTheme.qml"
     text = theme.read_text(encoding="utf-8") if theme.exists() else ""
     import re
@@ -64,6 +90,10 @@ def write_version_json():
         payload["build"] = build
     if version and version != scan:
         payload["display"] = version
+    # url = имя zip, как его создаёт workflow (OVERTIMETAB_<версия>_<sha>.zip)
+    sha = _short_sha()
+    if sha and version:
+        payload["url"] = f"OVERTIMETAB_{version}_{sha}.zip"
     out = ROOT / "version.json"
     out.write_text(
         __import__("json").dumps(payload, ensure_ascii=False, indent=2) + "\n",
