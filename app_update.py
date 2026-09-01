@@ -23,6 +23,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.request
 import zipfile
 import zlib
 from pathlib import Path
@@ -1334,6 +1335,117 @@ def changelog_for_qml(blocks: list[dict]) -> list[dict]:
             "removedText": _bullets(removed),
         })
     return out
+
+
+# ---------------------------------------------------------------------------
+# Сетевое обновление (веб-хранилище). Полная закачка zip.
+# ---------------------------------------------------------------------------
+
+def _update_info_url(base_url: str) -> str:
+    """Куда стучаться за version.json: либо сам файл, либо <url>/version.json."""
+    base = (base_url or "").strip().rstrip("/")
+    if base.lower().endswith("/version.json"):
+        return base
+    return base + "/version.json"
+
+
+def fetch_update_info(base_url: str, timeout: float = 15.0) -> Optional[dict]:
+    """
+    Читает version.json с веб-хранилища прямо в память (на диск не сохраняет).
+    Возвращает словарь с полями version/build/url/sha256 либо None при ошибке.
+    """
+    url = _update_info_url(base_url)
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as resp:
+            raw = resp.read()
+        data = json.loads(raw.decode("utf-8", errors="replace"))
+        return data if isinstance(data, dict) else None
+    except Exception:
+        return None
+
+
+def resolve_download_url(zip_ref: str, base_url: str) -> str:
+    """Относительную ссылку на архив склеивает с базовым адресом, абсолютную оставляет."""
+    ref = (zip_ref or "").strip()
+    if re.match(r"^https?://", ref, re.IGNORECASE):
+        return ref
+    base = (base_url or "").strip().rstrip("/")
+    return base + "/" + ref.lstrip("/")
+
+
+def _fmt_mb(n: int) -> str:
+    try:
+        return f"{n / (1024 * 1024):.1f} МБ"
+    except Exception:
+        return str(n)
+
+
+def download_zip(
+    download_url: str,
+    dest_dir: Path,
+    sha256: str = "",
+    timeout: float = 120.0,
+    progress=None,
+) -> Path:
+    """
+    Скачивает zip в dest_dir, возвращает путь к готовому файлу.
+    progress(done:int, total:int) вызывается по мере загрузки (total может быть 0).
+    Если задан sha256 — сверяет контрольную сумму и при несовпадении откатывает.
+    """
+    import hashlib
+
+    dest_dir = Path(dest_dir)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    name = download_url.split("?")[0].split("/")[-1] or "update.zip"
+    if not name.lower().endswith(".zip"):
+        name += ".zip"
+    target = dest_dir / name
+    tmp = dest_dir / (name + ".part")
+    for p in (tmp, target):
+        try:
+            p.unlink(missing_ok=True)
+        except Exception:
+            pass
+    try:
+        with urllib.request.urlopen(download_url, timeout=timeout) as resp:
+            total = 0
+            cl = resp.headers.get("Content-Length")
+            if cl:
+                try:
+                    total = int(cl)
+                except Exception:
+                    total = 0
+            done = 0
+            with open(tmp, "wb") as out:
+                while True:
+                    chunk = resp.read(1 << 16)
+                    if not chunk:
+                        break
+                    out.write(chunk)
+                    done += len(chunk)
+                    if progress:
+                        try:
+                            progress(done, total)
+                        except Exception:
+                            pass
+        if sha256:
+            h = hashlib.sha256()
+            with open(tmp, "rb") as f:
+                for chunk in iter(lambda: f.read(1 << 16), b""):
+                    h.update(chunk)
+            if h.hexdigest().lower() != sha256.lower():
+                tmp.unlink(missing_ok=True)
+                raise UpdateError("Контрольная сумма скачанного файла не совпала — файл подменён или битый")
+        tmp.rename(target)
+        return target
+    except UpdateError:
+        raise
+    except Exception:
+        try:
+            tmp.unlink(missing_ok=True)
+        except Exception:
+            pass
+        raise
 
 
 def parse_apply_argv(argv: list[str]) -> Optional[dict]:

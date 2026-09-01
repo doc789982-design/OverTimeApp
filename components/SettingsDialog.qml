@@ -795,6 +795,44 @@ AppLargeModal {
                             wrapMode: Text.WordWrap
                         }
 
+                        Text {
+                            width: parent.width
+                            text: "Можно обновляться и через интернет: укажите адрес хранилища, на котором лежат version.json и архив с новой версией. Программа сама проверит наличие обновления и скачает его."
+                            color: AppTheme.textSecondary
+                            font.family: AppTheme.fontFamily
+                            font.pixelSize: AppTheme.sizeBody
+                            wrapMode: Text.WordWrap
+                        }
+
+                        RowLayout {
+                            width: parent.width
+                            spacing: AppTheme.spaceS
+
+                            AppTextField {
+                                id: updateUrlField
+                                Layout.fillWidth: true
+                                label: "Адрес хранилища обновлений"
+                                text: backend.updateUrl
+                                placeholderText: "https://example.ru/updates"
+                                onAccepted: backend.setUpdateUrl(text.trim())
+                                onEditingFinished: {
+                                    // сохраняем адрес при уходе из поля, не трогая остальное
+                                    backend.setUpdateUrl(text.trim())
+                                }
+                            }
+
+                            AppButton {
+                                text: "Проверить"
+                                variant: "secondary"
+                                Layout.preferredWidth: 130
+                                enabled: !backend.updateBusy
+                                onClicked: {
+                                    backend.setUpdateUrl(updateUrlField.text.trim())
+                                    backend.checkForRemoteUpdate()
+                                }
+                            }
+                        }
+
                         RowLayout {
                             width: parent.width
                             spacing: AppTheme.spaceS

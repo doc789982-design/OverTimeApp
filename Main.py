@@ -243,6 +243,54 @@ class UpdateScanWorker(QThread):
         except Exception:
             self.finished_signal.emit(None)
 
+
+class UpdateDownloadWorker(QThread):
+    """Проверяет version.json на веб-хранилище и качает zip новой версии."""
+    finished_signal = Signal(bool, str, str, str)  # ok, local_zip_path, version, message
+    progress_signal = Signal(int, int)              # done_bytes, total_bytes (0 = неизвестно)
+
+    def __init__(self, base_url, app_dir, current_version, current_build=0):
+        super().__init__()
+        self.base_url = (base_url or "").strip()
+        self.app_dir = app_dir
+        self.current_version = current_version or ""
+        self.current_build = int(current_build or 0)
+
+    def run(self):
+        try:
+            info = app_update.fetch_update_info(self.base_url)
+            if not info:
+                self.finished_signal.emit(False, "", "", "Не удалось прочитать version.json на сервере")
+                return
+            ver = str(info.get("version") or "").strip()
+            bld = int(info.get("build") or 0)
+            if not ver:
+                self.finished_signal.emit(False, "", "", "На сервере не указан номер версии")
+                return
+            if not app_update.is_newer(ver, self.current_version, bld, self.current_build):
+                self.finished_signal.emit(False, "", "", "У вас уже последняя версия")
+                return
+            zip_ref = str(info.get("url") or info.get("zip") or "").strip()
+            if not zip_ref:
+                self.finished_signal.emit(False, "", "", "В version.json нет ссылки на архив")
+                return
+            dl_url = app_update.resolve_download_url(zip_ref, self.base_url)
+            dest_dir = app_update.install_root(Path(self.app_dir)) / "update_download"
+            self.progress_signal.emit(0, 0)
+
+            def _prog(done, total):
+                self.progress_signal.emit(done, total)
+
+            local_zip = app_update.download_zip(
+                dl_url,
+                dest_dir,
+                sha256=str(info.get("sha256") or "").strip(),
+                progress=_prog,
+            )
+            self.finished_signal.emit(True, str(local_zip), ver, "")
+        except Exception as e:
+            self.finished_signal.emit(False, "", "", str(e))
+
 # ====================================================
 
 class Backend(QObject):
@@ -275,6 +323,7 @@ class Backend(QObject):
     updateBusyChanged = Signal()
     updateVersionChanged = Signal()
     updateStatusTextChanged = Signal()
+    updateUrlChanged = Signal()
     appVersionChanged = Signal()
     whatsNewChanged = Signal()
 
@@ -333,6 +382,8 @@ class Backend(QObject):
         self._update_version = ""
         self._update_status = ""
         self._update_source = ""
+        self._update_url = ""
+        self._remote_check_notify = False
         self._whats_new = []
         self._scan_running = False
         self._app_version = app_update.current_app_version(self.app_dir)
@@ -590,6 +641,7 @@ class Backend(QObject):
                 self._is_dark_theme = ui_cfg.get("theme", "dark") == "dark"
                 self._reminder_enabled = ui_cfg.get("reminder_enabled", True)
                 self._tray_hint_shown = ui_cfg.get("tray_hint_shown", False)
+                self._update_url = str(ui_cfg.get("update_url", "") or "").strip()
                 
             except Exception as e: 
                 print(f"Ошибка чтения конфига: {e}")
@@ -3208,6 +3260,20 @@ class Backend(QObject):
     def updateStatusText(self):
         return self._update_status
 
+    @Property(str, notify=updateUrlChanged)
+    def updateUrl(self):
+        return self._update_url or ""
+
+    @Slot(str)
+    def setUpdateUrl(self, url):
+        """Сохраняет адрес хранилища обновлений. Проверку запускает кнопка «Проверить»."""
+        url = (url or "").strip()
+        if url == self._update_url:
+            return
+        self._update_url = url
+        self._write_ui_config("update_url", url)
+        self.updateUrlChanged.emit()
+
     @Property(list, notify=whatsNewChanged)
     def whatsNew(self):
         return self._whats_new
@@ -3284,6 +3350,51 @@ class Backend(QObject):
         self.whatsNewChanged.emit()
 
     @Slot()
+    def checkForRemoteUpdate(self):
+        """Кнопка «Проверить обновления» в настройках: сеть + уведомление о результате."""
+        self._check_remote_update(notify=True)
+
+    def _check_remote_update(self, notify: bool):
+        """Проверяет version.json на веб-хранилище; при наличии новой версии качает zip."""
+        if not self._update_url:
+            if notify:
+                self.showToast.emit("Сначала укажите адрес хранилища обновлений в настройках", "error")
+            return
+        if self._update_busy or self._scan_running:
+            return
+        self._remote_check_notify = notify
+        self._set_update_busy(True, "Проверяем обновления в интернете…")
+        self._download_thread = UpdateDownloadWorker(
+            self._update_url, str(self.app_dir), self._app_version, self._app_build
+        )
+        self._download_thread.finished_signal.connect(self._on_remote_update_done)
+        self._download_thread.progress_signal.connect(self._on_remote_update_progress)
+        self._download_thread.start()
+
+    def _on_remote_update_progress(self, done, total):
+        if not self._update_busy:
+            return
+        if total > 0:
+            pct = int((done * 100) / total) if total else 0
+            self._update_status = f"Скачиваем обновление… {pct}%"
+        else:
+            self._update_status = "Скачиваем обновление…"
+        self.updateStatusTextChanged.emit()
+
+    def _on_remote_update_done(self, ok, zip_path, version, message):
+        self._set_update_busy(False, "")
+        notify = self._remote_check_notify
+        self._remote_check_notify = False
+        if ok and zip_path:
+            self.prepareUpdateFromPath(zip_path)
+            return
+        if notify and message:
+            if message == "У вас уже последняя версия":
+                self.showToast.emit("У вас уже установлена последняя версия", "success")
+            else:
+                self.showToast.emit(f"Не удалось проверить обновления: {message}", "error")
+
+    @Slot()
     def scanForUpdates(self):
         """Ищет zip/папку новой версии рядом с программой и на флешках."""
         if self._update_busy or self._scan_running:
@@ -3317,6 +3428,9 @@ class Backend(QObject):
         if self._update_busy:
             return
         if not found:
+            # Локально ничего нет — пробуем веб-хранилище (тихо, без уведомлений).
+            if self._update_url and not self._update_busy and not self._scan_running:
+                self._check_remote_update(notify=False)
             return
         dismissed = self._dismissed_update_version()
         label = self._version_label(
@@ -3379,6 +3493,13 @@ class Backend(QObject):
             int((staged or {}).get("build") or 0),
         )
         self._set_update_ready(True, label)
+        # Скачанный из сети zip больше не нужен — убрать, чтобы не копить 60 МБ.
+        try:
+            dldir = app_update.install_root(self.app_dir) / "update_download"
+            if dldir.is_dir():
+                app_update._clear_dir(dldir)
+        except Exception:
+            pass
 
     @Slot()
     def applyReadyUpdate(self):
