@@ -1349,11 +1349,77 @@ def _update_info_url(base_url: str) -> str:
     return base + "/version.json"
 
 
-def fetch_update_info(base_url: str, timeout: float = 15.0) -> Optional[dict]:
+def parse_github_release_url(url: str) -> Optional[dict]:
     """
-    Читает version.json с веб-хранилища прямо в память (на диск не сохраняет).
-    Возвращает словарь с полями version/build/url/sha256 либо None при ошибке.
+    Понял ли это GitHub-релиз:
+      github.com/<owner>/<repo>/releases/latest
+      github.com/<owner>/<repo>/releases/tag/<tag>
+      github.com/<owner>/<repo>/releases/download/<tag>[/<asset>]
+    Возвращает {"owner","repo","tag"} (tag может быть "") или None.
     """
+    u = (url or "").strip().rstrip("/")
+    m = re.match(r"^https?://github\.com/([^/]+)/([^/]+)/releases/(.*)$", u, re.IGNORECASE)
+    if not m:
+        return None
+    owner, repo, rest = m.group(1), m.group(2), (m.group(3) or "")
+    if rest == "latest":
+        return {"owner": owner, "repo": repo, "tag": ""}
+    if rest.startswith("tag/"):
+        tag = rest[4:].split("/")[0].strip()
+        return {"owner": owner, "repo": repo, "tag": tag} if tag else None
+    if rest.startswith("download/"):
+        parts = rest.split("/")
+        tag = parts[1].strip() if len(parts) > 1 else ""
+        return {"owner": owner, "repo": repo, "tag": tag} if tag else None
+    return None
+
+
+def _github_build_from_title(title: str) -> int:
+    """Сборку берём из заголовка релиза («… · сборка 126»)."""
+    m = re.search(r"сборка\s+(\d+)", title or "", flags=re.IGNORECASE)
+    return int(m.group(1)) if m else 0
+
+
+def fetch_github_release_info(gh: dict, timeout: float = 15.0) -> Optional[dict]:
+    """Достаёт актуальную версию через GitHub API — version.json на GitHub не нужен."""
+    owner = gh["owner"]
+    repo = gh["repo"]
+    tag = gh.get("tag") or ""
+    if tag:
+        api = f"https://api.github.com/repos/{owner}/{repo}/releases/tags/{tag}"
+    else:
+        api = f"https://api.github.com/repos/{owner}/{repo}/releases/latest"
+    req = urllib.request.Request(
+        api,
+        headers={"Accept": "application/vnd.github+json", "User-Agent": "OVERTIMETAB-updater"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read().decode("utf-8", errors="replace"))
+    except Exception:
+        return None
+    if not isinstance(data, dict):
+        return None
+    if data.get("draft"):
+        return None
+    tag_name = str(data.get("tag_name") or "").strip()
+    if not tag_name:
+        return None
+    version = tag_name[1:] if tag_name.startswith("v") else tag_name
+    build = _github_build_from_title(str(data.get("name") or ""))
+    zip_url = ""
+    for asset in (data.get("assets") or []):
+        name = str(asset.get("name") or "").lower()
+        if name.endswith(".zip"):
+            zip_url = str(asset.get("browser_download_url") or "")
+            break
+    if not version or not zip_url:
+        return None
+    return {"name": "OVERTIMETAB", "version": version, "build": build, "url": zip_url}
+
+
+def _fetch_version_json(base_url: str, timeout: float = 15.0) -> Optional[dict]:
+    """Классический путь: читаем version.json с хранилища прямо в память."""
     url = _update_info_url(base_url)
     try:
         with urllib.request.urlopen(url, timeout=timeout) as resp:
@@ -1362,6 +1428,20 @@ def fetch_update_info(base_url: str, timeout: float = 15.0) -> Optional[dict]:
         return data if isinstance(data, dict) else None
     except Exception:
         return None
+
+
+def fetch_update_info(base_url: str, timeout: float = 15.0) -> Optional[dict]:
+    """
+    Узнаёт про новую версию, ничего не скачивая на диск.
+    GitHub-ссылка  → данные через GitHub API (version.json не нужен).
+    Любая другая  → читает version.json прямо в память.
+    Возвращает dict с version/build/url (и, возможно, sha256) либо None.
+    """
+    gh = parse_github_release_url(base_url)
+    if gh:
+        return fetch_github_release_info(gh, timeout)
+    return _fetch_version_json(base_url, timeout)
+
 
 
 def resolve_download_url(zip_ref: str, base_url: str) -> str:

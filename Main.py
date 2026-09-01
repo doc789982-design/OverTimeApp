@@ -260,7 +260,7 @@ class UpdateDownloadWorker(QThread):
         try:
             info = app_update.fetch_update_info(self.base_url)
             if not info:
-                self.finished_signal.emit(False, "", "", "Не удалось прочитать version.json на сервере")
+                self.finished_signal.emit(False, "", "", "Не удалось получить данные об обновлении с сервера")
                 return
             ver = str(info.get("version") or "").strip()
             bld = int(info.get("build") or 0)
