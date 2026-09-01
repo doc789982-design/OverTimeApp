@@ -400,6 +400,9 @@ class Backend(QObject):
         self._selected_employee_id = 0
         self._active_department_name = ""
         
+        # Адрес хранилища обновлений читается из config.json внутри load_databases.
+        # Инициализируем ПЕРЕД загрузкой, чтобы он не затирался пустой строкой.
+        self._update_url = ""
         self.load_databases()
 
         self._update_ready = False
@@ -407,7 +410,6 @@ class Backend(QObject):
         self._update_version = ""
         self._update_status = ""
         self._update_source = ""
-        self._update_url = ""
         self._remote_check_notify = False
         self._background_auto = False   # фоновая авто-проверка: всё тихо, без тостов
         self._staging_silent = False
