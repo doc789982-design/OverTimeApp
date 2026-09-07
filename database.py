@@ -550,8 +550,8 @@ class DB:
 
     def add_compensation_days_dayoff(self, employee_id: int, dates: list[date], comment: str) -> int:
         cur = self.conn.execute(
-            "INSERT INTO compensation(employee_id,unit,method,amount_days,comment) VALUES (?,?,?,?,?)",
-            (employee_id, "days", "day_off", len(dates), comment or None),
+            "INSERT INTO compensation(employee_id,unit,method,event_date,amount_days,comment) VALUES (?,?,?,?,?,?)",
+            (employee_id, "days", "day_off", d_iso(min(dates)), len(dates), comment or None),
         )
         comp_id = int(cur.lastrowid)
         for d0 in dates:
