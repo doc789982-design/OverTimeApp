@@ -172,7 +172,8 @@ Item {
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
-        height: contentArea.implicitHeight + AppTheme.spaceM * 2
+        height: (root.isYearView ? contentArea.implicitHeight : monthBody.implicitHeight)
+                + AppTheme.spaceM * 2
         radius: AppTheme.radiusLarge
         color: AppTheme.bgSurface
         border.color: AppTheme.borderDivider; border.width: 1
@@ -182,6 +183,7 @@ Item {
 
         Item {
             id: contentArea
+            visible: root.isYearView
             anchors.top: parent.top
             anchors.left: parent.left
             anchors.right: parent.right
@@ -531,6 +533,300 @@ Item {
                         valColor: (root.isYearView ? backend.yearSummary.is_overtime_negative
                                                    : backend.monthSummary.is_overtime_negative)
                                   ? AppTheme.accentDanger : AppTheme.textPrimary
+                    }
+                }
+            }
+        }
+
+        // ════════════════════════════════════════════════════════════
+        // МЕСЯЧНЫЙ ВИД (новая «карточная» раскладка)
+        // Три показателя (ночные часы / дни / сверх нормы) — как три
+        // карточки с иконкой и цветом; внутри — ключевое число
+        // «остаток на конец месяца» и мелкий поток начисления.
+        // ════════════════════════════════════════════════════════════
+        Item {
+            id: monthArea
+            visible: !root.isYearView
+            anchors.top: parent.top
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.margins: AppTheme.spaceM
+
+            // Маленькая «ячейка» потока внутри карточки
+            component MiniStat: Column {
+                id: ms
+                property string valText: "—"
+                property string labelText: ""
+                property color valColor: AppTheme.textPrimary
+                spacing: 1
+
+                Text {
+                    width: ms.width
+                    text: ms.valText
+                    color: ms.valColor
+                    font.family: AppTheme.fontFamily
+                    font.pixelSize: AppTheme.sizeSmall
+                    font.weight: AppTheme.weightBold
+                    elide: Text.ElideRight
+                    textFormat: Text.StyledText
+                }
+                Text {
+                    width: ms.width
+                    text: ms.labelText
+                    color: AppTheme.textTertiary
+                    font.family: AppTheme.fontFamily
+                    font.pixelSize: AppTheme.sizeMicro
+                    elide: Text.ElideRight
+                }
+            }
+
+            // Карточка одного показателя
+            component CurrencyCard: Rectangle {
+                id: card
+                property string title: ""
+                property string icon: ""
+                property color accent: AppTheme.accentBrand
+                property string endText: "—"
+                property bool endNeg: false
+                property string startText: "—"
+                property string accText: "—"
+                property string compText: "—"
+                property string caption: "остаток на конец месяца"
+
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                Layout.minimumWidth: 170
+                radius: AppTheme.radiusMedium
+                color: AppTheme.bgBase
+                border.color: AppTheme.borderDivider
+                border.width: 1
+
+                // Высота из содержимого (внутренние поля сверху/снизу)
+                implicitHeight: cardCol.implicitHeight + AppTheme.spaceS * 2
+
+                ColumnLayout {
+                    id: cardCol
+                    anchors.top: parent.top
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.topMargin: AppTheme.spaceS
+                    anchors.leftMargin: AppTheme.spaceM
+                    anchors.rightMargin: AppTheme.spaceM
+                    spacing: AppTheme.spaceXXS
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: AppTheme.spaceS
+
+                        Rectangle {
+                            width: 32; height: 32
+                            radius: AppTheme.radiusSmall
+                            color: Qt.rgba(card.accent.r, card.accent.g, card.accent.b, 0.14)
+                            Layout.alignment: Qt.AlignVCenter
+                            IconImage {
+                                anchors.centerIn: parent
+                                source: "../icons/" + card.icon
+                                width: 18; height: 18
+                                color: card.accent
+                            }
+                        }
+                        Text {
+                            Layout.fillWidth: true
+                            Layout.alignment: Qt.AlignVCenter
+                            text: card.title
+                            color: AppTheme.textSecondary
+                            font.family: AppTheme.fontFamily
+                            font.pixelSize: AppTheme.sizeSmall
+                            font.weight: AppTheme.weightBold
+                            elide: Text.ElideRight
+                        }
+                    }
+
+                    Text {
+                        Layout.fillWidth: true
+                        Layout.topMargin: AppTheme.spaceXS
+                        text: card.endText
+                        color: card.endNeg ? AppTheme.accentDanger : AppTheme.textPrimary
+                        font.family: AppTheme.fontFamily
+                        font.pixelSize: 27
+                        font.weight: AppTheme.weightBold
+                        textFormat: Text.StyledText
+                        elide: Text.ElideRight
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        text: card.caption
+                        color: AppTheme.textTertiary
+                        font.family: AppTheme.fontFamily
+                        font.pixelSize: AppTheme.sizeMicro
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        height: 1
+                        Layout.topMargin: AppTheme.spaceXS
+                        color: AppTheme.borderDivider
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Layout.topMargin: AppTheme.spaceXXS
+                        spacing: AppTheme.spaceS
+
+                        MiniStat { valText: card.startText; labelText: "на начало" }
+                        MiniStat { valText: card.accText;  labelText: "+ начислено"; valColor: AppTheme.accentSuccess }
+                        MiniStat { valText: card.compText; labelText: "− компенсир."; valColor: AppTheme.accentDanger }
+                    }
+                }
+            }
+
+            ColumnLayout {
+                id: monthBody
+                anchors.top: parent.top
+                anchors.left: parent.left
+                anchors.right: parent.right
+                spacing: AppTheme.spaceM
+
+                // Заголовок панели
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: AppTheme.spaceM
+
+                    IconImage {
+                        Layout.alignment: Qt.AlignVCenter
+                        source: "../icons/export_box.svg"
+                        width: 18; height: 18
+                        color: AppTheme.textTertiary
+                    }
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 0
+                        Text {
+                            text: "Балансы"
+                            color: AppTheme.textPrimary
+                            font.family: AppTheme.fontFamily
+                            font.pixelSize: AppTheme.sizeBodyLarge
+                            font.weight: AppTheme.weightBold
+                        }
+                        Text {
+                            text: backend.currentPeriodText
+                            color: AppTheme.textTertiary
+                            font.family: AppTheme.fontFamily
+                            font.pixelSize: AppTheme.sizeSmall
+                        }
+                    }
+
+                    // Кнопка «Деньги» — открывает просмотр денежных компенсаций
+                    Rectangle {
+                        visible: !root.isYearView
+                        height: 28
+                        width: moneyPillText.implicitWidth + AppTheme.spaceL + 6
+                        radius: AppTheme.radiusSmall
+                        Layout.alignment: Qt.AlignVCenter
+
+                        color: moneyPillArea.pressed ? AppTheme.statePress
+                             : moneyPillArea.containsMouse ? AppTheme.bgBrandSoft
+                             : "transparent"
+                        border.color: moneyPillArea.containsMouse ? AppTheme.accentBrand : AppTheme.borderInput
+                        border.width: 1
+                        Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
+                        Behavior on border.color { ColorAnimation { duration: AppTheme.durMicro } }
+
+                        Row {
+                            id: moneyPillText
+                            anchors.centerIn: parent
+                            spacing: AppTheme.spaceXXS
+                            Text {
+                                text: "₽"
+                                color: moneyPillArea.containsMouse ? AppTheme.accentBrand : AppTheme.textSecondary
+                                font.family: AppTheme.fontFamily
+                                font.pixelSize: AppTheme.sizeSmall
+                                font.weight: AppTheme.weightBold
+                            }
+                            Text {
+                                text: "Деньги"
+                                color: moneyPillArea.containsMouse ? AppTheme.accentBrand : AppTheme.textSecondary
+                                font.family: AppTheme.fontFamily
+                                font.pixelSize: AppTheme.sizeSmall
+                                font.weight: AppTheme.weightBold
+                            }
+                        }
+                        MouseArea {
+                            id: moneyPillArea
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: { backend.loadMoneyComps(); moneyInspector.show() }
+                        }
+                        AppToolTip {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            anchors.bottom: parent.top; anchors.bottomMargin: AppTheme.spaceXXS
+                            isVisible: moneyPillArea.containsMouse
+                            text: "Посмотреть денежные компенсации"
+                        }
+                    }
+                }
+
+                // Три карточки показателей (часы / дни / сверх нормы)
+                RowLayout {
+                    id: cardsRow
+                    Layout.fillWidth: true
+                    spacing: AppTheme.spaceM
+
+                    CurrencyCard {
+                        title: "ДВО (ночные)"
+                        icon: "clock.svg"
+                        accent: AppTheme.accentBrand
+                        endText: backend.monthSummary.end_hours || "—"
+                        endNeg: backend.monthSummary.is_hours_negative === true
+                        startText: backend.monthSummary.start_hours || "—"
+                        accText: backend.monthSummary.acc_hours || "—"
+                        compText: backend.monthSummary.comp_hours || "—"
+                    }
+                    CurrencyCard {
+                        title: "ДДО (дни)"
+                        icon: "calendar.svg"
+                        accent: AppTheme.accentSuccess
+                        endText: backend.monthSummary.end_days || "—"
+                        endNeg: backend.monthSummary.is_days_negative === true
+                        startText: backend.monthSummary.start_days || "—"
+                        accText: backend.monthSummary.acc_days || "—"
+                        compText: backend.monthSummary.comp_days || "—"
+                    }
+                    CurrencyCard {
+                        title: "Сверх нормы"
+                        icon: "sparkle.svg"
+                        accent: AppTheme.accentWarning
+                        endText: backend.monthSummary.end_overtime || "—"
+                        endNeg: backend.monthSummary.is_overtime_negative === true
+                        startText: backend.monthSummary.start_overtime || "—"
+                        accText: backend.monthSummary.acc_overtime || "—"
+                        compText: backend.monthSummary.comp_overtime || "—"
+                    }
+                }
+
+                // Строка-подсказка для сменного графика
+                RowLayout {
+                    Layout.fillWidth: true
+                    visible: backend.monthSummary.is_shift === true
+                    spacing: AppTheme.spaceS
+
+                    IconImage {
+                        source: "../icons/help.svg"
+                        width: 13; height: 13
+                        color: AppTheme.textTertiary
+                        Layout.alignment: Qt.AlignVCenter
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        Layout.alignment: Qt.AlignVCenter
+                        text: "Сменный график: в ночь " + (backend.monthSummary.shift_night || "—")
+                              + "  ·  праздничные " + (backend.monthSummary.shift_holiday || "—")
+                              + "  ·  норма за месяц " + (backend.monthSummary.norm_minutes || "0")
+                        color: AppTheme.textTertiary
+                        font.family: AppTheme.fontFamily
+                        font.pixelSize: AppTheme.sizeSmall
+                        wrapMode: Text.WordWrap
                     }
                 }
             }
