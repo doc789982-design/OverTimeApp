@@ -707,7 +707,6 @@ Item {
                         color: AppTheme.textTertiary
                     }
                     ColumnLayout {
-                        Layout.fillWidth: true
                         spacing: 0
                         Text {
                             text: "Балансы"
@@ -723,6 +722,9 @@ Item {
                             font.pixelSize: AppTheme.sizeSmall
                         }
                     }
+
+                    // Распорка: прижимает «Деньги» и «Всего дней» к правому краю строки
+                    Item { Layout.fillWidth: true }
 
                     // Кнопка «Деньги» — открывает просмотр денежных компенсаций
                     Rectangle {
@@ -771,6 +773,50 @@ Item {
                             anchors.bottom: parent.top; anchors.bottomMargin: AppTheme.spaceXXS
                             isVisible: moneyPillArea.containsMouse
                             text: "Посмотреть денежные компенсации"
+                        }
+                    }
+
+                    // «Всего дней» — переработка сотрудника в днях (справа в шапке).
+                    // Шрифт числа — как у даты в шапке меню дня (fontCondensed, sizeH4, bold).
+                    RowLayout {
+                        id: totalDaysStat
+                        Layout.alignment: Qt.AlignVCenter
+                        visible: !root.isYearView
+                        spacing: AppTheme.spaceXS
+
+                        function daysWord(n) {
+                            if (n % 100 >= 11 && n % 100 <= 19) return "дней"
+                            var d = n % 10
+                            if (d === 1) return "день"
+                            if (d >= 2 && d <= 4) return "дня"
+                            return "дней"
+                        }
+
+                        Text {
+                            text: "Всего"
+                            color: AppTheme.textTertiary
+                            font.family: AppTheme.fontFamily
+                            font.pixelSize: AppTheme.sizeSmall
+                            font.weight: AppTheme.weightMedium
+                            Layout.alignment: Qt.AlignVCenter
+                        }
+                        Text {
+                            text: backend.monthSummary.total_days !== undefined
+                                   ? backend.monthSummary.total_days : "—"
+                            color: AppTheme.textPrimary
+                            font.family: AppTheme.fontCondensed
+                            font.pixelSize: AppTheme.sizeH4
+                            font.weight: AppTheme.weightBold
+                            Layout.alignment: Qt.AlignVCenter
+                        }
+                        Text {
+                            text: backend.monthSummary.total_days !== undefined
+                                   ? totalDaysStat.daysWord(backend.monthSummary.total_days)
+                                   : ""
+                            color: AppTheme.textTertiary
+                            font.family: AppTheme.fontFamily
+                            font.pixelSize: AppTheme.sizeSmall
+                            Layout.alignment: Qt.AlignVCenter
                         }
                     }
                 }

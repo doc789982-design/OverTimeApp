@@ -1745,6 +1745,16 @@ class Backend(QObject):
                     return "—"
                 return fmt_dual(real_val, prev_val, is_days)
 
+            # «Всего дней» — переработка сотрудника в днях (остаток на конец месяца).
+            # Ночные (ДВО) и сверх нормы считаются в часах/минутах за этот год и за
+            # предыдущий; сверх нормы с минусом не учитываем (зажимаем в 0). Сумму
+            # делим на 8-часовой рабочий день и округляем вниз, затем прибавляем ДДО.
+            night_min = summ["end_hours"] + summ["prev_h_end"]
+            extra_min = summ["end_overtime"] + summ["prev_o_end"]
+            if extra_min < 0:
+                extra_min = 0
+            total_days = (night_min + extra_min) // (8 * 60) + summ["end_days"] + summ["prev_d_end"]
+
             self._month_summary = {
                 "is_shift": summ["is_shift"], 
                 "norm_minutes": fmt_minutes_ru_words(summ["norm_minutes"]),
@@ -1772,7 +1782,8 @@ class Backend(QObject):
                 
                 "is_overtime_negative": summ["end_overtime"] < 0,
                 "is_hours_negative": summ["end_hours"] < 0,
-                "is_days_negative": summ["end_days"] < 0
+                "is_days_negative": summ["end_days"] < 0,
+                "total_days": int(total_days)
             }
         else:
             self._month_summary = {}
