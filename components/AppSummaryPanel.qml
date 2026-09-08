@@ -596,22 +596,19 @@ Item {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 Layout.minimumWidth: 170
+                Layout.preferredHeight: 150
                 radius: AppTheme.radiusMedium
                 color: AppTheme.bgBase
                 border.color: AppTheme.borderDivider
                 border.width: 1
 
-                // Высота из содержимого (внутренние поля сверху/снизу)
-                implicitHeight: cardCol.implicitHeight + AppTheme.spaceS * 2
-
                 ColumnLayout {
                     id: cardCol
-                    anchors.top: parent.top
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.topMargin: AppTheme.spaceS
+                    anchors.fill: parent
                     anchors.leftMargin: AppTheme.spaceM
                     anchors.rightMargin: AppTheme.spaceM
+                    anchors.topMargin: AppTheme.spaceS
+                    anchors.bottomMargin: AppTheme.spaceS
                     spacing: AppTheme.spaceXXS
 
                     RowLayout {
@@ -661,6 +658,9 @@ Item {
                         font.pixelSize: AppTheme.sizeMicro
                     }
 
+                    // Распорка — прижимает разделитель и поток вниз карточки
+                    Item { Layout.fillHeight: true }
+
                     Rectangle {
                         Layout.fillWidth: true
                         height: 1
@@ -670,12 +670,13 @@ Item {
 
                     RowLayout {
                         Layout.fillWidth: true
+                        Layout.preferredHeight: 28
                         Layout.topMargin: AppTheme.spaceXXS
                         spacing: AppTheme.spaceS
 
-                        MiniStat { valText: card.startText; labelText: "на начало" }
-                        MiniStat { valText: card.accText;  labelText: "+ начислено"; valColor: AppTheme.accentSuccess }
-                        MiniStat { valText: card.compText; labelText: "− компенсир."; valColor: AppTheme.accentDanger }
+                        MiniStat { Layout.fillWidth: true; Layout.fillHeight: true; valText: card.startText; labelText: "на начало" }
+                        MiniStat { Layout.fillWidth: true; Layout.fillHeight: true; valText: card.accText;  labelText: "+ начислено"; valColor: AppTheme.accentSuccess }
+                        MiniStat { Layout.fillWidth: true; Layout.fillHeight: true; valText: card.compText; labelText: "− компенсир."; valColor: AppTheme.accentDanger }
                     }
                 }
             }
