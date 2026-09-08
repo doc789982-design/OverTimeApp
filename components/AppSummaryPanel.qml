@@ -552,7 +552,8 @@ Item {
             anchors.right: parent.right
             anchors.margins: AppTheme.spaceM
 
-            // Маленькая «ячейка» потока внутри карточки
+            // Маленькая «ячейка» потока внутри карточки.
+            // Значение отцентрировано по горизонтали относительно пояснения снизу.
             component MiniStat: Column {
                 id: ms
                 property string valText: "—"
@@ -562,6 +563,7 @@ Item {
 
                 Text {
                     width: ms.width
+                    horizontalAlignment: Text.AlignHCenter
                     text: ms.valText
                     color: ms.valColor
                     font.family: AppTheme.fontFamily
@@ -572,6 +574,7 @@ Item {
                 }
                 Text {
                     width: ms.width
+                    horizontalAlignment: Text.AlignHCenter
                     text: ms.labelText
                     color: AppTheme.textTertiary
                     font.family: AppTheme.fontFamily
@@ -679,8 +682,8 @@ Item {
                         spacing: 0
 
                         MiniStat { width: flowRow.width / 3; valText: card.startText; labelText: "на начало" }
-                        MiniStat { width: flowRow.width / 3; valText: card.accText;  labelText: "+ начислено"; valColor: AppTheme.accentSuccess }
-                        MiniStat { width: flowRow.width / 3; valText: card.compText; labelText: "− компенсир."; valColor: AppTheme.accentDanger }
+                        MiniStat { width: flowRow.width / 3; valText: card.accText;  labelText: "начислено"; valColor: AppTheme.accentSuccess }
+                        MiniStat { width: flowRow.width / 3; valText: card.compText; labelText: "компенсировано"; valColor: AppTheme.accentDanger }
                     }
                 }
             }
@@ -800,7 +803,7 @@ Item {
                     }
                     CurrencyCard {
                         title: "Сверх нормы"
-                        icon: "sparkle.svg"
+                        icon: "overtime.svg"
                         accent: AppTheme.accentWarning
                         endText: backend.monthSummary.end_overtime || "—"
                         endNeg: backend.monthSummary.is_overtime_negative === true
@@ -810,29 +813,47 @@ Item {
                     }
                 }
 
-                // Строка-подсказка для сменного графика
+                // Строка сменного графика: «в ночь» (синий) и «праздничные» (красный)
+                // — маленькие иконки + полупрозрачный цвет; норма — нейтральная.
                 RowLayout {
                     Layout.fillWidth: true
                     visible: backend.monthSummary.is_shift === true
-                    spacing: AppTheme.spaceS
+                    spacing: AppTheme.spaceL
 
-                    IconImage {
-                        source: "../icons/help.svg"
-                        width: 13; height: 13
-                        color: AppTheme.textTertiary
+                    property color nightC: Qt.rgba(AppTheme.accentBrand.r, AppTheme.accentBrand.g, AppTheme.accentBrand.b, 0.72)
+                    property color holC:   Qt.rgba(AppTheme.accentDanger.r, AppTheme.accentDanger.g, AppTheme.accentDanger.b, 0.75)
+
+                    Row {
                         Layout.alignment: Qt.AlignVCenter
+                        spacing: AppTheme.spaceXXS
+                        IconImage { source: "../icons/night.svg";    width: 13; height: 13; color: parent.parent.nightC }
+                        Text {
+                            text: "в ночь " + (backend.monthSummary.shift_night || "—")
+                            color: parent.parent.nightC
+                            font.family: AppTheme.fontFamily; font.pixelSize: AppTheme.sizeSmall
+                        }
                     }
-                    Text {
-                        Layout.fillWidth: true
+                    Row {
                         Layout.alignment: Qt.AlignVCenter
-                        text: "Сменный график: в ночь " + (backend.monthSummary.shift_night || "—")
-                              + "  ·  праздничные " + (backend.monthSummary.shift_holiday || "—")
-                              + "  ·  норма за месяц " + (backend.monthSummary.norm_minutes || "0")
-                        color: AppTheme.textTertiary
-                        font.family: AppTheme.fontFamily
-                        font.pixelSize: AppTheme.sizeSmall
-                        wrapMode: Text.WordWrap
+                        spacing: AppTheme.spaceXXS
+                        IconImage { source: "../icons/sparkle.svg"; width: 13; height: 13; color: parent.parent.holC }
+                        Text {
+                            text: "праздничные " + (backend.monthSummary.shift_holiday || "—")
+                            color: parent.parent.holC
+                            font.family: AppTheme.fontFamily; font.pixelSize: AppTheme.sizeSmall
+                        }
                     }
+                    Row {
+                        Layout.alignment: Qt.AlignVCenter
+                        spacing: AppTheme.spaceXXS
+                        IconImage { source: "../icons/help.svg"; width: 13; height: 13; color: AppTheme.textTertiary }
+                        Text {
+                            text: "норма " + (backend.monthSummary.norm_minutes || "0")
+                            color: AppTheme.textTertiary
+                            font.family: AppTheme.fontFamily; font.pixelSize: AppTheme.sizeSmall
+                        }
+                    }
+                    Item { Layout.fillWidth: true }
                 }
             }
         }
