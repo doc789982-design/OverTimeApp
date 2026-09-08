@@ -410,13 +410,19 @@ class Backend(QObject):
         self._update_version = ""
         self._update_status = ""
         self._update_source = ""
-        self._remote_check_notify = False
         self._background_auto = False   # фоновая авто-проверка: всё тихо, без тостов
         self._staging_silent = False
         self._remote_update_available = False   # на сайте есть более новая версия
         self._remote_downloading = False        # идёт скачивание
         self._remote_download_progress = 0      # 0..100
         self._remote_info = None                # данные о доступном обновлении
+        self._remote_active_url = ""            # какой адрес-кандидат дал обновление
+        self._remote_candidates = []            # очередь удалённых адресов для проверки
+        self._remote_idx = 0                    # индекс текущего кандидата
+        self._last_remote_error = ""            # первая/последняя сетевая ошибка за проход
+        self._pending_notify = False            # показывать ли тосты по итогам полной проверки
+        self._remote_saw_reachable = False      # хоть одно хранилище ответило «не новее»
+        self._update_checking = False           # идёт ли полная последовательность проверки
         self._whats_new = []
         self._scan_running = False
         self._app_version = app_update.current_app_version(self.app_dir)
@@ -3397,54 +3403,173 @@ class Backend(QObject):
         self.whatsNewChanged.emit()
 
     @Slot()
-    def checkForRemoteUpdate(self):
-        """Кнопка «Проверить обновления» в настройках: проверить наличие + уведомить."""
-        self._check_remote_available(notify=True)
+    def checkAllUpdateSources(self):
+        """Кнопка «Проверить» в настройках и клик по неактивной шапочной кнопке:
+        полная последовательность локально → адрес из настроек → вшитый GitHub."""
+        if not self._begin_update_check(True):
+            return
+        self._start_local_scan()
 
-    def _check_remote_available(self, notify: bool):
-        """Спрашивает сайт, есть ли новая версия. Ничего не качает."""
-        base_url = app_update.resolve_update_url(self._update_url)
-        if not base_url:
-            if notify:
-                self.showToast.emit("Сначала укажите адрес хранилища обновлений в настройках", "error")
+    # ---- Единая последовательность проверки обновлений ------------------
+    # Все входы (кнопка «Проверить», клик по неактивной шапочной кнопке,
+    # фоновая автопроверка при старте и по таймеру) гоняют одну схему:
+    #   1) локально — архив/папка рядом с программой, флешки (без сети);
+    #   2) адрес хранилища из настроек — если он задан;
+    #   3) вшитый GitHub — только запасной, если адрес настроек пуст/недоступен
+    #      или на нём обновления не нашлось.
+    # Разница между входами — лишь показывать ли итоговые тосты (notify).
+
+    def _begin_update_check(self, notify: bool) -> bool:
+        """Начало полной проверки. False — сейчас нельзя (идёт/занято)."""
+        if self._update_checking or self._update_busy or self._remote_downloading:
+            return False
+        self._update_checking = True
+        self._pending_notify = bool(notify)
+        self._background_auto = not bool(notify)
+        self._remote_active_url = ""
+        self._remote_info = None
+        return True
+
+    def _finish_update_check(self):
+        self._update_checking = False
+        self._pending_notify = False
+
+    def _remote_candidate_urls(self):
+        """Очередь удалённых адресов: сначала адрес из настроек (если задан),
+        затем вшитый GitHub (всегда, как запасной; дубликат пропускаем)."""
+        stored = (self._update_url or "").strip()
+        urls = []
+        if stored:
+            urls.append(stored)
+        github = app_update.DEFAULT_UPDATE_URL
+        if github not in urls:
+            urls.append(github)
+        return urls
+
+    def _start_local_scan(self):
+        """Этап 1 — локально. Может сразу найти уже подготовленное (staged) обновление."""
+        staged = app_update.staged_info(self.app_dir)
+        staged_ver = (staged or {}).get("version") or ""
+        staged_bld = int((staged or {}).get("build") or 0)
+        if staged and staged_ver and app_update.is_newer(staged_ver, self._app_version, staged_bld, self._app_build):
+            dismissed = self._dismissed_update_version()
+            label = self._version_label(staged.get("display") or staged_ver, staged_bld)
+            if label != dismissed:
+                self._update_source = staged["root"]
+                self._set_update_ready(True, label)
+                if self._pending_notify:
+                    self.showToast.emit(f"Доступна новая версия: {label} (готова к установке)", "success")
+            self._finish_update_check()
             return
-        if self._remote_downloading or self._scan_running:
+        self._scan_running = True
+        self._scan_thread = UpdateScanWorker(str(self.app_dir), self._app_version, self._app_build)
+        self._scan_thread.finished_signal.connect(self._on_update_scanned)
+        self._scan_thread.start()
+
+    @Slot()
+    def scanForUpdates(self):
+        """Фоновая проверка (при старте и по таймеру): та же последовательность, но без тостов."""
+        if not self._begin_update_check(False):
             return
-        self._remote_check_notify = notify
-        self._remote_check_thread = RemoteCheckWorker(base_url, self._app_version, self._app_build)
+        self._start_local_scan()
+
+    def _on_update_scanned(self, found):
+        self._scan_running = False
+        if self._update_busy or not self._update_checking:
+            self._finish_update_check()
+            return
+        if not found:
+            # Локально ничего нет — переходим к удалённым адресам (этапы 2-3).
+            self._start_remote_checks()
+            return
+        dismissed = self._dismissed_update_version()
+        label = self._version_label(
+            found.get("display") or found.get("version") or "",
+            int(found.get("build") or 0),
+        )
+        if label and label == dismissed:
+            self._finish_update_check()
+            return
+        if found.get("already_staged"):
+            self._update_source = found["root"]
+            self._set_update_ready(True, label or found.get("version") or "")
+            self._finish_update_check()
+            return
+        # Найден локальный кандидат — подготавливаем его, в сеть не ходим.
+        self._finish_update_check()
+        self.prepareUpdateFromPath(found["root"])
+
+    def _start_remote_checks(self):
+        """Этапы 2-3 — удалённые хранилища по очереди (по одному RemoteCheckWorker)."""
+        if self._update_busy or self._remote_downloading:
+            self._finish_update_check()
+            return
+        self._remote_candidates = self._remote_candidate_urls()
+        self._remote_idx = 0
+        self._last_remote_error = ""
+        self._remote_saw_reachable = False
+        self._next_remote_candidate()
+
+    def _next_remote_candidate(self):
+        if self._update_busy or self._remote_downloading:
+            self._finish_update_check()
+            return
+        if self._remote_idx >= len(self._remote_candidates):
+            self._remote_no_result()
+            return
+        url = self._remote_candidates[self._remote_idx]
+        self._remote_idx += 1
+        self._remote_active_url = url
+        self._remote_check_thread = RemoteCheckWorker(url, self._app_version, self._app_build)
         self._remote_check_thread.finished_signal.connect(self._on_remote_check_done)
         self._remote_check_thread.start()
 
     def _on_remote_check_done(self, info, error):
-        notify = self._remote_check_notify
-        self._remote_check_notify = False
+        if not self._update_checking:
+            return
         if info:
+            # Нашли обновление на текущем адресе (self._remote_active_url) — дальше не идём.
             self._remote_info = info
             if not self._remote_update_available:
                 self._remote_update_available = True
                 self.remoteUpdateAvailableChanged.emit()
-            if notify:
+            if self._pending_notify:
                 label = self._version_label(
                     info.get("display") or info.get("version") or "",
                     int(info.get("build") or 0),
                 )
                 self.showToast.emit(f"Доступна новая версия: {label}", "success")
+            self._finish_update_check()
             return
-        # Обновления нет (или ошибка).
+        # На этом адресе обновления нет (или адрес недоступен) — пробуем следующий.
+        if error:
+            self._last_remote_error = error
+        else:
+            # Хранилище доступно и ответило «версия не новее» — сеть в порядке.
+            self._remote_saw_reachable = True
+        self._next_remote_candidate()
+
+    def _remote_no_result(self):
+        """Все удалённые адреса проверены — обновление не найдено."""
         self._remote_info = None
         if self._remote_update_available:
             self._remote_update_available = False
             self.remoteUpdateAvailableChanged.emit()
-        if notify and error:
-            self.showToast.emit(f"Не удалось проверить обновления: {error}", "error")
-        elif notify:
-            self.showToast.emit("У вас уже установлена последняя версия", "success")
+        if self._pending_notify:
+            if not self._remote_saw_reachable and self._last_remote_error:
+                self.showToast.emit(f"Не удалось проверить обновления: {self._last_remote_error}", "error")
+            else:
+                self.showToast.emit("У вас уже установлена последняя версия", "success")
+        self._finish_update_check()
 
     @Slot()
     def startRemoteDownload(self):
         """Кнопка загрузки в шапке: скачать обновление, которое уже обнаружено."""
-        base_url = app_update.resolve_update_url(self._update_url)
-        if not base_url or not self._remote_info or self._remote_downloading:
+        if not self._remote_info or self._remote_downloading or self._update_checking:
+            return
+        # Качаем именно с того адреса, который дал найденное обновление.
+        base_url = self._remote_active_url or app_update.resolve_update_url(self._update_url)
+        if not base_url:
             return
         self._remote_downloading = True
         self._remote_download_progress = 0
@@ -3480,26 +3605,6 @@ class Backend(QObject):
         else:
             self.showToast.emit("Не удалось скачать обновление", "error")
 
-    @Slot()
-    def scanForUpdates(self):
-        """Ищет zip/папку новой версии рядом с программой и на флешках."""
-        if self._update_busy or self._scan_running:
-            return
-        staged = app_update.staged_info(self.app_dir)
-        staged_ver = (staged or {}).get("version") or ""
-        staged_bld = int((staged or {}).get("build") or 0)
-        if staged and staged_ver and app_update.is_newer(staged_ver, self._app_version, staged_bld, self._app_build):
-            dismissed = self._dismissed_update_version()
-            label = self._version_label(staged.get("display") or staged_ver, staged_bld)
-            if label != dismissed:
-                self._update_source = staged["root"]
-                self._set_update_ready(True, label)
-            return
-        self._scan_running = True
-        self._scan_thread = UpdateScanWorker(str(self.app_dir), self._app_version, self._app_build)
-        self._scan_thread.finished_signal.connect(self._on_update_scanned)
-        self._scan_thread.start()
-
     def _dismissed_update_version(self) -> str:
         try:
             if self.config_path.exists():
@@ -3508,29 +3613,6 @@ class Backend(QObject):
         except Exception:
             return ""
         return ""
-
-    def _on_update_scanned(self, found):
-        self._scan_running = False
-        if self._update_busy:
-            return
-        if not found:
-            # Локально ничего нет — спрашиваем веб-хранилище, есть ли новая версия.
-            # Только проверка (ничего не качаем): кнопка загрузки появится в шапке.
-            if app_update.resolve_update_url(self._update_url) and not self._remote_downloading and not self._scan_running:
-                self._check_remote_available(notify=False)
-            return
-        dismissed = self._dismissed_update_version()
-        label = self._version_label(
-            found.get("display") or found.get("version") or "",
-            int(found.get("build") or 0),
-        )
-        if label and label == dismissed:
-            return
-        if found.get("already_staged"):
-            self._update_source = found["root"]
-            self._set_update_ready(True, label or found.get("version") or "")
-            return
-        self.prepareUpdateFromPath(found["root"])
 
     @Slot(str)
     def prepareUpdateFromPath(self, file_url):

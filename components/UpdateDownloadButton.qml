@@ -20,6 +20,9 @@ Item {
     readonly property int progress: backend.remoteDownloadProgress
     readonly property bool ready: backend.updateReady
 
+    // Клик по «праздной» кнопке (нет обновления и ничего не качается) запускает проверку.
+    readonly property bool idleCheck: !root.hasUpdate && !root.downloading && !root.ready
+
     // Тултип зависит от состояния
     readonly property string tipText: {
         if (downloading)
@@ -28,7 +31,7 @@ Item {
             return "Обновление загружено"
         if (hasUpdate)
             return "Доступна новая версия программы. Нажмите, чтобы загрузить."
-        return "Установлена актуальная версия OverTimeTab"
+        return "Проверить обновления"
     }
 
     // ---- Цвета ----
@@ -150,10 +153,14 @@ Item {
         id: hover
         anchors.fill: parent
         hoverEnabled: true
-        cursorShape: root.clickable ? Qt.PointingHandCursor : Qt.ArrowCursor
+        cursorShape: (root.clickable || root.idleCheck) ? Qt.PointingHandCursor : Qt.ArrowCursor
         onClicked: {
             if (root.clickable)
                 backend.startRemoteDownload()
+            // Праздная кнопка — клик запускает полную проверку обновлений
+            // (локально → адрес из настроек → вшитый GitHub).
+            else if (root.idleCheck)
+                backend.checkAllUpdateSources()
         }
     }
 

@@ -828,7 +828,7 @@ AppLargeModal {
                                 enabled: !backend.updateBusy
                                 onClicked: {
                                     backend.setUpdateUrl(updateUrlField.text.trim())
-                                    backend.checkForRemoteUpdate()
+                                    backend.checkAllUpdateSources()
                                 }
                             }
                         }
