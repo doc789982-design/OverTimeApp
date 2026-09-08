@@ -596,7 +596,7 @@ Item {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 Layout.minimumWidth: 170
-                Layout.preferredHeight: 150
+                Layout.preferredHeight: 170
                 radius: AppTheme.radiusMedium
                 color: AppTheme.bgBase
                 border.color: AppTheme.borderDivider
@@ -668,15 +668,19 @@ Item {
                         color: AppTheme.borderDivider
                     }
 
-                    RowLayout {
+                    // Поток: три равные ячейки «на начало / +начислено / −компенсировано».
+                    // Обычный Row с явной шириной каждой ячейки — без вложенных layout-ов,
+                    // чтобы ячейки всегда ложились в один ряд внутри карточки.
+                    Row {
+                        id: flowRow
                         Layout.fillWidth: true
-                        Layout.preferredHeight: 28
+                        Layout.preferredHeight: 30
                         Layout.topMargin: AppTheme.spaceXXS
-                        spacing: AppTheme.spaceS
+                        spacing: 0
 
-                        MiniStat { Layout.fillWidth: true; Layout.fillHeight: true; valText: card.startText; labelText: "на начало" }
-                        MiniStat { Layout.fillWidth: true; Layout.fillHeight: true; valText: card.accText;  labelText: "+ начислено"; valColor: AppTheme.accentSuccess }
-                        MiniStat { Layout.fillWidth: true; Layout.fillHeight: true; valText: card.compText; labelText: "− компенсир."; valColor: AppTheme.accentDanger }
+                        MiniStat { width: flowRow.width / 3; valText: card.startText; labelText: "на начало" }
+                        MiniStat { width: flowRow.width / 3; valText: card.accText;  labelText: "+ начислено"; valColor: AppTheme.accentSuccess }
+                        MiniStat { width: flowRow.width / 3; valText: card.compText; labelText: "− компенсир."; valColor: AppTheme.accentDanger }
                     }
                 }
             }
