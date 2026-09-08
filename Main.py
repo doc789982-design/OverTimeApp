@@ -1715,27 +1715,35 @@ class Backend(QObject):
                 money_txt = "—"
 
             # Умная функция для скобочек в остатках
-            # Умная функция для скобочек в остатках (НА НАЧАЛО / НА КОНЕЦ)
-            def fmt_dual(val, prev_val, is_days=False):
-                main = (f"{val} д." if is_days else fmt_minutes_ru_words(val))
-                if prev_val == 0: return main
-                # Зеленые скобки для Эталона
-                return f"{main} <font color='#4CAF50'>({fmt_minutes_ru_words(prev_val) if not is_days else str(prev_val) + ' д.'})</font>"
+            # Скобка прошлого года — нейтральный серый (не зелёный), как приглушённый тон.
+            GRAY_BRACKET = "#9E9E9E"
 
-            # Умная функция для колонки КОМПЕНСИРОВАНО
+            # Остатки (НА НАЧАЛО / НА КОНЕЦ): значение + скобка прошлого года.
+            # Если И основное, и скобочное число — целые часы/дни, единица выносится
+            # за скобку один раз: «0 (100) ч.», «0 (5) д.». Если есть минуты —
+            # единицы остаются у каждого числа (без переноса): «5 ч. 30 м. (100 ч.)».
+            def fmt_dual(val, prev_val, is_days=False):
+                if prev_val == 0:
+                    return (f"{val} д." if is_days else fmt_minutes_ru_words(val))
+                if is_days:
+                    # Дни всегда целые — «X (Y) д.»
+                    return f"{val} <font color='{GRAY_BRACKET}'>({prev_val})</font> д."
+                # Часы / сверх нормы (минуты)
+                av, pv = abs(int(val)), abs(int(prev_val))
+                if av % 60 == 0 and pv % 60 == 0:
+                    sv = "-" if val < 0 else ""
+                    sp = "-" if prev_val < 0 else ""
+                    return f"{sv}{av // 60} <font color='{GRAY_BRACKET}'>({sp}{pv // 60})</font> ч."
+                main = fmt_minutes_ru_words(val)
+                prev_txt = fmt_minutes_ru_words(prev_val)
+                return f"{main} <font color='{GRAY_BRACKET}'>({prev_txt})</font>"
+
+            # Колонка КОМПЕНСИРОВАНО: то же оформление (скобка серая), но если ничего
+            # не списывали ни в этом, ни в прошлом году — прочерк.
             def fmt_comp(real_val, prev_val, is_days=False):
-                # Если вообще ничего не списывали - рисуем прочерк
-                if real_val == 0 and prev_val == 0: return "—"
-                
-                # Форматируем основную часть (этот год)
-                main = (f"{real_val} д." if is_days else fmt_minutes_ru_words(real_val))
-                
-                # Если прошлого года нет - отдаем только основную
-                if prev_val == 0: return main
-                
-                # Если этот год 0, а прошлый есть - пишем "0 (за прошлый...)"
-                suffix = (f"{prev_val} д." if is_days else fmt_minutes_ru_words(prev_val))
-                return f"{main} <font color='#4CAF50'>(за пред. год: {suffix})</font>"
+                if real_val == 0 and prev_val == 0:
+                    return "—"
+                return fmt_dual(real_val, prev_val, is_days)
 
             self._month_summary = {
                 "is_shift": summ["is_shift"], 
