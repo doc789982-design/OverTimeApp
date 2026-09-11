@@ -45,6 +45,61 @@ def is_emp_active_in_month(emp, year: int, month: int) -> bool:
     if emp["end_date"] is None: return True
     return (emp["end_date"] or "")[:7] >= m
 
+
+# ====================================================
+# ОФОРМЛЕНИЕ ОСТАТКОВ И ИТОГОВ ПАНЕЛИ БАЛАНСОВ
+# Один и тот же набор правил для месячного и годового вида:
+# панель балансов — это один элемент с разным наполнением.
+# ====================================================
+
+# Скобка прошлого года — нейтральный серый (не зелёный), как приглушённый тон.
+GRAY_BRACKET = "#9E9E9E"
+
+
+def fmt_dual(val, prev_val, is_days=False):
+    """Остатки (НА НАЧАЛО / НА КОНЕЦ): значение + скобка прошлого года.
+
+    Если И основное, и скобочное число — целые часы/дни, единица выносится
+    за скобку один раз: «0 (100) ч.», «0 (5) д.». Если есть минуты —
+    единицы остаются у каждого числа (без переноса): «5 ч. 30 м. (100 ч.)».
+    """
+    if prev_val == 0:
+        return (f"{val} д." if is_days else fmt_minutes_ru_words(val))
+    if is_days:
+        # Дни всегда целые — «X (Y) д.»
+        return f"{val} <font color='{GRAY_BRACKET}'>({prev_val})</font> д."
+    # Часы / сверх нормы (минуты)
+    av, pv = abs(int(val)), abs(int(prev_val))
+    if av % 60 == 0 and pv % 60 == 0:
+        sv = "-" if val < 0 else ""
+        sp = "-" if prev_val < 0 else ""
+        return f"{sv}{av // 60} <font color='{GRAY_BRACKET}'>({sp}{pv // 60})</font> ч."
+    main = fmt_minutes_ru_words(val)
+    prev_txt = fmt_minutes_ru_words(prev_val)
+    return f"{main} <font color='{GRAY_BRACKET}'>({prev_txt})</font>"
+
+
+def fmt_comp(real_val, prev_val, is_days=False):
+    """КОМПЕНСИРОВАНО: то же оформление (скобка серая), но если ничего
+    не списывали ни в этом, ни в прошлом году — прочерк."""
+    if real_val == 0 and prev_val == 0:
+        return "—"
+    return fmt_dual(real_val, prev_val, is_days)
+
+
+def total_overtime_days(end_hours, prev_h_end, end_overtime, prev_o_end, end_days, prev_d_end):
+    """«Всего дней» — переработка сотрудника в днях (остаток на конец периода).
+
+    Ночные (ДВО) и сверх нормы считаются в минутах за этот год и за предыдущий;
+    сверх нормы с минусом не учитываем (зажимаем в 0). Сумму делим на 8-часовой
+    рабочий день и округляем вниз, затем прибавляем ДДО (дни).
+    """
+    night_min = int(end_hours) + int(prev_h_end)
+    extra_min = int(end_overtime) + int(prev_o_end)
+    if extra_min < 0:
+        extra_min = 0
+    return (night_min + extra_min) // (8 * 60) + int(end_days) + int(prev_d_end)
+
 # ====================================================
 # ФОНОВЫЙ ПОТОК ДЛЯ ЭКСПОРТА (ЧТОБЫ НЕ ВИС ИНТЕРФЕЙС)
 # ====================================================
@@ -1714,46 +1769,15 @@ class Backend(QObject):
             except Exception:
                 money_txt = "—"
 
-            # Умная функция для скобочек в остатках
-            # Скобка прошлого года — нейтральный серый (не зелёный), как приглушённый тон.
-            GRAY_BRACKET = "#9E9E9E"
-
-            # Остатки (НА НАЧАЛО / НА КОНЕЦ): значение + скобка прошлого года.
-            # Если И основное, и скобочное число — целые часы/дни, единица выносится
-            # за скобку один раз: «0 (100) ч.», «0 (5) д.». Если есть минуты —
-            # единицы остаются у каждого числа (без переноса): «5 ч. 30 м. (100 ч.)».
-            def fmt_dual(val, prev_val, is_days=False):
-                if prev_val == 0:
-                    return (f"{val} д." if is_days else fmt_minutes_ru_words(val))
-                if is_days:
-                    # Дни всегда целые — «X (Y) д.»
-                    return f"{val} <font color='{GRAY_BRACKET}'>({prev_val})</font> д."
-                # Часы / сверх нормы (минуты)
-                av, pv = abs(int(val)), abs(int(prev_val))
-                if av % 60 == 0 and pv % 60 == 0:
-                    sv = "-" if val < 0 else ""
-                    sp = "-" if prev_val < 0 else ""
-                    return f"{sv}{av // 60} <font color='{GRAY_BRACKET}'>({sp}{pv // 60})</font> ч."
-                main = fmt_minutes_ru_words(val)
-                prev_txt = fmt_minutes_ru_words(prev_val)
-                return f"{main} <font color='{GRAY_BRACKET}'>({prev_txt})</font>"
-
-            # Колонка КОМПЕНСИРОВАНО: то же оформление (скобка серая), но если ничего
-            # не списывали ни в этом, ни в прошлом году — прочерк.
-            def fmt_comp(real_val, prev_val, is_days=False):
-                if real_val == 0 and prev_val == 0:
-                    return "—"
-                return fmt_dual(real_val, prev_val, is_days)
+            # Остатки и итоги оформляются общими правилами (см. fmt_dual / fmt_comp /
+            # total_overtime_days в начале файла) — они же используются в годовом виде.
 
             # «Всего дней» — переработка сотрудника в днях (остаток на конец месяца).
-            # Ночные (ДВО) и сверх нормы считаются в часах/минутах за этот год и за
-            # предыдущий; сверх нормы с минусом не учитываем (зажимаем в 0). Сумму
-            # делим на 8-часовой рабочий день и округляем вниз, затем прибавляем ДДО.
-            night_min = summ["end_hours"] + summ["prev_h_end"]
-            extra_min = summ["end_overtime"] + summ["prev_o_end"]
-            if extra_min < 0:
-                extra_min = 0
-            total_days = (night_min + extra_min) // (8 * 60) + summ["end_days"] + summ["prev_d_end"]
+            total_days = total_overtime_days(
+                summ["end_hours"], summ["prev_h_end"],
+                summ["end_overtime"], summ["prev_o_end"],
+                summ["end_days"], summ["prev_d_end"],
+            )
 
             self._month_summary = {
                 "is_shift": summ["is_shift"], 
@@ -1879,20 +1903,48 @@ class Backend(QObject):
         self.yearlyDataChanged.emit()
 
         # === СОБИРАЕМ ИТОГИ ЗА ГОД ДЛЯ НИЖНЕЙ ПАНЕЛИ ===
+        # Панель балансов — одна на месяц и на год, поэтому годовой набор полей
+        # повторяет месячный: «на начало года / начислено / компенсировано /
+        # остаток на конец года» + скобка прошлого года у остатков.
         t_acc_h = t_acc_o = t_acc_d = 0
-        t_comp_h = t_comp_o = t_comp_d = 0
+        # Списано: отдельно этот год (real) и прошлый год (prev) — для серой скобки
+        t_comp_h = t_comp_hp = 0
+        t_comp_o = t_comp_op = 0
+        t_comp_d = t_comp_dp = 0
+        # Остаток на конец года (декабрь) и на начало года (первый активный месяц)
         end_h = end_o = end_d = 0
-        
+        prev_h_end = prev_o_end = prev_d_end = 0
+        start_h = start_o = start_d = 0
+        prev_h_start = prev_o_start = prev_d_start = 0
+        start_taken = False
+
         for m in range(1, 13):
             s = compute_month_summary(self.active_db, eid, self.current_year, m)
             t_acc_h += s["acc_hours"]
             t_acc_o += s["acc_overtime"]
             t_acc_d += s["acc_days"]
-            t_comp_h += s.get("comp_hours", 0)
-            t_comp_o += s.get("comp_overtime", 0)
-            t_comp_d += s.get("comp_days", 0)
+            t_comp_h += s.get("comp_h_real", 0)
+            t_comp_hp += s.get("comp_h_prev", 0)
+            t_comp_o += s.get("comp_o_real", 0)
+            t_comp_op += s.get("comp_o_prev", 0)
+            t_comp_d += s.get("comp_d_real", 0)
+            t_comp_dp += s.get("comp_d_prev", 0)
+            # До приёма сотрудника compute_month_summary отдаёт нули без «прошлогодних»
+            # ключей — по их наличию и берём первый содержательный месяц как «на начало».
+            if not start_taken and "prev_h_start" in s:
+                start_taken = True
+                start_h, start_o, start_d = s["start_hours"], s["start_overtime"], s["start_days"]
+                prev_h_start = s["prev_h_start"]
+                prev_o_start = s["prev_o_start"]
+                prev_d_start = s["prev_d_start"]
             if m == 12:
                 end_h, end_o, end_d = s["end_hours"], s["end_overtime"], s["end_days"]
+                prev_h_end = s.get("prev_h_end", 0)
+                prev_o_end = s.get("prev_o_end", 0)
+                prev_d_end = s.get("prev_d_end", 0)
+
+        # «Всего дней» — та же формула, что и в месячном виде.
+        total_days = total_overtime_days(end_h, prev_h_end, end_o, prev_o_end, end_d, prev_d_end)
 
         b_days = o_days = k_days = 0
         for date_str, info in data_map.items():
@@ -1916,22 +1968,35 @@ class Backend(QObject):
             money_txt = "—"
 
         self._year_summary = {
+            # НА НАЧАЛО ГОДА: остаток на 1 января + серая скобка прошлого года
+            "start_hours": fmt_dual(start_h, prev_h_start),
+            "start_overtime": fmt_dual(start_o, prev_o_start),
+            "start_days": fmt_dual(start_d, prev_d_start, True),
+
+            # НАЧИСЛЕНО ЗА ГОД
             "acc_hours": fmt_minutes_ru_words(t_acc_h),
             "acc_overtime": fmt_minutes_ru_words(t_acc_o),
             "acc_days": f"{t_acc_d} д.",
-            "comp_hours": fmt_minutes_ru_words(t_comp_h),
-            "comp_overtime": fmt_minutes_ru_words(t_comp_o),
-            "comp_days": f"{t_comp_d} д.",
+
+            # КОМПЕНСИРОВАНО ЗА ГОД: этот год + серая скобка прошлого
+            "comp_hours": fmt_comp(t_comp_h, t_comp_hp),
+            "comp_overtime": fmt_comp(t_comp_o, t_comp_op),
+            "comp_days": fmt_comp(t_comp_d, t_comp_dp, True),
             "comp_money": money_txt,
-            "end_hours": fmt_minutes_ru_words(end_h),
-            "end_overtime": fmt_minutes_ru_words(end_o),
-            "end_days": f"{end_d} д.",
+
+            # ОСТАТОК НА КОНЕЦ ГОДА: этот год + серая скобка прошлого
+            "end_hours": fmt_dual(end_h, prev_h_end),
+            "end_overtime": fmt_dual(end_o, prev_o_end),
+            "end_days": fmt_dual(end_d, prev_d_end, True),
+
+            # СТАТУСЫ ДНЕЙ ЗА ГОД
             "b_days": f"{b_days} дн." if b_days else "—",
             "o_days": f"{o_days} дн." if o_days else "—",
             "k_days": f"{k_days} дн." if k_days else "—",
             "is_hours_negative": end_h < 0,
             "is_overtime_negative": end_o < 0,
-            "is_days_negative": end_d < 0
+            "is_days_negative": end_d < 0,
+            "total_days": int(total_days)
         }
         self.yearSummaryChanged.emit()
 

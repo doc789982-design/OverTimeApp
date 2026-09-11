@@ -541,13 +541,103 @@ Item {
         // СТРАНИЦА 1: ГОДОВАЯ ПАНОРАМА
         // ==========================================
         Item {
-            Rectangle {
-                anchors.top: parent.top
-                anchors.bottom: parent.bottom
+            id: yearPage
+
+            // ------------------------------------------
+            // ПОДПИСИ К МАТРИЦЕ (легенда)
+            // Тихая справочная строка между матрицей и панелью балансов:
+            // что означает каждая ячейка. Ничего не перекрывает и не
+            // отвлекает — просто мелкие плашки с названиями.
+            // ------------------------------------------
+            Flow {
+                id: yearLegend
+                visible: backend.yearlyData.length > 0
                 anchors.left: parent.left
                 anchors.right: parent.right
-                anchors.margins: AppTheme.spaceL
+                anchors.bottom: parent.bottom
+                anchors.leftMargin: AppTheme.spaceL
+                anchors.rightMargin: AppTheme.spaceL
+                spacing: AppTheme.spaceS
+
+                Text {
+                    height: 14
+                    verticalAlignment: Text.AlignVCenter
+                    text: "Обозначения"
+                    color: AppTheme.textDisabled
+                    font.family: AppTheme.fontFamily
+                    font.pixelSize: AppTheme.sizeMicro
+                    font.weight: AppTheme.weightBold
+                    font.letterSpacing: 0.4
+                }
+
+                Repeater {
+                    model: [
+                        { "kind": "fill",   "color": AppTheme.yearDutyExtra, "text": "дежурство вне графика" },
+                        { "kind": "fill",   "color": AppTheme.yearDutyShift, "text": "дежурство в смене" },
+                        { "kind": "fill",   "color": AppTheme.yearWeekend,   "text": "выходной" },
+                        { "kind": "plain",  "color": AppTheme.bgCell,        "text": "обычный день" },
+                        { "kind": "letter", "letter": "В", "soft": AppTheme.bgTealSoft,    "color": AppTheme.accentTeal,    "text": "компенсация" },
+                        { "kind": "letter", "letter": "Б", "soft": AppTheme.bgDangerSoft,  "color": AppTheme.accentDanger,  "text": "больничный" },
+                        { "kind": "letter", "letter": "О", "soft": AppTheme.bgWarningSoft, "color": AppTheme.accentWarning, "text": "отпуск" },
+                        { "kind": "letter", "letter": "К", "soft": AppTheme.bgPurpleSoft,  "color": AppTheme.accentPurple,  "text": "командировка" }
+                    ]
+
+                    delegate: Row {
+                        spacing: AppTheme.spaceXXS
+
+                        Item {
+                            width: modelData.kind === "letter" ? 14 : 10
+                            height: 14
+                            Rectangle {
+                                anchors.centerIn: parent
+                                width: modelData.kind === "letter" ? 14 : 10
+                                height: modelData.kind === "letter" ? 14 : 10
+                                radius: modelData.kind === "letter" ? AppTheme.radiusPill : 3
+                                color: modelData.kind === "letter" ? modelData.soft : modelData.color
+                                border.width: modelData.kind === "plain" ? 1 : 0
+                                border.color: AppTheme.borderDivider
+                                Text {
+                                    anchors.centerIn: parent
+                                    visible: modelData.kind === "letter"
+                                    text: modelData.letter || ""
+                                    color: modelData.color
+                                    font.family: AppTheme.fontFamily
+                                    font.pixelSize: AppTheme.sizeMicro
+                                    font.weight: AppTheme.weightBold
+                                }
+                            }
+                        }
+                        Text {
+                            height: 14
+                            verticalAlignment: Text.AlignVCenter
+                            text: modelData.text
+                            color: AppTheme.textTertiary
+                            font.family: AppTheme.fontFamily
+                            font.pixelSize: AppTheme.sizeMicro
+                        }
+                    }
+                }
+            }
+
+            Rectangle {
+                id: yearArea
+                anchors.top: parent.top
+                anchors.bottom: yearLegend.top
+                anchors.bottomMargin: AppTheme.spaceS
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.leftMargin: AppTheme.spaceL
+                anchors.rightMargin: AppTheme.spaceL
+                anchors.topMargin: AppTheme.spaceL
+                clip: true
                 color: "transparent"
+
+                // Ячейка матрицы квадратная, поэтому сторона ограничена и шириной,
+                // и высотой отведённого места: матрица всегда помещается целиком
+                // и не наползает на легенду и панель балансов.
+                readonly property real cellSide: Math.max(6, Math.min(
+                        (width - monthLabels.width) / 31,
+                        (height - daysScale.height - AppTheme.spaceS) / 12))
                 
                 Column {
                     id: monthLabels
@@ -576,7 +666,7 @@ Item {
                     id: daysScale
                     visible: backend.yearlyData.length > 0
                     anchors.left: yearGrid.left
-                    anchors.right: yearGrid.right
+                    width: yearGrid.width
                     anchors.top: parent.top
                     height: 24
                     
@@ -606,8 +696,8 @@ Item {
                     anchors.left: monthLabels.right
                     anchors.top: daysScale.bottom
                     anchors.topMargin: AppTheme.spaceS
-                    anchors.right: parent.right
-                    height: (width / 31) * 12
+                    width: yearArea.cellSide * 31
+                    height: yearArea.cellSide * 12
                     interactive: false
                     reuseItems: true 
                     model: backend.yearlyData
