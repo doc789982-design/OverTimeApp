@@ -1207,37 +1207,16 @@ class Backend(QObject):
         hire_y, hire_m = safe_get_hire_date(emp["start_month"])
         
         # 1. СЛУЧАЙ: СПИСАНИЕ ИЗ ПРОШЛОГО ГОДА (ЭТАЛОНА)
-        # Если запрашиваемый год меньше текущего рабочего года
+        # Заначка больше не берётся «как есть» из карточки сотрудника: с 1 января
+        # она формируется из остатка «этого года» на конец прошлого года и
+        # уменьшается только списаниями текущего года. Это ровно те числа, что
+        # показаны серой скобкой в панели балансов, поэтому диалог и панель
+        # никогда не расходятся.
         if year < self.current_year:
-            # Берем чистые цифры из карточки (наш Эталон)
-            h = int(emp["prev_opening_minutes"] or 0)
-            o = int(emp["prev_opening_overtime_minutes"] or 0)
-            d = int(emp["prev_opening_days"] or 0)
-            
-            # Считаем, сколько мы УЖЕ потратили из этого Эталона в ТЕКУЩЕМ году.
-            # (Ищем все записи с меткой 1900, сделанные в текущем self.current_year)
-            current_y_str = str(self.current_year)
-            
-            # Вычитаем потраченные часы и сверхнорму
-            r_h = self.active_db.conn.execute("""
-                SELECT unit, SUM(amount_minutes) as sm 
-                FROM compensation 
-                WHERE employee_id=? AND event_date='1900-01-01' AND unit IN ('hours', 'overtime')
-                  AND substr(order_date, 1, 4) = ?
-                GROUP BY unit
-            """, (self._selected_employee_id, current_y_str)).fetchall()
-            
-            # Вычитаем потраченные дни
-            r_d = self.active_db.conn.execute("""
-                SELECT COUNT(*) as cd FROM comp_day_off_date 
-                WHERE employee_id=? AND day_off_date >= ? AND day_off_date <= ?
-                  AND compensation_id IN (SELECT id FROM compensation WHERE event_date='1900-01-01' AND unit='days')
-            """, (self._selected_employee_id, current_y_str + "-01-01", current_y_str + "-12-31")).fetchone()["cd"] or 0
-            
-            for row in r_h:
-                if row["unit"] == "hours": h -= int(row["sm"] or 0)
-                elif row["unit"] == "overtime": o -= int(row["sm"] or 0)
-            d -= r_d
+            summ = compute_month_summary(self.active_db, self._selected_employee_id, self.current_year, self.current_month)
+            h = int(summ.get("prev_h_end", 0) or 0)
+            o = int(summ.get("prev_o_end", 0) or 0)
+            d = int(summ.get("prev_d_end", 0) or 0)
 
             # Возвращаем результат (часы переводим в целые числа для интерфейса)
             return {

@@ -306,16 +306,26 @@ def compute_month_summary(db, employee_id: int, year: int, month: int) -> dict:
     y_start = datetime(year, hire_m, 1) if year == hire_y else datetime(year, 1, 1)
 
     # 1. ТЕКУЩИЙ ГОД (База накоплений)
+    # С 1 января начинается новый учётный период: «этот год» стартует с нуля и
+    # копится заново. Вводные остатки из карточки сотрудника действуют только в
+    # год приёма (первый год учёта) — на следующие годы они не переносятся.
     if year == hire_y:
         base_h, base_o, base_d = int(emp["opening_minutes"] or 0), int(emp["opening_overtime_minutes"] or 0), int(emp["opening_days"] or 0)
     else:
-        # Для последующих лет баланс переходит из декабря прошлого года
-        # Рекурсия здесь безопасна, так как глубина - всего несколько лет
-        prev_summ = compute_month_summary(db, employee_id, year - 1, 12)
-        base_h, base_o, base_d = prev_summ["end_hours"], prev_summ["end_overtime"], prev_summ["end_days"]
+        base_h, base_o, base_d = 0, 0, 0
 
     # 2. ЭТАЛОН ПРОШЛОГО ГОДА (Заначка)
-    ph, po, pd = int(emp["prev_opening_minutes"] or 0), int(emp["prev_opening_overtime_minutes"] or 0), int(emp["prev_opening_days"] or 0)
+    # В год приёма заначка — это то, что ввели в карточке («Предыдущий год»).
+    # С каждого следующего года заначкой становится остаток «этого года» на
+    # 31 декабря прошлого года: на новый год переносится именно он. То, что лежало в
+    # заначке годом раньше (то есть остаток позапрошлого года), с 1 января
+    # сгорает — неиспользованные остатки старше одного года не учитываются.
+    # Рекурсия здесь безопасна, так как глубина - всего несколько лет.
+    if year == hire_y:
+        ph, po, pd = int(emp["prev_opening_minutes"] or 0), int(emp["prev_opening_overtime_minutes"] or 0), int(emp["prev_opening_days"] or 0)
+    else:
+        prev_summ = compute_month_summary(db, employee_id, year - 1, 12)
+        ph, po, pd = prev_summ["end_hours"], prev_summ["end_overtime"], prev_summ["end_days"]
 
     # Вспомогательная функция для списаний из Эталона (1900 год)
     def get_prev_year_spent(s_iso, e_iso):
@@ -366,7 +376,13 @@ def compute_month_summary(db, employee_id: int, year: int, month: int) -> dict:
             elif row["unit"] == "overtime": res["overtime"] = int(row["sm"] or 0)
         return res
 
-    spent_before = get_prev_year_spent("1900-01-01", m_s_iso)
+    # Списания из заначки учитываются только в пределах своего года: на 1 января
+    # заначка формируется заново из остатка прошлого года, поэтому траты прошлых
+    # лет её больше не уменьшают (и не уводят в минус чужой остаток). Для года
+    # приёма окно прежнее — от начала учёта (1900-01-01), чтобы не менять
+    # поведение по уже введённым в карточку данным.
+    stash_from = "1900-01-01" if year == hire_y else f"{year:04d}-01-01"
+    spent_before = get_prev_year_spent(stash_from, m_s_iso)
     spent_now = get_prev_year_spent(m_s_iso, m_e_iso)
 
     # 3. СПИСАНИЯ ТЕКУЩЕГО ГОДА (Реальные)
