@@ -38,32 +38,42 @@ Item {
     // МИНИ-ЯЧЕЙКА ПОТОКА ВНУТРИ КАРТОЧКИ
     // Значение отцентрировано по горизонтали относительно пояснения снизу.
     // ==========================================
-    component MiniStat: Column {
+    // Вдавленная ячейка мини-потока (soft UI)
+    component MiniStat: Rectangle {
         id: ms
         property string valText: "—"
         property string labelText: ""
         property color valColor: AppTheme.textPrimary
-        spacing: 1
 
-        Text {
-            width: ms.width
-            horizontalAlignment: Text.AlignHCenter
-            text: ms.valText
-            color: ms.valColor
-            font.family: AppTheme.fontFamily
-            font.pixelSize: AppTheme.sizeSmall
-            font.weight: AppTheme.weightBold
-            elide: Text.ElideRight
-            textFormat: Text.StyledText
-        }
-        Text {
-            width: ms.width
-            horizontalAlignment: Text.AlignHCenter
-            text: ms.labelText
-            color: AppTheme.textTertiary
-            font.family: AppTheme.fontFamily
-            font.pixelSize: AppTheme.sizeMicro
-            elide: Text.ElideRight
+        height: 30
+        radius: AppTheme.radiusSmall
+        color: AppTheme.bgSurface
+        AppInsetShadow { level: 1 }
+
+        Column {
+            anchors.centerIn: parent
+            spacing: 1
+
+            Text {
+                width: ms.width
+                horizontalAlignment: Text.AlignHCenter
+                text: ms.valText
+                color: ms.valColor
+                font.family: AppTheme.fontFamily
+                font.pixelSize: AppTheme.sizeSmall
+                font.weight: AppTheme.weightBold
+                elide: Text.ElideRight
+                textFormat: Text.StyledText
+            }
+            Text {
+                width: ms.width
+                horizontalAlignment: Text.AlignHCenter
+                text: ms.labelText
+                color: AppTheme.textTertiary
+                font.family: AppTheme.fontFamily
+                font.pixelSize: AppTheme.sizeMicro
+                elide: Text.ElideRight
+            }
         }
     }
 
@@ -86,10 +96,11 @@ Item {
         Layout.fillHeight: true
         Layout.minimumWidth: 170
         Layout.preferredHeight: 170
-        radius: AppTheme.radiusMedium
-        color: AppTheme.bgBase
-        border.color: AppTheme.borderDivider
-        border.width: 1
+        radius: AppTheme.radiusLarge
+        color: AppTheme.bgSurface
+
+        // Неоморфизм: карточка «выдавлена» из фона, рамка не нужна
+        AppShadow { level: 1 }
 
         ColumnLayout {
             id: cardCol
@@ -106,7 +117,7 @@ Item {
 
                 Rectangle {
                     width: 32; height: 32
-                    radius: AppTheme.radiusSmall
+                    radius: AppTheme.radiusMedium
                     color: Qt.rgba(card.accent.r, card.accent.g, card.accent.b, 0.14)
                     Layout.alignment: Qt.AlignVCenter
                     IconImage {
@@ -165,7 +176,7 @@ Item {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 30
                 Layout.topMargin: AppTheme.spaceXXS
-                spacing: 0
+                spacing: AppTheme.spaceXXS
 
                 MiniStat { width: flowRow.width / 3; valText: card.startText; labelText: "на начало" }
                 MiniStat { width: flowRow.width / 3; valText: card.accText;  labelText: "начислено"; valColor: AppTheme.accentSuccess }
@@ -186,7 +197,6 @@ Item {
         height: summaryBody.implicitHeight + AppTheme.spaceM * 2
         radius: AppTheme.radiusLarge
         color: AppTheme.bgSurface
-        border.color: AppTheme.borderDivider; border.width: 1
 
         // Тень-картинка вместо вычисляемой (Level 1)
         AppShadow { level: 1 }
@@ -285,10 +295,19 @@ Item {
                 // «Всего дней» — переработка сотрудника в днях (справа в шапке).
                 // Один элемент на оба вида: число берётся из текущего набора итогов.
                 // Шрифт числа — как у даты в шапке меню дня (fontCondensed, sizeH4, bold).
-                RowLayout {
-                    id: totalDaysStat
+                // Неоморфизм: «Всего дней» — вдавленная плашка в шапке
+                Rectangle {
                     Layout.alignment: Qt.AlignVCenter
-                    spacing: AppTheme.spaceXS
+                    implicitWidth: totalDaysRow.implicitWidth + AppTheme.spaceM * 2
+                    implicitHeight: 40
+                    radius: AppTheme.radiusMedium
+                    color: AppTheme.bgSurface
+                    AppInsetShadow { level: 1 }
+
+                    RowLayout {
+                        id: totalDaysRow
+                        anchors.centerIn: parent
+                        spacing: AppTheme.spaceXS
 
                     Text {
                         text: "Всего"
@@ -312,6 +331,7 @@ Item {
                         font.family: AppTheme.fontFamily
                         font.pixelSize: AppTheme.sizeSmall
                         Layout.alignment: Qt.AlignVCenter
+                    }
                     }
                 }
             }

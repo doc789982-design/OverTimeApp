@@ -10,3 +10,6 @@ dist/
 build/
 *.spec
 !tools/overtimetab.spec
+
+# контрольный лист генератора теней (для глаз, не для программы)
+shadows/_preview.png

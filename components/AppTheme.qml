@@ -10,7 +10,7 @@ QtObject {
     // подхватят автоматически.
     // ==========================================
     readonly property string appVersion: "2.0.0-ALPHA.20"
-    readonly property int appBuild: 149
+    readonly property int appBuild: 150
     readonly property string appVersionFull: appVersion + " · сборка " + appBuild
 
     // ==========================================
@@ -29,21 +29,28 @@ QtObject {
     property bool isDark: backend.isDarkTheme
 
     // ==========================================
-    // 1. ПОВЕРХНОСТИ (Surfaces)
+    // 1. ПОВЕРХНОСТИ (Surfaces) — НЕОМОРФИЗМ
     // ==========================================
-    // Светлая — Canvas (InstUI): белая страница, фарфор у панелей, карточки белые.
-    // Тёмная — Material: #121212 и ступени elevation, календарь чуть светлее рельс.
-    property color bgBase:     isDark ? "#1C1C1E" : "#FFFFFF"
-    property color bgPanel:    isDark ? "#121212" : "#F5F5F5"
-    property color bgSurface:  isDark ? "#161618" : "#F8F9FA"
-    property color bgCell:     isDark ? "#242426" : "#F4F5F7"
-    property color bgElevated: isDark ? "#2C2C2C" : "#FFFFFF"
-    property color bgModal:    isDark ? "#333333" : "#FFFFFF"
+    // Светлая: один материал на всё (#E9EDF3) — форму панелям и карточкам
+    // дают только тени (свет сверху-слева, тень снизу-справа, см. shadows/).
+    // Диалоги и меню — на полтона светлее (#EDF1F6).
+    // Тёмная: то же самое, но по «тёмному рецепту» — #272C34, где глубину
+    // дают чёрные тени и лёгкий светлый контур, а не белые подсветки.
+    property color bgBase:     isDark ? "#272C34" : "#E9EDF3"
+    property color bgPanel:    isDark ? "#272C34" : "#E9EDF3"
+    property color bgSurface:  isDark ? "#272C34" : "#E9EDF3"
+    // Клетки календаря: днём сливаются с фоном (их «поднимает» тень),
+    // ночью — на полтона светлее фона
+    property color bgCell:     isDark ? "#2A3039" : "#E9EDF3"
+    // «Обычный день» годовой матрицы и прочие нейтральные плашки
+    property color bgCellPlain: isDark ? "#313743" : "#D7DEE8"
+    property color bgElevated: isDark ? "#2A3039" : "#EDF1F6"
+    property color bgModal:    isDark ? "#2B313A" : "#EDF1F6"
     property color bgInput:    "transparent"
 
-    property color bgDisabled:       isDark ? "#212529" : "#E9ECEF" 
-    property color bgSkeletonBase:   isDark ? "#2B3035" : "#E2E8F0" 
-    property color bgSkeletonShine:  isDark ? "#3B4048" : "#F8F9FA" 
+    property color bgDisabled:       isDark ? "#23272E" : "#DDE3EC" 
+    property color bgSkeletonBase:   isDark ? "#23272E" : "#D8DFE9" 
+    property color bgSkeletonShine:  isDark ? "#2E343D" : "#F2F5F9" 
 
     // ==========================================
     // 2. СЕМАНТИЧЕСКИЕ ЦВЕТА (Brand & Status)
@@ -76,7 +83,7 @@ QtObject {
     // 3. ТЕКСТ (Typography Colors)
     // ==========================================
     property color textPrimary:   isDark ? "#DEE4EA" : "#2D3B45"
-    property color textSecondary: isDark ? "#8B949E" : "#6B7780"
+    property color textSecondary: isDark ? "#8B949E" : "#5E6A75"
     property color textTertiary:  isDark ? "#6B757D" : "#8B969E"
     property color textDisabled:  isDark ? "#484F58" : "#9AA0A6" 
     
@@ -111,9 +118,9 @@ QtObject {
     // ==========================================
     // 5. ГРАНИЦЫ И ФОКУС (Borders & Accessibility)
     // ==========================================
-    property color borderDivider:  isDark ? "#30363D" : "#E8EAEC"
-    property color borderInput:    isDark ? "#484F58" : "#C7CDD1" 
-    property color borderDisabled: isDark ? "#353B42" : "#DDE2E5" 
+    property color borderDivider:  isDark ? "#323947" : "#D5DCE6"
+    property color borderInput:    isDark ? "#3A4250" : "#C9D3DF" 
+    property color borderDisabled: isDark ? "#2E3540" : "#D2DAE4" 
     property color borderError:    accentDanger 
     
     // Фокус с вшитой 50% прозрачностью (80 в начале HEX)
@@ -138,10 +145,10 @@ QtObject {
     // 7. СКРУГЛЕНИЯ (Border Radii)
     // ==========================================
     property int radiusSharp:  0    
-    property int radiusSmall:  4    
-    property int radiusMedium: 8    
-    property int radiusLarge:  12   
-    property int radiusModal:  16   
+    property int radiusSmall:  6    
+    property int radiusMedium: 12    
+    property int radiusLarge:  16   
+    property int radiusModal:  20   
     property int radiusPill:   999  
 
     // ==========================================

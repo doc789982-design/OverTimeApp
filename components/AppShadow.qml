@@ -1,7 +1,7 @@
 import QtQuick
 
 // ═══════════════════════════════════════════════════════════════════
-// ЛЁГКАЯ ТЕНЬ-КАРТИНКА (как в Telegram/Discord)
+// ЛЁГКАЯ ТЕНЬ-КАРТИНКА — НЕОМОРФИЗМ (soft UI)
 //
 // Раньше тени делались через DropShadow: видеокарта КАЖДЫЙ КАДР
 // рисовала элемент на невидимый холст, размывала его (25 проходов
@@ -10,31 +10,35 @@ import QtQuick
 //
 // Теперь тень — это заранее нарисованный PNG (папка shadows/),
 // который просто растягивается под элементом. Стоимость — как у
-// обычной картинки, т.е. почти ноль. Выглядит идентично.
+// обычной картинки, то есть почти ноль.
 //
-// Использование (вместо layer.enabled + layer.effect: DropShadow):
+// В одном PNG сразу ДВЕ тени неоморфизма: светлая сверху-слева и
+// тёмная снизу-справа — элемент выглядит «выдавленным» из фона.
+// Для тёмной темы свой файл (_dark): там чёрная тень и едва
+// заметный светлый контур.
+//
+// Использование:
 //     Rectangle {
-//         AppShadow { level: 4 }   // уровни 1..5, те же что были
+//         AppShadow { level: 2 }   // уровни 1..5
 //     }
 // ═══════════════════════════════════════════════════════════════════
 BorderImage {
     id: root
 
-    // Уровень тени 1..5 — соответствует старым AppTheme.shadowL#Blur
+    // Уровень тени 1..5
     property int level: 1
 
-    // Сдвиг тени вниз (отрицательный = вверх, как у нижней шторки)
-    property int yOffset: _offsets[level]
+    // Ручной сдвиг тени (отрицательный = вверх, как у нижней шторки)
+    property int yOffset: 0
 
     // Насколько картинка выступает за края элемента (запас на размытие)
-    readonly property var _pads:    [0,  8, 14, 18, 26, 34]
+    readonly property var _pads:    [0, 12, 18, 24, 34, 42]
     // Неломаемая рамка картинки (углы не растягиваются)
-    readonly property var _insets:  [0, 16, 22, 26, 42, 42]
-    // Стандартные вертикальные сдвиги (те же, что были у DropShadow)
-    readonly property var _offsets: [0,  1,  3,  4,  8, 12]
+    readonly property var _insets:  [0, 20, 26, 32, 50, 50]
 
-    // Та же прозрачность, что была у AppTheme.shadowColor
-    opacity: AppTheme.isDark ? 0.40 : 0.12
+    // Тени неоморфизма «смотрят» в обе стороны сразу, поэтому
+    // дополнительный сдвиг вниз больше не нужен
+    opacity: 1.0
 
     z: -1  // рисуемся ПОД родителем
     anchors.fill: parent
@@ -43,7 +47,9 @@ BorderImage {
     anchors.topMargin:    -_pads[level] + yOffset
     anchors.bottomMargin: -_pads[level] - yOffset
 
-    source: "../shadows/shadow_l" + level + ".png"
+    source: AppTheme.isDark
+            ? "../shadows/shadow_l" + level + "_dark.png"
+            : "../shadows/shadow_l" + level + ".png"
     border.left:   _insets[level]
     border.right:  _insets[level]
     border.top:    _insets[level]

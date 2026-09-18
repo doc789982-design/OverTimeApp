@@ -37,8 +37,8 @@ Button {
         if (variant === "success")   return AppTheme.accentSuccess
         if (variant === "danger")    return AppTheme.accentDanger
         
-        // МАГИЯ ЗДЕСЬ: Secondary кнопка теперь полностью прозрачная!
-        if (variant === "secondary") return "transparent"   
+        // Secondary — кнопка из того же материала, что и фон (soft UI):
+        if (variant === "secondary") return AppTheme.bgSurface   
         if (variant === "ghost")     return "transparent"
         
         return AppTheme.accentBrand
@@ -55,7 +55,7 @@ Button {
     }
 
     function getVariantBorderColor() {
-        if (variant === "secondary") return AppTheme.borderInput
+        if (variant === "secondary") return "transparent"
         return "transparent"
     }
 
@@ -69,7 +69,7 @@ Button {
             id: bgRect
             anchors.fill: parent
             color: control.getVariantBgColor()
-            radius: AppTheme.radiusMedium 
+            radius: AppTheme.radiusPill 
             
             border.color: control.getVariantBorderColor()
             border.width: 1
@@ -77,8 +77,11 @@ Button {
             Behavior on color { ColorAnimation { duration: AppTheme.durFast } }
             Behavior on border.color { ColorAnimation { duration: AppTheme.durFast } }
 
-            // МАГИЯ 2: Тень-картинка; для Ghost и Secondary кнопок отключена!
-            AppShadow { level: 1; visible: control.variant !== "ghost" && control.variant !== "secondary" }
+            // Тень-картинка: у всех кнопок, кроме плоской Ghost
+            AppShadow { level: 1; visible: control.variant !== "ghost" }
+
+            // Неоморфизм: нажатая кнопка «втапливается» в фон
+            AppInsetShadow { level: 1; visible: control.pressed && control.variant !== "ghost" }
 
             // МАГИЯ: Слой состояния (Hover / Press)
             // Он ложится поверх базового цвета, делая синий - темно-синим, а зеленый - темно-зеленым!
@@ -96,7 +99,7 @@ Button {
         Rectangle {
             anchors.fill: parent
             anchors.margins: -AppTheme.focusOffset - AppTheme.focusWidth
-            radius: AppTheme.radiusMedium + AppTheme.focusOffset
+            radius: AppTheme.radiusPill + AppTheme.focusOffset
             
             color: "transparent"
             border.color: AppTheme.borderFocus
