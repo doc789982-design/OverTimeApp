@@ -104,34 +104,60 @@ Item {
                 Layout.fillWidth: true
                 spacing: AppTheme.spaceS
 
+                // Неоморфизм: плашка «выдавлена» из карточки, а цвет иконки
+                // мягко светится по её краю — гладким радиальным градиентом,
+                // который рисуется один раз (Canvas), без ступенек и GPU-эффектов.
                 Rectangle {
+                    id: iconPlate
                     width: 32; height: 32
-                    radius: 10
-                    color: Qt.rgba(card.accent.r, card.accent.g, card.accent.b, 0.14)
+                    radius: 12
+                    // Непрозрачное основание: тень под плашкой не просвечивает
+                    color: AppTheme.bgBase
                     Layout.alignment: Qt.AlignVCenter
 
-                    // Неоморфизм: плашка «выдавлена» из карточки, а цвет иконки
-                    // мягко светится по её краю (как в дизайн-макете).
-                    // Отсвет — три ступенчатых полупрозрачных Rectangle: никаких
-                    // эффектов, видеокарта не считает размытие.
                     AppSoftShadow { level: 1 }
+
+                    // Цветная полупрозрачная плёнка ПОВЕРХ основания —
+                    // цвет плашки остался прежним
                     Rectangle {
-                        anchors.centerIn: parent; z: -1
-                        width: 38; height: 38; radius: 13
-                        color: Qt.rgba(card.accent.r, card.accent.g, card.accent.b,
-                                       AppTheme.isDark ? 0.16 : 0.10)
+                        anchors.fill: parent
+                        radius: parent.radius
+                        color: Qt.rgba(card.accent.r, card.accent.g, card.accent.b, 0.14)
                     }
-                    Rectangle {
-                        anchors.centerIn: parent; z: -1
-                        width: 44; height: 44; radius: 16
-                        color: Qt.rgba(card.accent.r, card.accent.g, card.accent.b,
-                                       AppTheme.isDark ? 0.11 : 0.07)
-                    }
-                    Rectangle {
-                        anchors.centerIn: parent; z: -1
-                        width: 50; height: 50; radius: 19
-                        color: Qt.rgba(card.accent.r, card.accent.g, card.accent.b,
-                                       AppTheme.isDark ? 0.08 : 0.05)
+
+                    Canvas {
+                        id: accentGlow
+                        width: 68; height: 68
+                        anchors.centerIn: parent
+                        z: -2
+                        onPaint: {
+                            var ctx = getContext("2d")
+                            ctx.reset()
+                            ctx.clearRect(0, 0, width, height)
+                            var c = card.accent
+                            var peak = AppTheme.isDark ? 0.30 : 0.20
+                            function col(a) {
+                                return "rgba(" + Math.round(c.r * 255) + "," +
+                                        Math.round(c.g * 255) + "," +
+                                        Math.round(c.b * 255) + "," + a + ")"
+                            }
+                            var g = ctx.createRadialGradient(width / 2, height / 2, 13,
+                                                             width / 2, height / 2, width / 2)
+                            g.addColorStop(0.0, col(peak))
+                            g.addColorStop(0.5, col(peak * 0.45))
+                            g.addColorStop(1.0, col(0))
+                            ctx.fillStyle = g
+                            ctx.fillRect(0, 0, width, height)
+                        }
+                        // Отсвет перерисовывается только при смене темы или цвета
+                        Connections {
+                            target: AppTheme
+                            function onIsDarkChanged() { accentGlow.requestPaint() }
+                        }
+                        Connections {
+                            target: card
+                            function onAccentChanged() { accentGlow.requestPaint() }
+                        }
                     }
                     IconImage {
                         anchors.centerIn: parent

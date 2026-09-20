@@ -22,10 +22,13 @@ Switch {
             anchors.fill: parent
             radius: AppTheme.radiusPill
             // Неоморфизм: выключенная дорожка — «утопленная» ямка в поверхности
+            // (вдавленная рамка-пилюля); включённая — залита цветом
             color: control.checked
                    ? AppTheme.accentBrand
                    : (AppTheme.isDark ? "#22272E" : "#E0E6EF")
             border.width: 0
+
+            AppInsetShadow { level: 2; visible: !control.checked }
 
             Behavior on color { ColorAnimation { duration: AppTheme.durNormal; easing.type: AppTheme.easeColor } }
             Behavior on border.width { NumberAnimation { duration: AppTheme.durFast } }
