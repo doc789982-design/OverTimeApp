@@ -31,12 +31,12 @@ CheckBox {
         // ==========================================
         Rectangle {
             anchors.fill: parent
-            radius: AppTheme.radiusSmall // 4px (строгий квадрат с легким скруглением)
-            
-            // Если выбран - заливаем брендом, если нет - прозрачный
-            color: control.checked ? control.activeColor : "transparent"
-            border.color: control.checked ? control.activeColor : control.inactiveColor
-            border.width: 1
+            radius: AppTheme.radiusSmall
+            AppInsetShadow { level: 1; visible: !control.checked }
+
+            // Неоморфизм: выбранный — залит цветом, невыбранный — «втоплен» в поверхность
+            color: control.checked ? control.activeColor : AppTheme.bgSurface
+            border.width: 0
             
             Behavior on color { ColorAnimation { duration: AppTheme.durFast } }
             Behavior on border.color { ColorAnimation { duration: AppTheme.durFast } }

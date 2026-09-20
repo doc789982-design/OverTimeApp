@@ -106,9 +106,33 @@ Item {
 
                 Rectangle {
                     width: 32; height: 32
-                    radius: AppTheme.radiusSmall
+                    radius: 10
                     color: Qt.rgba(card.accent.r, card.accent.g, card.accent.b, 0.14)
                     Layout.alignment: Qt.AlignVCenter
+
+                    // Неоморфизм: плашка «выдавлена» из карточки, а цвет иконки
+                    // мягко светится по её краю (как в дизайн-макете).
+                    // Отсвет — три ступенчатых полупрозрачных Rectangle: никаких
+                    // эффектов, видеокарта не считает размытие.
+                    AppSoftShadow { level: 1 }
+                    Rectangle {
+                        anchors.centerIn: parent; z: -1
+                        width: 38; height: 38; radius: 13
+                        color: Qt.rgba(card.accent.r, card.accent.g, card.accent.b,
+                                       AppTheme.isDark ? 0.16 : 0.10)
+                    }
+                    Rectangle {
+                        anchors.centerIn: parent; z: -1
+                        width: 44; height: 44; radius: 16
+                        color: Qt.rgba(card.accent.r, card.accent.g, card.accent.b,
+                                       AppTheme.isDark ? 0.11 : 0.07)
+                    }
+                    Rectangle {
+                        anchors.centerIn: parent; z: -1
+                        width: 50; height: 50; radius: 19
+                        color: Qt.rgba(card.accent.r, card.accent.g, card.accent.b,
+                                       AppTheme.isDark ? 0.08 : 0.05)
+                    }
                     IconImage {
                         anchors.centerIn: parent
                         source: "../icons/" + card.icon
@@ -186,10 +210,9 @@ Item {
         height: summaryBody.implicitHeight + AppTheme.spaceM * 2
         radius: AppTheme.radiusLarge
         color: AppTheme.bgSurface
-        border.color: AppTheme.borderDivider; border.width: 1
 
-        // Тень-картинка вместо вычисляемой (Level 1)
-        AppShadow { level: 1 }
+        // Неоморфизм: большая панель «выдавлена» из фона (карточки внутри — как прежде)
+        AppSoftShadow { level: 2 }
 
         ColumnLayout {
             id: summaryBody

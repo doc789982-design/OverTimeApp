@@ -258,16 +258,18 @@ Rectangle {
                     Rectangle {
                         id: empCardBg
                         // Отступы по краям для эффекта "плавающей карточки"
+                        // (12px — ровно настолько выступает мягкая тень выбора)
                         anchors.fill: parent
-                        anchors.leftMargin: AppTheme.spaceXS
-                        anchors.rightMargin: AppTheme.spaceXS
+                        anchors.leftMargin: AppTheme.spaceS
+                        anchors.rightMargin: AppTheme.spaceS
                         anchors.topMargin: 2
                         anchors.bottomMargin: 2
                         
                         radius: AppTheme.radiusLarge // MD3 любит большие скругления (12-16px)
                         
-                        // Цвет: Активный -> Синий мягкий, Наведение -> Серый мягкий, Покой -> Прозрачный
-                        color: cardContainer.isSelected ? AppTheme.bgBrandSoft : 
+                        // Неоморфизм: выбранный сотрудник — выпуклая карточка
+                        // (без синей подсветки); остальные — плоские, как раньше
+                        color: cardContainer.isSelected ? AppTheme.bgBase : 
                                (empMouseArea.containsMouse ? AppTheme.stateHover : "transparent")
 
                         Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
@@ -275,6 +277,8 @@ Rectangle {
                         // Анимация вжатия при клике
                         scale: empMouseArea.pressed ? 0.98 : 1.0
                         Behavior on scale { NumberAnimation { duration: 100 } }
+
+                        AppSoftShadow { level: 1; visible: cardContainer.isSelected }
                     }
 
                     // 2. КОНТЕНТ

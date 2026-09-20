@@ -17,12 +17,13 @@ Item {
         anchors.leftMargin: AppTheme.spaceM
         anchors.rightMargin: AppTheme.spaceM
         anchors.bottomMargin: AppTheme.spaceM 
-        anchors.topMargin: AppTheme.spaceS     
+        anchors.topMargin: AppTheme.spaceM     
         
         radius: AppTheme.radiusLarge
         color: AppTheme.bgElevated
-        border.color: AppTheme.borderDivider
-        border.width: 1
+
+        // Неоморфизм: панель «выдавлена» из фона
+        AppSoftShadow { level: 2 }
 
         ColumnLayout {
             anchors.fill: parent
