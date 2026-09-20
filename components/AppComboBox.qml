@@ -38,15 +38,14 @@ ComboBox {
     // РАМКА
     // ==========================================
     background: Rectangle {
-        // Неоморфизм: поле «втапливается» в поверхность
-        color: AppTheme.bgSurface
+        color: "transparent"
         radius: AppTheme.radiusMedium
-        AppInsetShadow { level: 1 }
-
+        
         border.color: !control.enabled ? AppTheme.borderDisabled :
-                      (control.activeFocus || control.popup.visible ? AppTheme.borderFocus : "transparent")
-        border.width: (control.activeFocus || control.popup.visible) ? AppTheme.focusWidth : 0
-
+                      (control.activeFocus || control.popup.visible ? AppTheme.borderFocus : 
+                      (control.hovered ? AppTheme.textSecondary : AppTheme.borderInput))
+        border.width: (control.activeFocus || control.popup.visible) ? AppTheme.focusWidth : 1
+        
         Behavior on border.color { ColorAnimation { duration: AppTheme.durMicro } }
     }
 

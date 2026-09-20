@@ -54,15 +54,14 @@ TextField {
     // 1. РАМКА
     // ==========================================
     background: Rectangle {
-        // Неоморфизм: поле «втапливается» в поверхность
-        color: AppTheme.bgSurface
+        color: "transparent"
         radius: AppTheme.radiusMedium
-        AppInsetShadow { level: 1 }
-
+        
         border.color: !root.enabled ? AppTheme.borderDisabled :
-                      (root.activeFocus ? AppTheme.borderFocus : "transparent")
-
-        border.width: root.activeFocus ? AppTheme.focusWidth : 0
+                      (root.activeFocus ? AppTheme.borderFocus : 
+                      (root.hovered ? AppTheme.textSecondary : AppTheme.borderInput))
+        
+        border.width: root.activeFocus ? AppTheme.focusWidth : 1
         Behavior on border.color { ColorAnimation { duration: AppTheme.durMicro } }
     }
 

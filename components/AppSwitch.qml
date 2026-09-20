@@ -21,11 +21,11 @@ Switch {
             id: track
             anchors.fill: parent
             radius: AppTheme.radiusPill
-            // Неоморфизм: выключенная дорожка — «утопленная» ямка в поверхности
             color: control.checked
                    ? AppTheme.accentBrand
-                   : (AppTheme.isDark ? "#22272E" : "#E0E6EF")
-            border.width: 0
+                   : (AppTheme.isDark ? "#3A3F46" : AppTheme.borderInput)
+            border.width: control.checked ? 0 : 1
+            border.color: AppTheme.isDark ? AppTheme.borderInput : AppTheme.borderDisabled
 
             Behavior on color { ColorAnimation { duration: AppTheme.durNormal; easing.type: AppTheme.easeColor } }
             Behavior on border.width { NumberAnimation { duration: AppTheme.durFast } }
@@ -46,7 +46,8 @@ Switch {
             anchors.verticalCenter: parent.verticalCenter
             x: control.checked ? parent.width - width - 2 : 2
             color: "#FFFFFF"
-            border.width: 0
+            border.width: control.checked ? 0 : 1
+            border.color: AppTheme.isDark ? AppTheme.borderInput : AppTheme.borderDisabled
 
             Behavior on x {
                 NumberAnimation { duration: AppTheme.durNormal; easing.type: AppTheme.easeStandard }

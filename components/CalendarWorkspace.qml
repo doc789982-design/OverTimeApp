@@ -184,14 +184,12 @@ Item {
                 anchors.leftMargin: AppTheme.spaceL
                 anchors.rightMargin: AppTheme.spaceL
                 height: 40 
-                // Промежутки — как у сетки дней ниже, чтобы подписи не разъезжались
-                spacing: AppTheme.spaceXS
                 
                 Repeater {
                     model: ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
                     
                     Item { 
-                        width: (weekDaysRow.width - 6 * AppTheme.spaceXS) / 7
+                        width: weekDaysRow.width / 7
                         height: parent.height
                         
                         Text { 
@@ -224,10 +222,8 @@ Item {
                 anchors.rightMargin: AppTheme.spaceL
                 
                 columns: 7
-                // Неоморфизм: промежуток чуть шире прежнего — между ячейками
-                // должны просматриваться их мягкие тени
-                rowSpacing: AppTheme.spaceXS
-                columnSpacing: AppTheme.spaceXS
+                rowSpacing: AppTheme.spaceXXS
+                columnSpacing: AppTheme.spaceXXS
 
                 Repeater {
                     model: 42 
@@ -266,17 +262,11 @@ Item {
                             target: innerRect
                         }
 
-                        // Неоморфизм: ячейка «выдавлена» из фона
-                        AppShadow { level: 1 }
-
                         Rectangle {
                             id: innerRect
                             anchors.fill: parent
                             radius: AppTheme.radiusMedium
                             clip: true
-
-                            // Сегодняшний день, наоборот, «втапливается» в фон
-                            AppInsetShadow { level: 1; visible: dayCell.isToday }
                             
                             color: isValid && (dayInfo.is_weekend || dayInfo.is_holiday)
                                    ? AppTheme.bgDangerSoft
@@ -585,7 +575,7 @@ Item {
                         { "kind": "fill",   "color": AppTheme.yearDutyExtra, "text": "дежурство вне графика" },
                         { "kind": "fill",   "color": AppTheme.yearDutyShift, "text": "дежурство в смене" },
                         { "kind": "fill",   "color": AppTheme.yearWeekend,   "text": "выходной" },
-                        { "kind": "plain",  "color": AppTheme.bgCellPlain,  "text": "обычный день" },
+                        { "kind": "plain",  "color": AppTheme.bgCell,        "text": "обычный день" },
                         { "kind": "letter", "letter": "В", "soft": AppTheme.bgTealSoft,    "color": AppTheme.accentTeal,    "text": "компенсация" },
                         { "kind": "letter", "letter": "Б", "soft": AppTheme.bgDangerSoft,  "color": AppTheme.accentDanger,  "text": "больничный" },
                         { "kind": "letter", "letter": "О", "soft": AppTheme.bgWarningSoft, "color": AppTheme.accentWarning, "text": "отпуск" },
@@ -742,7 +732,7 @@ Item {
                                                    : AppTheme.yearDutyExtra
                                         if (cellInfo.is_weekend)
                                             return AppTheme.yearWeekend
-                                        return AppTheme.bgCellPlain
+                                        return AppTheme.bgCell
                                     }
                                     
                                     Text { 
