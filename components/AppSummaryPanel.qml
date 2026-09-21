@@ -38,44 +38,20 @@ Item {
     // МИНИ-ЯЧЕЙКА ПОТОКА ВНУТРИ КАРТОЧКИ
     // Значение отцентрировано по горизонтали относительно пояснения снизу.
     // ==========================================
-    // Ячейка мини-потока. В режиме pill число стоит на цветной плашке:
-    // само число белое, а скобка прошлого года — полупрозрачный белый
-    // (серый цвет скобок #9E9E9E из Main.py::GRAY_BRACKET подменяется здесь)
+    // Ячейка мини-потока. В тёмной теме значения белые, а скобка прошлого
+    // года — полупрозрачный белый (серые скобки #9E9E9E из Main.py
+    // подменяются здесь); в светлой — прежние зелёный/красный и серый
     component MiniStat: Column {
         id: ms
         property string valText: "—"
         property string labelText: ""
         property color valColor: AppTheme.textPrimary
-        property bool pill: false
-        spacing: 2
+        spacing: 1
 
-        // Цветная плашка с белым числом (начислено / компенсировано)
-        Rectangle {
-            visible: ms.pill
-            anchors.horizontalCenter: parent.horizontalCenter
-            width: pillValueText.implicitWidth + AppTheme.spaceM
-            height: 22
-            radius: AppTheme.radiusPill
-            color: ms.valColor
-
-            Text {
-                id: pillValueText
-                anchors.centerIn: parent
-                text: ms.valText.replace(/#9E9E9E/g, "#B3FFFFFF")
-                color: "#FFFFFF"
-                font.family: AppTheme.fontFamily
-                font.pixelSize: AppTheme.sizeSmall
-                font.weight: AppTheme.weightBold
-                textFormat: Text.StyledText
-            }
-        }
-
-        // Обычное значение без плашки (на начало)
         Text {
-            visible: !ms.pill
             width: ms.width
             horizontalAlignment: Text.AlignHCenter
-            text: ms.valText
+            text: AppTheme.isDark ? ms.valText.replace(/#9E9E9E/g, "#B3FFFFFF") : ms.valText
             color: ms.valColor
             font.family: AppTheme.fontFamily
             font.pixelSize: AppTheme.sizeSmall
@@ -112,7 +88,7 @@ Item {
         Layout.fillWidth: true
         Layout.fillHeight: true
         Layout.minimumWidth: 170
-        Layout.preferredHeight: 180
+        Layout.preferredHeight: 170
         radius: AppTheme.radiusMedium
         color: AppTheme.bgBase
         border.color: AppTheme.borderDivider
@@ -188,13 +164,13 @@ Item {
             Row {
                 id: flowRow
                 Layout.fillWidth: true
-                Layout.preferredHeight: 40
+                Layout.preferredHeight: 30
                 Layout.topMargin: AppTheme.spaceXXS
                 spacing: 0
 
                 MiniStat { width: flowRow.width / 3; valText: card.startText; labelText: "на начало" }
-                MiniStat { width: flowRow.width / 3; valText: card.accText;  labelText: "начислено"; valColor: AppTheme.accentSuccess; pill: true }
-                MiniStat { width: flowRow.width / 3; valText: card.compText; labelText: "компенсировано"; valColor: AppTheme.accentDanger; pill: true }
+                MiniStat { width: flowRow.width / 3; valText: card.accText;  labelText: "начислено"; valColor: AppTheme.isDark ? "#FFFFFF" : AppTheme.accentSuccess }
+                MiniStat { width: flowRow.width / 3; valText: card.compText; labelText: "компенсировано"; valColor: AppTheme.isDark ? "#FFFFFF" : AppTheme.accentDanger }
             }
         }
     }

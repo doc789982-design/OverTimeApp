@@ -163,43 +163,100 @@ Rectangle {
 
         // ──────────────────────────────────────────────────────────
         // ВЫДЕЛЕНИЕ «ВЫТЕКАЮЩЕЕ» ИЗ РАБОЧЕЙ ОБЛАСТИ
-        // Плашка цвета фона календаря/балансов (bgBase) левыми углами
-        // скруглена, а правым краем уходит ЗА границу списка: clip
-        // срезает правые углы — выделение «вытекает» из соседней панели.
-        // При смене сотрудника плашка не прыгает, а переезжает:
-        // highlightMoveDuration = быстро, но плавно.
+        // Одна плашка на весь список (отдельный слой, НЕ часть делегата):
+        // слева обнимает строку выбранного сотрудника, а к правому краю
+        // плавно РАСШИРЯЕТСЯ и закруглённо примыкает к границе соседней
+        // панели. Слой живёт вне делегатов, поэтому переживает перезалив
+        // списка: при смене сотрудника плашка плавно переезжает (Behavior),
+        // при прокрутке — мгновенно следует за своей строкой.
         // ──────────────────────────────────────────────────────────
-        highlight: Item {
-            Rectangle {
-                anchors.fill: parent
-                anchors.leftMargin: AppTheme.spaceXS
-                anchors.rightMargin: -AppTheme.radiusLarge   // правые углы срезаются краем списка
-                anchors.topMargin: 2
-                anchors.bottomMargin: 2
-                radius: AppTheme.radiusLarge
-                color: AppTheme.bgBase
-            }
-        }
-        highlightFollowsCurrentItem: true
-        highlightMoveDuration: 260      // переезд с инерцией: быстро, но плавно
-        highlightMoveVelocity: 100000   // скорость не ограничивает — правит длительность
-        highlightResizeDuration: 160
-        currentIndex: -1
-
-        // Текущий индекс всегда зеркалит выбранного сотрудника
-        function syncCurrentIndex() {
-            var sid = backend.selectedEmployeeId
-            var list = backend.employeeList
-            for (var i = 0; i < list.length; i++) {
-                var it = list[i]
-                if (it && !it.is_header && it.id === sid) {
-                    currentIndex = i
-                    return
+        function updateSelectionPlate(animate) {
+            selectionPlate.animOn = animate
+            var found = null
+            var kids = empList.contentItem.children
+            for (var i = 0; i < kids.length; i++) {
+                var ch = kids[i]
+                if (ch && ch.empId !== undefined && ch.empId !== 0
+                        && ch.empId === backend.selectedEmployeeId) {
+                    found = ch
+                    break
                 }
             }
-            currentIndex = -1
+            if (!found) {
+                selectionPlate.visible = false
+                selectionPlate.animOn = true
+                return
+            }
+            var p = found.mapToItem(empList, 0, 0)
+            selectionPlate.y = p.y - selectionPlate.flareH
+            selectionPlate.height = found.height + 2 * selectionPlate.flareH
+            selectionPlate.visible = true
+            selectionPlate.animOn = true
         }
-        Component.onCompleted: syncCurrentIndex()
+        Component.onCompleted: Qt.callLater(function() { empList.updateSelectionPlate(false) })
+
+        Canvas {
+            id: selectionPlate
+            z: -1                       // под делегатами, но над фоном списка
+            x: 0
+            width: parent.width
+            visible: false
+            property bool animOn: true
+
+            // Геометрия плашки
+            readonly property int leftInset: AppTheme.spaceXS
+            readonly property int vInset: 2
+            readonly property int r: AppTheme.radiusLarge
+            readonly property int flareH: 10     // насколько расширяется к панели
+            readonly property int flareLen: 44   // длина плавного расширения
+
+            onWidthChanged: requestPaint()
+            onHeightChanged: requestPaint()
+            Connections {
+                target: AppTheme
+                function onIsDarkChanged() { selectionPlate.requestPaint() }
+            }
+
+            Behavior on y {
+                enabled: selectionPlate.animOn
+                NumberAnimation { duration: 260; easing.type: Easing.OutCubic }
+            }
+            Behavior on height {
+                enabled: selectionPlate.animOn
+                NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
+            }
+
+            // Контур: скруглённый слева, к правому краю расходится вверх/вниз
+            // плавными кривыми и заканчивается закруглённо у самой панели
+            onPaint: {
+                var ctx = getContext("2d")
+                ctx.reset()
+                ctx.clearRect(0, 0, width, height)
+                var w = width, h = height
+                if (w < 60 || h < 20) return
+                var x0 = leftInset, rr = Math.min(r, h / 2 - 1)
+                var y0 = flareH + vInset
+                var y1 = h - flareH - vInset
+                var fl = Math.min(flareLen, (w - x0) * 0.5)
+                ctx.fillStyle = AppTheme.bgBase
+                ctx.beginPath()
+                ctx.moveTo(x0 + rr, y0)
+                ctx.lineTo(w - fl, y0)
+                // расширение вверх к правому краю
+                ctx.bezierCurveTo(w - fl / 2, y0, w - fl / 2, y0 - flareH, w - rr, y0 - flareH)
+                ctx.arcTo(w, y0 - flareH, w, y0, rr)
+                ctx.lineTo(w, y1 + flareH - rr)
+                ctx.arcTo(w, y1 + flareH, w - rr, y1 + flareH, rr)
+                // обратное сужение к строке (низ)
+                ctx.bezierCurveTo(w - fl / 2, y1 + flareH, w - fl / 2, y1, w - fl, y1)
+                ctx.lineTo(x0 + rr, y1)
+                ctx.arcTo(x0, y1, x0, y0, rr)
+                ctx.lineTo(x0, y0 + rr)
+                ctx.arcTo(x0, y0, w, y0, rr)
+                ctx.closePath()
+                ctx.fill()
+            }
+        }
 
         property int draggingEmpId: 0
         property int draggingGroupId: -999
@@ -207,7 +264,10 @@ Rectangle {
         property bool restoringScroll: false
         property real keepContentY: 0
 
-        onContentYChanged: if (!restoringScroll) keepContentY = contentY
+        onContentYChanged: {
+            if (!restoringScroll) keepContentY = contentY
+            updateSelectionPlate(false)   // плашка следует за строкой при прокрутке
+        }
 
         Connections {
             target: backend
@@ -218,14 +278,16 @@ Rectangle {
                     empList.contentY = Math.min(Math.max(0, empList.keepContentY), maxY)
                     empList.restoringScroll = false
                 })
-                Qt.callLater(empList.syncCurrentIndex)
+                Qt.callLater(function() { empList.updateSelectionPlate(true) })
             }
-            function onSelectedEmployeeIdChanged() { empList.syncCurrentIndex() }
+            function onSelectedEmployeeIdChanged() { empList.updateSelectionPlate(true) }
         }
         
         delegate: Item {
             id: empDelegateItem
             width: ListView.view.width
+            // id сотрудника: по нему «вытекающая» плашка находит эту строку
+            readonly property int empId: modelData.id === undefined ? 0 : modelData.id
             readonly property int empCardHeight: Math.max(AppTheme.rowHeight, empTextCol.implicitHeight + AppTheme.spaceM)
             height: modelData.is_header ? 40 : empCardHeight
             readonly property int rowGroupId: modelData.group_id === undefined ? 0 : modelData.group_id
