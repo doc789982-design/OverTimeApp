@@ -104,61 +104,11 @@ Item {
                 Layout.fillWidth: true
                 spacing: AppTheme.spaceS
 
-                // Неоморфизм: плашка «выдавлена» из карточки, а цвет иконки
-                // мягко светится по её краю — гладким радиальным градиентом,
-                // который рисуется один раз (Canvas), без ступенек и GPU-эффектов.
                 Rectangle {
-                    id: iconPlate
                     width: 32; height: 32
-                    radius: 12
-                    // Непрозрачное основание: тень под плашкой не просвечивает
-                    color: AppTheme.bgBase
+                    radius: AppTheme.radiusSmall
+                    color: Qt.rgba(card.accent.r, card.accent.g, card.accent.b, 0.14)
                     Layout.alignment: Qt.AlignVCenter
-
-                    AppSoftShadow { level: 1 }
-
-                    // Цветная полупрозрачная плёнка ПОВЕРХ основания —
-                    // цвет плашки остался прежним
-                    Rectangle {
-                        anchors.fill: parent
-                        radius: parent.radius
-                        color: Qt.rgba(card.accent.r, card.accent.g, card.accent.b, 0.14)
-                    }
-
-                    Canvas {
-                        id: accentGlow
-                        width: 68; height: 68
-                        anchors.centerIn: parent
-                        z: -2
-                        onPaint: {
-                            var ctx = getContext("2d")
-                            ctx.reset()
-                            ctx.clearRect(0, 0, width, height)
-                            var c = card.accent
-                            var peak = AppTheme.isDark ? 0.30 : 0.20
-                            function col(a) {
-                                return "rgba(" + Math.round(c.r * 255) + "," +
-                                        Math.round(c.g * 255) + "," +
-                                        Math.round(c.b * 255) + "," + a + ")"
-                            }
-                            var g = ctx.createRadialGradient(width / 2, height / 2, 13,
-                                                             width / 2, height / 2, width / 2)
-                            g.addColorStop(0.0, col(peak))
-                            g.addColorStop(0.5, col(peak * 0.45))
-                            g.addColorStop(1.0, col(0))
-                            ctx.fillStyle = g
-                            ctx.fillRect(0, 0, width, height)
-                        }
-                        // Отсвет перерисовывается только при смене темы или цвета
-                        Connections {
-                            target: AppTheme
-                            function onIsDarkChanged() { accentGlow.requestPaint() }
-                        }
-                        Connections {
-                            target: card
-                            function onAccentChanged() { accentGlow.requestPaint() }
-                        }
-                    }
                     IconImage {
                         anchors.centerIn: parent
                         source: "../icons/" + card.icon
@@ -235,10 +185,11 @@ Item {
         anchors.right: parent.right
         height: summaryBody.implicitHeight + AppTheme.spaceM * 2
         radius: AppTheme.radiusLarge
-        // Неоморфизм: панель из того же материала, что и страница (один цвет) —
-        // форму даёт только тень. Карточки внутри — как прежде
-        color: AppTheme.bgBase
-        AppSoftShadow { level: 2 }
+        color: AppTheme.bgSurface
+        border.color: AppTheme.borderDivider; border.width: 1
+
+        // Тень-картинка вместо вычисляемой (Level 1)
+        AppShadow { level: 1 }
 
         ColumnLayout {
             id: summaryBody

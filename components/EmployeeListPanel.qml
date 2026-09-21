@@ -184,7 +184,7 @@ Rectangle {
         delegate: Item {
             id: empDelegateItem
             width: ListView.view.width
-            readonly property int empCardHeight: Math.max(AppTheme.rowHeight, empTextCol.implicitHeight + AppTheme.spaceM) + 20 // +20: вертикальные поля карточки под мягкую тень
+            readonly property int empCardHeight: Math.max(AppTheme.rowHeight, empTextCol.implicitHeight + AppTheme.spaceM)
             height: modelData.is_header ? 40 : empCardHeight
             readonly property int rowGroupId: modelData.group_id === undefined ? 0 : modelData.group_id
 
@@ -257,19 +257,17 @@ Rectangle {
                     // 1. ФОН (Заливка в стиле MD3)
                     Rectangle {
                         id: empCardBg
-                        // Отступы по краям: 16 по горизонтали и 12 по вертикали —
-                        // мягкая тень (вылет 14px) нигде не обрезается делегатом
+                        // Отступы по краям для эффекта "плавающей карточки"
                         anchors.fill: parent
-                        anchors.leftMargin: AppTheme.spaceM
-                        anchors.rightMargin: AppTheme.spaceM
-                        anchors.topMargin: AppTheme.spaceS
-                        anchors.bottomMargin: AppTheme.spaceS
+                        anchors.leftMargin: AppTheme.spaceXS
+                        anchors.rightMargin: AppTheme.spaceXS
+                        anchors.topMargin: 2
+                        anchors.bottomMargin: 2
                         
                         radius: AppTheme.radiusLarge // MD3 любит большие скругления (12-16px)
                         
-                        // Неоморфизм: выбранный сотрудник — карточка из того же
-                        // материала, что и панель (один цвет); форму даёт только тень
-                        color: cardContainer.isSelected ? AppTheme.bgPanel : 
+                        // Цвет: Активный -> Синий мягкий, Наведение -> Серый мягкий, Покой -> Прозрачный
+                        color: cardContainer.isSelected ? AppTheme.bgBrandSoft : 
                                (empMouseArea.containsMouse ? AppTheme.stateHover : "transparent")
 
                         Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
@@ -277,8 +275,6 @@ Rectangle {
                         // Анимация вжатия при клике
                         scale: empMouseArea.pressed ? 0.98 : 1.0
                         Behavior on scale { NumberAnimation { duration: 100 } }
-
-                        AppSoftShadow { level: 1; visible: cardContainer.isSelected }
                     }
 
                     // 2. КОНТЕНТ

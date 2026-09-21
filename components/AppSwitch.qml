@@ -21,14 +21,11 @@ Switch {
             id: track
             anchors.fill: parent
             radius: AppTheme.radiusPill
-            // Неоморфизм: выключенная дорожка — «утопленная» ямка в поверхности
-            // (вдавленная рамка-пилюля); включённая — залита цветом
             color: control.checked
                    ? AppTheme.accentBrand
-                   : (AppTheme.isDark ? "#22272E" : "#E0E6EF")
-            border.width: 0
-
-            AppInsetShadow { level: 2; visible: !control.checked }
+                   : (AppTheme.isDark ? "#3A3F46" : AppTheme.borderInput)
+            border.width: control.checked ? 0 : 1
+            border.color: AppTheme.isDark ? AppTheme.borderInput : AppTheme.borderDisabled
 
             Behavior on color { ColorAnimation { duration: AppTheme.durNormal; easing.type: AppTheme.easeColor } }
             Behavior on border.width { NumberAnimation { duration: AppTheme.durFast } }
@@ -49,18 +46,8 @@ Switch {
             anchors.verticalCenter: parent.verticalCenter
             x: control.checked ? parent.width - width - 2 : 2
             color: "#FFFFFF"
-            border.width: 0
-
-            // Неоморфизм: кружок «выдавлен» — круглая двухцветная тень-картинка
-            BorderImage {
-                z: -1
-                anchors.fill: parent
-                anchors.margins: -10
-                source: AppTheme.isDark ? "../shadows/soft_knob_dark.png" : "../shadows/soft_knob.png"
-                border.left: 20; border.right: 20; border.top: 20; border.bottom: 20
-                smooth: true
-                cache: true
-            }
+            border.width: control.checked ? 0 : 1
+            border.color: AppTheme.isDark ? AppTheme.borderInput : AppTheme.borderDisabled
 
             Behavior on x {
                 NumberAnimation { duration: AppTheme.durNormal; easing.type: AppTheme.easeStandard }
