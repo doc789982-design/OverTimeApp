@@ -28,7 +28,8 @@ LEVELS = {
     5: (16, 8),
 }
 
-SS = 2  # суперсэмплинг (рисуем в 2 раза крупнее, потом уменьшаем — гладкие края)
+SS = 2  # суперсэмплинг классических теней (рисуем крупнее, потом уменьшаем)
+SOFT_SS = 4  # мягкий набор — 4x: полосы и зерно на хвостах теней исчезают
 
 
 def rounded_rect_alpha(w, h, r):
@@ -198,20 +199,22 @@ SOFT_LEVELS = {
     #   L2 → 14px (поля панелей 16px и больше)
     # Радиус угла 12 = AppTheme.radiusLarge (карточки и панели),
     # поэтому тень точно повторяет контур элемента.
-    1: (4, 12),   # карточки списка, плашки иконок
-    2: (6, 12),   # крупные панели
+    # Вылет (pad) = размытие*2+2: L1 → 14px, L2 → 16px — не больше полей
+    # интерфейса, тени не обрезаются. Сдвиг тени = размытие/2 (3 и 4 пикселя).
+    1: (6, 12),   # карточки списка, плашки иконок
+    2: (7, 12),   # крупные панели
 }
 
 SOFT_LIGHT = {
     "hi": (255, 255, 255, 0.95),   # светлая тень (сверху-слева)
     "lo": (163, 177, 200, None),   # тёмная тень (снизу-справа)
-    "lo_scale": {1: 0.62, 2: 0.68},
+    "lo_scale": {1: 0.68, 2: 0.72},
 }
 
 SOFT_DARK = {
     "hi": (255, 255, 255, 0.08),   # лишь намёк на светлый контур
     "lo": (7, 10, 14, None),       # почти чёрная тень
-    "lo_scale": {1: 0.74, 2: 0.82},
+    "lo_scale": {1: 0.78, 2: 0.85},
 }
 
 INSET_LEVELS = {
@@ -273,7 +276,7 @@ def make_soft(level, blur_r, corner_r, out_dir, theme, suffix):
     center = 8
     size = 2 * (pad + corner_r) + center
 
-    s = SS
+    s = SOFT_SS
     full = size * s
     inner_w = full - 2 * pad * s
     shape = rounded_rect_alpha(inner_w, inner_w, corner_r * s)
@@ -335,7 +338,7 @@ def make_inset_frame(level, blur_r, corner_r, out_dir, colors, suffix):
     center = 8
     size = 2 * (border + corner_r) + center
 
-    s = SS
+    s = SOFT_SS
     full = size * s
     shape = rounded_rect_alpha(full - 2 * pad_in * s, full - 2 * pad_in * s, corner_r * s)
     mask = [[0.0] * full for _ in range(full)]
@@ -398,7 +401,7 @@ def make_soft_knob(out_dir, theme):
     pad = 10          # запас на размытие
     blur_r = 4
     size = d + 2 * pad
-    s = SS
+    s = SOFT_SS
     full = size * s
     big = [[0.0] * full for _ in range(full)]
     cx = cy = full / 2.0
@@ -413,7 +416,7 @@ def make_soft_knob(out_dir, theme):
     ring = [[min(1.0, ring[y][x] * 2.0) * (1.0 - big[y][x]) for x in range(full)]
             for y in range(full)]
 
-    shift = max(1, int(round(blur_r * 0.5))) * s
+    shift = max(1, int(round(blur_r * 0.75))) * s
     layer_hi = shift_layer(ring, -shift, -shift)
     layer_lo = shift_layer(ring, shift, shift)
 

@@ -22,10 +22,10 @@ BorderImage {
     property int level: 1
 
     // Насколько картинка выступает за края элемента (запас на размытие):
-    // 10px < поля списка (12), 14px < поля панелей (16) — тени не обрезаются
-    readonly property var _pads:   [0, 10, 14]
+    // 14px < полей карточек (16), 16px ≤ поля панелей — тени не обрезаются
+    readonly property var _pads:   [0, 14, 16]
     // Неломаемая рамка картинки (углы не растягиваются)
-    readonly property var _insets: [0, 22, 26]
+    readonly property var _insets: [0, 26, 28]
 
     opacity: 1.0
     z: -1  // рисуемся ПОД родителем

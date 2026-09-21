@@ -235,9 +235,9 @@ Item {
         anchors.right: parent.right
         height: summaryBody.implicitHeight + AppTheme.spaceM * 2
         radius: AppTheme.radiusLarge
-        color: AppTheme.bgSurface
-
-        // Неоморфизм: большая панель «выдавлена» из фона (карточки внутри — как прежде)
+        // Неоморфизм: панель из того же материала, что и страница (один цвет) —
+        // форму даёт только тень. Карточки внутри — как прежде
+        color: AppTheme.bgBase
         AppSoftShadow { level: 2 }
 
         ColumnLayout {

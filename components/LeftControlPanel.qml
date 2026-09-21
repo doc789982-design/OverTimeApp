@@ -20,9 +20,9 @@ Item {
         anchors.topMargin: AppTheme.spaceM     
         
         radius: AppTheme.radiusLarge
-        color: AppTheme.bgElevated
-
-        // Неоморфизм: панель «выдавлена» из фона
+        // Неоморфизм: панель из того же материала, что и подложка (один цвет) —
+        // форму даёт только тень
+        color: AppTheme.bgPanel
         AppSoftShadow { level: 2 }
 
         ColumnLayout {

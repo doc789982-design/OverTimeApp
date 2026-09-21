@@ -184,7 +184,7 @@ Rectangle {
         delegate: Item {
             id: empDelegateItem
             width: ListView.view.width
-            readonly property int empCardHeight: Math.max(AppTheme.rowHeight, empTextCol.implicitHeight + AppTheme.spaceM)
+            readonly property int empCardHeight: Math.max(AppTheme.rowHeight, empTextCol.implicitHeight + AppTheme.spaceM) + 20 // +20: вертикальные поля карточки под мягкую тень
             height: modelData.is_header ? 40 : empCardHeight
             readonly property int rowGroupId: modelData.group_id === undefined ? 0 : modelData.group_id
 
@@ -257,19 +257,19 @@ Rectangle {
                     // 1. ФОН (Заливка в стиле MD3)
                     Rectangle {
                         id: empCardBg
-                        // Отступы по краям для эффекта "плавающей карточки"
-                        // (12px — ровно настолько выступает мягкая тень выбора)
+                        // Отступы по краям: 16 по горизонтали и 12 по вертикали —
+                        // мягкая тень (вылет 14px) нигде не обрезается делегатом
                         anchors.fill: parent
-                        anchors.leftMargin: AppTheme.spaceS
-                        anchors.rightMargin: AppTheme.spaceS
-                        anchors.topMargin: 2
-                        anchors.bottomMargin: 2
+                        anchors.leftMargin: AppTheme.spaceM
+                        anchors.rightMargin: AppTheme.spaceM
+                        anchors.topMargin: AppTheme.spaceS
+                        anchors.bottomMargin: AppTheme.spaceS
                         
                         radius: AppTheme.radiusLarge // MD3 любит большие скругления (12-16px)
                         
-                        // Неоморфизм: выбранный сотрудник — выпуклая карточка
-                        // (без синей подсветки); остальные — плоские, как раньше
-                        color: cardContainer.isSelected ? AppTheme.bgBase : 
+                        // Неоморфизм: выбранный сотрудник — карточка из того же
+                        // материала, что и панель (один цвет); форму даёт только тень
+                        color: cardContainer.isSelected ? AppTheme.bgPanel : 
                                (empMouseArea.containsMouse ? AppTheme.stateHover : "transparent")
 
                         Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
