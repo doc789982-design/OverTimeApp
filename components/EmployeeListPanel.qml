@@ -161,6 +161,46 @@ Rectangle {
         clip: true
         model: backend.employeeList
 
+        // ──────────────────────────────────────────────────────────
+        // ВЫДЕЛЕНИЕ «ВЫТЕКАЮЩЕЕ» ИЗ РАБОЧЕЙ ОБЛАСТИ
+        // Плашка цвета фона календаря/балансов (bgBase) левыми углами
+        // скруглена, а правым краем уходит ЗА границу списка: clip
+        // срезает правые углы — выделение «вытекает» из соседней панели.
+        // При смене сотрудника плашка не прыгает, а переезжает:
+        // highlightMoveDuration = быстро, но плавно.
+        // ──────────────────────────────────────────────────────────
+        highlight: Item {
+            Rectangle {
+                anchors.fill: parent
+                anchors.leftMargin: AppTheme.spaceXS
+                anchors.rightMargin: -AppTheme.radiusLarge   // правые углы срезаются краем списка
+                anchors.topMargin: 2
+                anchors.bottomMargin: 2
+                radius: AppTheme.radiusLarge
+                color: AppTheme.bgBase
+            }
+        }
+        highlightFollowsCurrentItem: true
+        highlightMoveDuration: 260      // переезд с инерцией: быстро, но плавно
+        highlightMoveVelocity: 100000   // скорость не ограничивает — правит длительность
+        highlightResizeDuration: 160
+        currentIndex: -1
+
+        // Текущий индекс всегда зеркалит выбранного сотрудника
+        function syncCurrentIndex() {
+            var sid = backend.selectedEmployeeId
+            var list = backend.employeeList
+            for (var i = 0; i < list.length; i++) {
+                var it = list[i]
+                if (it && !it.is_header && it.id === sid) {
+                    currentIndex = i
+                    return
+                }
+            }
+            currentIndex = -1
+        }
+        Component.onCompleted: syncCurrentIndex()
+
         property int draggingEmpId: 0
         property int draggingGroupId: -999
         property real dropLineY: -1
@@ -178,7 +218,9 @@ Rectangle {
                     empList.contentY = Math.min(Math.max(0, empList.keepContentY), maxY)
                     empList.restoringScroll = false
                 })
+                Qt.callLater(empList.syncCurrentIndex)
             }
+            function onSelectedEmployeeIdChanged() { empList.syncCurrentIndex() }
         }
         
         delegate: Item {
@@ -266,9 +308,11 @@ Rectangle {
                         
                         radius: AppTheme.radiusLarge // MD3 любит большие скругления (12-16px)
                         
-                        // Цвет: Активный -> Синий мягкий, Наведение -> Серый мягкий, Покой -> Прозрачный
-                        color: cardContainer.isSelected ? AppTheme.bgBrandSoft : 
-                               (empMouseArea.containsMouse ? AppTheme.stateHover : "transparent")
+                        // Выделение — НЕ фон карточки: под делегатом «вытекает»
+                        // плашка цвета рабочей области (см. highlight списка).
+                        // Здесь только наведение для невыбранных
+                        color: (empMouseArea.containsMouse && !cardContainer.isSelected)
+                               ? AppTheme.stateHover : "transparent"
 
                         Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
 

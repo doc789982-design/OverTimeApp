@@ -38,14 +38,41 @@ Item {
     // МИНИ-ЯЧЕЙКА ПОТОКА ВНУТРИ КАРТОЧКИ
     // Значение отцентрировано по горизонтали относительно пояснения снизу.
     // ==========================================
+    // Ячейка мини-потока. В режиме pill число стоит на цветной плашке:
+    // само число белое, а скобка прошлого года — полупрозрачный белый
+    // (серый цвет скобок #9E9E9E из Main.py::GRAY_BRACKET подменяется здесь)
     component MiniStat: Column {
         id: ms
         property string valText: "—"
         property string labelText: ""
         property color valColor: AppTheme.textPrimary
-        spacing: 1
+        property bool pill: false
+        spacing: 2
 
+        // Цветная плашка с белым числом (начислено / компенсировано)
+        Rectangle {
+            visible: ms.pill
+            anchors.horizontalCenter: parent.horizontalCenter
+            width: pillValueText.implicitWidth + AppTheme.spaceM
+            height: 22
+            radius: AppTheme.radiusPill
+            color: ms.valColor
+
+            Text {
+                id: pillValueText
+                anchors.centerIn: parent
+                text: ms.valText.replace(/#9E9E9E/g, "#B3FFFFFF")
+                color: "#FFFFFF"
+                font.family: AppTheme.fontFamily
+                font.pixelSize: AppTheme.sizeSmall
+                font.weight: AppTheme.weightBold
+                textFormat: Text.StyledText
+            }
+        }
+
+        // Обычное значение без плашки (на начало)
         Text {
+            visible: !ms.pill
             width: ms.width
             horizontalAlignment: Text.AlignHCenter
             text: ms.valText
@@ -85,7 +112,7 @@ Item {
         Layout.fillWidth: true
         Layout.fillHeight: true
         Layout.minimumWidth: 170
-        Layout.preferredHeight: 170
+        Layout.preferredHeight: 180
         radius: AppTheme.radiusMedium
         color: AppTheme.bgBase
         border.color: AppTheme.borderDivider
@@ -104,15 +131,13 @@ Item {
                 Layout.fillWidth: true
                 spacing: AppTheme.spaceS
 
-                Rectangle {
+                Item {
                     width: 32; height: 32
-                    radius: AppTheme.radiusSmall
-                    color: Qt.rgba(card.accent.r, card.accent.g, card.accent.b, 0.14)
                     Layout.alignment: Qt.AlignVCenter
                     IconImage {
                         anchors.centerIn: parent
                         source: "../icons/" + card.icon
-                        width: 18; height: 18
+                        width: 20; height: 20
                         color: card.accent
                     }
                 }
@@ -163,13 +188,13 @@ Item {
             Row {
                 id: flowRow
                 Layout.fillWidth: true
-                Layout.preferredHeight: 30
+                Layout.preferredHeight: 40
                 Layout.topMargin: AppTheme.spaceXXS
                 spacing: 0
 
                 MiniStat { width: flowRow.width / 3; valText: card.startText; labelText: "на начало" }
-                MiniStat { width: flowRow.width / 3; valText: card.accText;  labelText: "начислено"; valColor: AppTheme.accentSuccess }
-                MiniStat { width: flowRow.width / 3; valText: card.compText; labelText: "компенсировано"; valColor: AppTheme.accentDanger }
+                MiniStat { width: flowRow.width / 3; valText: card.accText;  labelText: "начислено"; valColor: AppTheme.accentSuccess; pill: true }
+                MiniStat { width: flowRow.width / 3; valText: card.compText; labelText: "компенсировано"; valColor: AppTheme.accentDanger; pill: true }
             }
         }
     }
