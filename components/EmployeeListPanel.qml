@@ -227,7 +227,9 @@ Rectangle {
             }
 
             // Контур: скруглённый слева, к правому краю расходится вверх/вниз
-            // плавными кривыми и заканчивается закруглённо у самой панели
+            // и вливается в соседнюю панель ОТКРЫТЫМ ртом: у самого края
+            // контур ещё расходится (вертикальная касательная), никакого
+            // замыкания капсулой — «пупырышка»
             onPaint: {
                 var ctx = getContext("2d")
                 ctx.reset()
@@ -242,13 +244,13 @@ Rectangle {
                 ctx.beginPath()
                 ctx.moveTo(x0 + rr, y0)
                 ctx.lineTo(w - fl, y0)
-                // расширение вверх к правому краю
-                ctx.bezierCurveTo(w - fl / 2, y0, w - fl / 2, y0 - flareH, w - rr, y0 - flareH)
-                ctx.arcTo(w, y0 - flareH, w, y0, rr)
-                ctx.lineTo(w, y1 + flareH - rr)
-                ctx.arcTo(w, y1 + flareH, w - rr, y1 + flareH, rr)
-                // обратное сужение к строке (низ)
-                ctx.bezierCurveTo(w - fl / 2, y1 + flareH, w - fl / 2, y1, w - fl, y1)
+                // расширение вверх: полная ширина — ровно у панели, касательная
+                // у края вертикальная (рот «дышит» в сторону панели)
+                ctx.bezierCurveTo(w - fl * 0.45, y0, w, y0 - flareH * 0.35, w, y0 - flareH)
+                // прямой срез у границы: дальше начинается та же поверхность
+                ctx.lineTo(w, y1 + flareH)
+                // зеркальное расширение внизу
+                ctx.bezierCurveTo(w, y1 + flareH * 0.35, w - fl * 0.45, y1, w - fl, y1)
                 ctx.lineTo(x0 + rr, y1)
                 ctx.arcTo(x0, y1, x0, y0, rr)
                 ctx.lineTo(x0, y0 + rr)
