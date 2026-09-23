@@ -1,5 +1,7 @@
 import os
 import tempfile
+import threading
+import time
 import uuid
 import win32print
 import sys
@@ -387,6 +389,7 @@ class Backend(QObject):
     dayCompsChanged = Signal()
     moneyCompsChanged = Signal()
     showToast = Signal(str, str)    
+    webReady = Signal(str, bool)   # адрес веб-версии + удалось ли
     timeInputModeChanged = Signal()    
     hotkeysListChanged = Signal()
     printerListChanged = Signal()
@@ -437,6 +440,7 @@ class Backend(QObject):
         self.app_dir = Path(__file__).parent
         # Папка данных: начиная с этой версии — Documents\OverTimeTab.
         # Данные со старых версий автоматически переносятся сюда (режим copy).
+        self.webReady.connect(self._onWebReady)
         self._data_dir = self._resolve_data_dir()
         self.config_path = self._data_dir / "config.json"
         
@@ -2882,22 +2886,65 @@ class Backend(QObject):
     def openWebVersion(self):
         """Кнопка в справке: открыть веб-версию (этап переезда интерфейса).
 
-        Запускает ВТОРОЙ процесс программы с флагом --web и путём
-        текущей базы: веб-интерфейс откроется в браузере, основное
-        окно продолжает работать как ни в чём не бывало.
+        Запускает ВТОРОЙ процесс с --web и путём текущей базы, а затем
+        в фоне проверяет, что сервер поднялся. Результат — тост с адресом
+        (адрес также кладётся в буфер обмена); при сбое — путь к логу.
         """
         import subprocess
         try:
+            log_path = Path(self._data_dir) / "web.log"
+            try:
+                with open(log_path, "a", encoding="utf-8") as lf:
+                    lf.write("\n=== запуск из программы ===\n")
+            except Exception:
+                pass
             argv = [sys.executable]
             if not getattr(sys, "frozen", False):
                 argv.append(str(Path(__file__).resolve()))
-            argv.append("--web")
+            argv += ["--web", "--log", str(log_path)]
             if self.active_db is not None:
                 argv += ["--db", str(self.active_db.path)]
-            subprocess.Popen(argv, close_fds=True)
-            self.showToast.emit("Веб-версия открывается в браузере", "success")
+            try:
+                lf = open(log_path, "ab")
+                subprocess.Popen(argv, stdout=lf, stderr=lf, close_fds=True)
+                lf.close()
+            except Exception:
+                subprocess.Popen(argv, close_fds=True)
+            self.showToast.emit("Запускаем веб-версию…", "success")
+            threading.Thread(target=self._poll_web, daemon=True).start()
         except Exception as e:
             self.showToast.emit(f"Не удалось открыть веб-версию: {e}", "error")
+
+    def _poll_web(self):
+        """Фоновая проверка: ждём сервер потомка до ~8 секунд."""
+        import urllib.request
+        url = None
+        for _ in range(40):
+            time.sleep(0.2)
+            for port in range(8081, 8092):
+                try:
+                    with urllib.request.urlopen(
+                            f"http://127.0.0.1:{port}/", timeout=0.4) as r:
+                        if r.status == 200:
+                            url = f"http://127.0.0.1:{port}"
+                            break
+                except Exception:
+                    continue
+            if url:
+                break
+        self.webReady.emit(url or "", bool(url))
+
+    @Slot(str, bool)
+    def _onWebReady(self, url, ok):
+        from PySide6.QtWidgets import QApplication
+        if ok:
+            QApplication.clipboard().setText(url)
+            self.showToast.emit(
+                f"Веб-версия работает: {url} — адрес скопирован в буфер", "success")
+        else:
+            log_path = Path(self._data_dir) / "web.log"
+            self.showToast.emit(
+                f"Веб-сервер не поднялся. Подробности: {log_path}", "error")
 
     @Slot()
     def undoAction(self):
@@ -4067,8 +4114,25 @@ if __name__ == "__main__":
                     pass
             if not _web_db:
                 _web_db = _first_configured_db()
-            from webapp.server import run_web
-            run_web(_web_db)
+            _web_log = None
+            if "--log" in sys.argv:
+                try:
+                    _web_log = sys.argv[sys.argv.index("--log") + 1]
+                except IndexError:
+                    pass
+            # Веб-режим не имеет права молчать: любой сбой — в лог-файл
+            try:
+                from webapp.server import run_web
+                run_web(_web_db, log_path=_web_log)
+            except BaseException:
+                _p = _web_log or str(Path.home() / "Documents" / "OverTimeTab" / "web.log")
+                try:
+                    Path(_p).parent.mkdir(parents=True, exist_ok=True)
+                    with open(_p, "a", encoding="utf-8") as f:
+                        f.write("\n=== СБОЙ ВЕБ-РЕЖИМА ===\n" + traceback.format_exc() + "\n")
+                except Exception:
+                    pass
+                sys.exit(1)
             sys.exit(0)
 
     main()

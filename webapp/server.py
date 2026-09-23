@@ -53,6 +53,20 @@ REAL_DB = None
 # Ссылка на живой HTTP-сервер (для корректного выключения из веб-интерфейса)
 _HTTPD = None
 
+# Куда писать журнал веб-режима (если передан --log): каждый шаг запуска,
+# чтобы «молча не открылся браузер» больше не был загадкой.
+_WEB_LOG = None
+
+
+def _wlog(msg):
+    if not _WEB_LOG:
+        return
+    try:
+        with open(_WEB_LOG, "a", encoding="utf-8") as f:
+            f.write(f"{datetime.now():%H:%M:%S}  {msg}\n")
+    except Exception:
+        pass
+
 # Сколько правок сделала ЭТА сессия сервера: отмена не должна трогать
 # снапшоты, оставшиеся в чужой базе от прошлых запусков программы.
 _session_undo = 0
@@ -740,17 +754,26 @@ class Handler(SimpleHTTPRequestHandler):
         })
 
 
-def run_web(db_path=None, port=None):
+def run_web(db_path=None, port=None, log_path=None):
     """Режим OVERTIMETAB.exe --web: поднять сервер и открыть браузер.
 
     Вызывается из Main.py ДО запуска Qt. Порт 8081, при занятости —
     ближайший свободный (браузер откроется на правильном).
+    Каждый шаг пишется в журнал (log_path), браузер открывается
+    тремя запасными способами — молчать веб-режим не должен.
     """
-    global REAL_DB
+    global REAL_DB, _HTTPD, _WEB_LOG
     import webbrowser
+    _WEB_LOG = log_path
+    _wlog(f"старт веб-режима: frozen={FROZEN}, аргумент базы={db_path!r}")
     if db_path:
         REAL_DB = db_path
-    Handler.db = open_db()
+    try:
+        Handler.db = open_db()
+    except Exception as e:
+        _wlog(f"ОШИБКА открытия базы: {type(e).__name__}: {e}")
+        raise
+    _wlog("база открыта")
 
     p = port or PORT
     httpd = None
@@ -758,23 +781,51 @@ def run_web(db_path=None, port=None):
         try:
             httpd = HTTPServer(("127.0.0.1", p), Handler)
             break
-        except OSError:
+        except OSError as e:
+            _wlog(f"порт {p} занят ({e}), пробуем {p + 1}")
             p += 1
     if httpd is None:
+        _wlog("ОШИБКА: не удалось занять ни один порт (8081-8090)")
         print("Не удалось занять порт для веб-режима")
         sys.exit(1)
-
-    global _HTTPD
     _HTTPD = httpd
+
     mode = f"РЕАЛЬНАЯ база: {REAL_DB}" if REAL_DB else "демо-база"
-    print(f"Веб-версия OVERTIMETAB: http://127.0.0.1:{p}  ({mode})")
+    url = f"http://127.0.0.1:{p}"
+    _wlog(f"сервер поднялся: {url}  ({mode})")
+
+    # Браузер: основной способ + два запасных (Windows)
+    opened = False
+    try:
+        opened = webbrowser.open(url)
+    except Exception as e:
+        _wlog(f"webbrowser.open исключение: {e}")
+    _wlog(f"webbrowser.open → {opened}")
+    if not opened and sys.platform == "win32":
+        try:
+            os.startfile(url)
+            opened = True
+        except Exception as e:
+            _wlog(f"os.startfile → {e}")
+    if not opened and sys.platform == "win32":
+        try:
+            import subprocess as _sp
+            _sp.Popen(["cmd", "/c", "start", "", url], close_fds=True)
+            opened = True
+        except Exception as e:
+            _wlog(f"cmd /c start → {e}")
+    _wlog(f"браузер: {'открыт' if opened else 'НЕ ОТКРЫЛСЯ — адрес: ' + url}")
+
+    print(f"Веб-версия OVERTIMETAB: {url}  ({mode})")
     print("Один интерфейс за раз: не редактируйте одну базу")
     print("одновременно в программе и в веб-режиме.")
-    webbrowser.open(f"http://127.0.0.1:{p}")
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
         pass
+    except Exception:
+        import traceback as _tb
+        _wlog("СБОЙ сервера:\n" + _tb.format_exc())
     finally:
         httpd.server_close()
 
