@@ -47,6 +47,12 @@ THEME_REL = Path("components") / "AppTheme.qml"
 # адрес, а если он пуст — этот постоянный.
 DEFAULT_UPDATE_URL = "https://github.com/doc789982-design/OverTimeApp/releases/latest"
 
+# Второй вшитый адрес хранилища: если GitHub недоступен (например, в закрытой
+# сети), запрос пробивается сюда. Формат — как у любого веб-хранилища:
+# рядом с архивом лежит version.json (его готовит tools/make_web_release.py).
+# Порядок проверки обновлений: адрес из настроек (если указан) → GitHub → сюда.
+FALLBACK_UPDATE_URL = "https://post.mvd.ru/~mgrigorev46@mvd.ru/"
+
 
 def resolve_update_url(stored_url: str = "") -> str:
     """Адрес хранилища: введённый в настройках, а если пусто — постоянный."""

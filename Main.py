@@ -3499,14 +3499,15 @@ class Backend(QObject):
 
     def _remote_candidate_urls(self):
         """Очередь удалённых адресов: сначала адрес из настроек (если задан),
-        затем вшитый GitHub (всегда, как запасной; дубликат пропускаем)."""
+        затем вшитый GitHub и вшитый сервер post.mvd.ru (всегда, как запасные;
+        дубликаты пропускаем)."""
         stored = (self._update_url or "").strip()
         urls = []
         if stored:
             urls.append(stored)
-        github = app_update.DEFAULT_UPDATE_URL
-        if github not in urls:
-            urls.append(github)
+        for builtin in (app_update.DEFAULT_UPDATE_URL, app_update.FALLBACK_UPDATE_URL):
+            if builtin and builtin not in urls:
+                urls.append(builtin)
         return urls
 
     def _start_local_scan(self):
