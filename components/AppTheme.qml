@@ -10,7 +10,7 @@ QtObject {
     // подхватят автоматически.
     // ==========================================
     readonly property string appVersion: "2.0.0-ALPHA.20"
-    readonly property int appBuild: 163
+    readonly property int appBuild: 164
     readonly property string appVersionFull: appVersion + " · сборка " + appBuild
 
     // ==========================================

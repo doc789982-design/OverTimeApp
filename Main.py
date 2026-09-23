@@ -2879,6 +2879,27 @@ class Backend(QObject):
                 self.showToast.emit(f"Ошибка вставки: {e}", "error")
 
     @Slot()
+    def openWebVersion(self):
+        """Кнопка в справке: открыть веб-версию (этап переезда интерфейса).
+
+        Запускает ВТОРОЙ процесс программы с флагом --web и путём
+        текущей базы: веб-интерфейс откроется в браузере, основное
+        окно продолжает работать как ни в чём не бывало.
+        """
+        import subprocess
+        try:
+            argv = [sys.executable]
+            if not getattr(sys, "frozen", False):
+                argv.append(str(Path(__file__).resolve()))
+            argv.append("--web")
+            if self.active_db is not None:
+                argv += ["--db", str(self.active_db.path)]
+            subprocess.Popen(argv, close_fds=True)
+            self.showToast.emit("Веб-версия открывается в браузере", "success")
+        except Exception as e:
+            self.showToast.emit(f"Не удалось открыть веб-версию: {e}", "error")
+
+    @Slot()
     def undoAction(self):
         """Отменяет последнее действие (Ctrl+Z)"""
         if not self.active_db: return
@@ -3980,6 +4001,18 @@ def main():
     del engine
     sys.exit(exit_code)
 
+def _has_web_flag(argv):
+    """Флаг --web из ярлыка: прощаем опечатки.
+
+    Ярлык мог получить «--web.» (точка от конца предложения), «--WEB»
+    или Windows-стиль «/web» — все эти варианты включают веб-режим.
+    """
+    for a in argv[1:]:
+        if a.lower().rstrip(" .,;:!") in ("--web", "-web", "/web"):
+            return True
+    return False
+
+
 def _first_configured_db():
     """Первая база из настроек — для экспериментального режима --web.
 
@@ -4025,7 +4058,7 @@ if __name__ == "__main__":
         #   OVERTIMETAB.exe --web --db ПУТЬ  — указанная база
         # Поднимает локальный сервер (веб-интерфейс на движке программы)
         # и открывает браузер. Окно программы не запускается.
-        if "--web" in sys.argv:
+        if _has_web_flag(sys.argv):
             _web_db = None
             if "--db" in sys.argv:
                 try:

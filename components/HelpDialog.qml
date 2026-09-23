@@ -140,6 +140,74 @@ AppSidePanel {
                     onClicked: Qt.openUrlExternally(root.githubUrl)
                 }
             }
+            // ==========================================
+            // ВЕБ-ВЕРСИЯ — ЭТАП ПЕРЕЕЗДА ИНТЕРФЕЙСА
+            // ==========================================
+            Rectangle {
+                width: parent.width
+                height: webRow.implicitHeight + (AppTheme.spaceM * 2)
+                color: webHov.containsMouse ? AppTheme.bgElevated : AppTheme.bgSurface
+                radius: AppTheme.radiusMedium
+                border.color: AppTheme.borderDivider
+                border.width: 1
+                Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
+
+                Row {
+                    id: webRow
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.margins: AppTheme.spaceM
+                    spacing: AppTheme.spaceM
+
+                    Rectangle {
+                        width: 48; height: 48
+                        radius: AppTheme.radiusMedium
+                        color: AppTheme.bgBrandSoft
+                        IconImage {
+                            anchors.centerIn: parent
+                            source: "../icons/layout.svg"
+                            width: AppTheme.iconLarge; height: AppTheme.iconLarge
+                            color: AppTheme.accentBrand
+                        }
+                    }
+
+                    Column {
+                        width: parent.width - 48 - AppTheme.spaceM
+                        spacing: AppTheme.spaceXS
+                        y: (parent.height - height) / 2
+
+                        Text {
+                            width: parent.width
+                            text: "Веб-версия · экспериментально"
+                            color: AppTheme.textPrimary
+                            font.family: AppTheme.fontFamily
+                            font.pixelSize: AppTheme.sizeBodyLarge
+                            font.weight: AppTheme.weightBold
+                            wrapMode: Text.WordWrap
+                        }
+                        Text {
+                            width: parent.width
+                            text: "Открыть табель в браузере: тот же движок расчётов и та же база. Ранний взгляд на будущий интерфейс."
+                            color: AppTheme.textSecondary
+                            font.family: AppTheme.fontFamily
+                            font.pixelSize: AppTheme.sizeBody
+                            wrapMode: Text.WordWrap
+                        }
+                    }
+                }
+
+                MouseArea {
+                    id: webHov
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    hoverEnabled: true
+                    onClicked: {
+                        backend.openWebVersion()
+                        root.close()
+                    }
+                }
+            }
         }
 
         // ==========================================
