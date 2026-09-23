@@ -58,6 +58,16 @@ Item {
         ColorAnimation { target: root; property: "iconColor"; to: root.idleColor; duration: 1100; easing.type: Easing.InOutQuad }
     }
 
+    // ---- Искры-стрелочки вокруг кнопки ----
+    // Тихо искрят, когда обновление доступно (но ещё не качается) или
+    // уже скачано и готово к установке. Зона небольшая, эффект живёт
+    // только в главном окне — не поверх других окон.
+    UpdateSparkles {
+        anchors.centerIn: parent
+        z: 10
+        active: (root.hasUpdate && !root.downloading) || root.ready
+    }
+
     // ---- Подложка (hover/нажатие) ----
     Rectangle {
         anchors.fill: parent
