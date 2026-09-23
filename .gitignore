@@ -10,3 +10,4 @@ dist/
 build/
 *.spec
 !tools/overtimetab.spec
+web_slice/demo.db
