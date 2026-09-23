@@ -20,9 +20,9 @@ import QtQuick.Controls.impl
 Item {
     id: root
 
-    // Зона искрения: компактная, по центру вокруг кнопки
-    width: 170
-    height: 76
+    // Зона искрения: заметная, по центру вокруг кнопки
+    width: 340
+    height: 150
     clip: true
 
     // Искрим, только когда обновление доступно (но не качается)
@@ -44,7 +44,7 @@ Item {
         // Параметры внешнего вида
         property int startX: 0
         property int startY: 0
-        property int sparkSize: 11
+        property int sparkSize: 22
         property int delay: 0
         property int duration: 2000
         property int rise: 16
@@ -116,10 +116,10 @@ Item {
     // ── Рассыпание искр вокруг кнопки ─────────────────────────────
     // В режиме «скачано» искры чуть быстрее и ярче (перезапуск через
     // привязку к readyMode не нужен: параметры читаются на каждом цикле)
-    Spark { startX: 10;  startY: 56; delay: 0;    duration: root.readyMode ? 1500 : 2100; rise: 20; peak: root.readyMode ? 0.95 : 0.75; sparkSize: 12; wiggle: 24 }
-    Spark { startX: 38;  startY: 48; delay: 450;  duration: root.readyMode ? 1400 : 1900; rise: 24; peak: root.readyMode ? 0.9  : 0.7;  sparkSize: 10; wiggle: 30 }
-    Spark { startX: 66;  startY: 60; delay: 900;  duration: root.readyMode ? 1600 : 2300; rise: 18; peak: root.readyMode ? 0.85 : 0.65; sparkSize: 13; wiggle: 18 }
-    Spark { startX: 92;  startY: 50; delay: 300;  duration: root.readyMode ? 1500 : 2000; rise: 22; peak: root.readyMode ? 0.9  : 0.7;  sparkSize: 9;  wiggle: 28 }
-    Spark { startX: 118; startY: 58; delay: 700;  duration: root.readyMode ? 1400 : 2200; rise: 26; peak: root.readyMode ? 0.95 : 0.75; sparkSize: 11; wiggle: 22 }
-    Spark { startX: 146; startY: 48; delay: 1100; duration: root.readyMode ? 1600 : 1900; rise: 20; peak: root.readyMode ? 0.85 : 0.65; sparkSize: 10; wiggle: 26 }
+    Spark { startX: 22;  startY: 112; delay: 0;    duration: root.readyMode ? 1500 : 2100; rise: 38; peak: root.readyMode ? 0.95 : 0.75; sparkSize: 24; wiggle: 24 }
+    Spark { startX: 84;  startY: 100; delay: 450;  duration: root.readyMode ? 1400 : 1900; rise: 44; peak: root.readyMode ? 0.9  : 0.7;  sparkSize: 20; wiggle: 30 }
+    Spark { startX: 146; startY: 120; delay: 900;  duration: root.readyMode ? 1600 : 2300; rise: 34; peak: root.readyMode ? 0.85 : 0.65; sparkSize: 26; wiggle: 18 }
+    Spark { startX: 206; startY: 102; delay: 300;  duration: root.readyMode ? 1500 : 2000; rise: 42; peak: root.readyMode ? 0.9  : 0.7;  sparkSize: 18; wiggle: 28 }
+    Spark { startX: 262; startY: 116; delay: 700;  duration: root.readyMode ? 1400 : 2200; rise: 46; peak: root.readyMode ? 0.95 : 0.75; sparkSize: 22; wiggle: 22 }
+    Spark { startX: 316; startY: 100; delay: 1100; duration: root.readyMode ? 1600 : 1900; rise: 38; peak: root.readyMode ? 0.85 : 0.65; sparkSize: 20; wiggle: 26 }
 }

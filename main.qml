@@ -635,7 +635,6 @@ ApplicationWindow {
                     anchors.bottom: parent.bottom
                     anchors.bottomMargin: AppUI.AppTheme.spaceS
                     AppUI.ToastHost { width: parent.width }
-                    AppUI.UpdateBanner { width: parent.width }
                 }
             }
 
@@ -717,7 +716,6 @@ ApplicationWindow {
                         anchors.bottom: parent.bottom
                         z: AppUI.AppTheme.zSticky
                         AppUI.ToastHost { width: parent.width }
-                        AppUI.UpdateBanner { width: parent.width }
                         AppUI.LeftControlPanel { width: parent.width }
                     }
                 }

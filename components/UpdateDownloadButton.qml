@@ -28,7 +28,7 @@ Item {
         if (downloading)
             return "Загрузка обновления… " + progress + "%"
         if (ready)
-            return "Обновление загружено"
+            return "Обновление загружено. Нажмите, чтобы установить."
         if (hasUpdate)
             return "Доступна новая версия программы. Нажмите, чтобы загрузить."
         return "Проверить обновления"
@@ -47,8 +47,9 @@ Item {
     property bool returnedToIcon: false
     readonly property bool showRing: root.downloading || (root.ready && !root.returnedToIcon)
 
-    // Клик возможен только когда обновление доступно и ещё не загружено
-    readonly property bool clickable: root.hasUpdate && !root.downloading && !root.ready
+    // Клик активен, когда обновление доступно (запуск загрузки)
+    // или уже загружено (запуск установки) — но не во время загрузки
+    readonly property bool clickable: root.hasUpdate && !root.downloading
 
     // Пульсация «обновление доступно»: серая ↔ зелёная плавно
     SequentialAnimation {
@@ -165,8 +166,14 @@ Item {
         hoverEnabled: true
         cursorShape: (root.clickable || root.idleCheck) ? Qt.PointingHandCursor : Qt.ArrowCursor
         onClicked: {
-            if (root.clickable)
-                backend.startRemoteDownload()
+            if (root.clickable) {
+                // Обновление уже скачано — устанавливаем (бывшая кнопка
+                // в баннере внизу); иначе — начинаем загрузку
+                if (root.ready)
+                    backend.applyReadyUpdate()
+                else
+                    backend.startRemoteDownload()
+            }
             // Праздная кнопка — клик запускает полную проверку обновлений
             // (локально → адрес из настроек → вшитый GitHub).
             else if (root.idleCheck)
