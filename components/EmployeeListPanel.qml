@@ -203,6 +203,12 @@ Rectangle {
             visible: false
             property bool animOn: true
 
+            // При перетаскивании выбранной строки плашка тускнеет вместе
+            // с ней (строка становится полупрозрачной — плашка тоже)
+            opacity: (empList.draggingEmpId !== 0
+                      && empList.draggingEmpId === backend.selectedEmployeeId) ? 0.35 : 1.0
+            Behavior on opacity { NumberAnimation { duration: AppTheme.durFast } }
+
             // Геометрия плашки
             readonly property int leftInset: AppTheme.spaceXS
             readonly property int vInset: 2

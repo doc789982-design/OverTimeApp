@@ -129,16 +129,71 @@ Item {
                 }
             }
 
-            Text {
+            // ОДОМЕТР: при смене месяца старое значение «прокатывается» вверх
+            // и растворяется, новое выезжает снизу — как счётчик с барабаном.
+            // Анимируются два готовых Text, поэтому работает любой формат
+            // строки: скобки прошлого года, «ч.», «дн.» — без перерисовки цифр
+            Item {
+                id: odometer
                 Layout.fillWidth: true
                 Layout.topMargin: AppTheme.spaceXS
-                text: card.endText
-                color: card.endNeg ? AppTheme.accentDanger : AppTheme.textPrimary
-                font.family: AppTheme.fontFamily
-                font.pixelSize: 27
-                font.weight: AppTheme.weightBold
-                textFormat: Text.StyledText
-                elide: Text.ElideRight
+                Layout.preferredHeight: odoMain.implicitHeight
+                clip: true
+
+                property string lastShown: ""
+                property bool primed: false
+
+                Text {
+                    id: odoMain
+                    x: 0; y: 0
+                    width: odometer.width
+                    text: card.endText
+                    color: card.endNeg ? AppTheme.accentDanger : AppTheme.textPrimary
+                    font.family: AppTheme.fontFamily
+                    font.pixelSize: 27
+                    font.weight: AppTheme.weightBold
+                    textFormat: Text.StyledText
+                    elide: Text.ElideRight
+                }
+                Text {
+                    id: odoGhost
+                    x: 0; y: 0
+                    width: odometer.width
+                    opacity: 0
+                    text: ""
+                    color: card.endNeg ? AppTheme.accentDanger : AppTheme.textPrimary
+                    font.family: AppTheme.fontFamily
+                    font.pixelSize: 27
+                    font.weight: AppTheme.weightBold
+                    textFormat: Text.StyledText
+                    elide: Text.ElideRight
+                }
+
+                Connections {
+                    target: card
+                    function onEndTextChanged() {
+                        // первый показ — без анимации
+                        if (!odometer.primed) {
+                            odometer.primed = true
+                            odometer.lastShown = card.endText
+                            return
+                        }
+                        if (card.endText === odometer.lastShown) return
+                        odoGhost.text = odometer.lastShown
+                        odoGhost.y = 0
+                        odoGhost.opacity = 1
+                        odoMain.y = odoMain.implicitHeight + 4
+                        odoRoll.start()
+                        odometer.lastShown = card.endText
+                    }
+                }
+
+                ParallelAnimation {
+                    id: odoRoll
+                    NumberAnimation { target: odoGhost; property: "y"; to: -odoGhost.implicitHeight - 4; duration: 220; easing.type: Easing.OutCubic }
+                    NumberAnimation { target: odoGhost; property: "opacity"; to: 0; duration: 220; easing.type: Easing.OutCubic }
+                    NumberAnimation { target: odoMain; property: "y"; to: 0; duration: 220; easing.type: Easing.OutCubic }
+                }
             }
             Text {
                 Layout.fillWidth: true

@@ -39,14 +39,14 @@ Item {
     RowLayout {
         anchors.fill: parent
         anchors.leftMargin: AppTheme.spaceL; anchors.rightMargin: AppTheme.spaceL
-        spacing: AppTheme.spaceL
+        spacing: AppTheme.spaceM
 
         // ==========================================
         // 1. ВЫБОР ГОДА
         // ==========================================
         Rectangle {
             Layout.alignment: Qt.AlignVCenter
-            width: 80; height: 36; radius: AppTheme.radiusSmall
+            width: 64; height: 36; radius: AppTheme.radiusSmall
             color: yearHover.pressed ? AppTheme.statePress : (yearHover.containsMouse ? AppTheme.stateHover : "transparent")
             border.color: yearHover.containsMouse ? AppTheme.borderInput : "transparent"; border.width: 1
             Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
@@ -90,14 +90,21 @@ Item {
         // 2. ВКЛАДКИ МЕСЯЦЕВ
         // ==========================================
         Row {
-            Layout.alignment: Qt.AlignBottom 
+            id: monthsRow
+            Layout.alignment: Qt.AlignBottom
+            Layout.fillWidth: true
             height: parent.height
+
+            // Адаптивная ширина месяца: в широком окне — привычные 44px,
+            // при нехватке места сжимаются до 30px, чтобы «Окт…Дек» и «Год»
+            // никогда не вылезали за край (минимальное окно 940px)
+            readonly property int monthW: Math.max(30, Math.min(44, Math.floor((width - 57) / 12)))
 
             Repeater {
                 model: ["Янв", "Фев", "Мар", "Апр", "Май", "Июн", "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек", "Год"]
 
                 Item {
-                    width: index === 12 ? 60 : 44; height: parent.height
+                    width: index === 12 ? 56 : monthsRow.monthW; height: parent.height
                     property bool isPseudoMonth: index === 12
                     property int monthNum: index + 1
                     property bool isActive: isPseudoMonth ? root.isYearView : (!root.isYearView && backend.currentPeriodText.startsWith(modelData))
