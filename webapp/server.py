@@ -14,6 +14,7 @@ import json
 import os
 import re
 import sys
+import threading
 import calendar as cal_lib
 from datetime import date, datetime, timedelta
 from http.server import HTTPServer, SimpleHTTPRequestHandler
@@ -48,6 +49,9 @@ PORT = 8081
 # окружения OVERTIMETAB_DB). Без него работает демо-база: постепенный
 # переезд не должен рисковать данными пользователей.
 REAL_DB = None
+
+# Ссылка на живой HTTP-сервер (для корректного выключения из веб-интерфейса)
+_HTTPD = None
 
 # Сколько правок сделала ЭТА сессия сервера: отмена не должна трогать
 # снапшоты, оставшиеся в чужой базе от прошлых запусков программы.
@@ -528,6 +532,8 @@ class Handler(SimpleHTTPRequestHandler):
                 self.api_set_status()
             elif u.path == "/api/undo":
                 self.api_undo()
+            elif u.path == "/api/shutdown":
+                self.api_shutdown()
             else:
                 self.json_out({"error": "неизвестный запрос"}, 404)
         except Exception as ex:  # noqa: BLE001
@@ -688,6 +694,19 @@ class Handler(SimpleHTTPRequestHandler):
         msg = "Статус снят" if not status else f"Статус: {status}"
         self.after_write(emp, d0.year, d0.month, msg)
 
+    # ── POST /api/shutdown ─────────────────────────────────────
+    def api_shutdown(self):
+        """Кнопка «выключить веб-версию» в шапке интерфейса.
+
+        Ответ уходит ДО остановки: serve_forever однопоточный, напрямую
+        из обработчика его не остановить (взаимоблокировка) — гасим
+        из отдельного потока с короткой задержкой.
+        """
+        global _HTTPD
+        self.json_out({"ok": True, "message": "Сервер останавливается"})
+        if _HTTPD is not None:
+            threading.Timer(0.4, _HTTPD.shutdown).start()
+
     # ── POST /api/undo ─────────────────────────────────────────
     def api_undo(self):
         global _session_undo
@@ -745,6 +764,8 @@ def run_web(db_path=None, port=None):
         print("Не удалось занять порт для веб-режима")
         sys.exit(1)
 
+    global _HTTPD
+    _HTTPD = httpd
     mode = f"РЕАЛЬНАЯ база: {REAL_DB}" if REAL_DB else "демо-база"
     print(f"Веб-версия OVERTIMETAB: http://127.0.0.1:{p}  ({mode})")
     print("Один интерфейс за раз: не редактируйте одну базу")
@@ -768,8 +789,10 @@ def main():
     if REAL_DB and not os.path.exists(REAL_DB):
         print("База не найдена:", REAL_DB)
         sys.exit(1)
+    global _HTTPD
     Handler.db = open_db()
     httpd = HTTPServer(("0.0.0.0", PORT), Handler)
+    _HTTPD = httpd
     mode = f"РЕАЛЬНАЯ база: {REAL_DB}" if REAL_DB else "демо-база"
     print(f"Веб-версия OVERTIMETAB: http://0.0.0.0:{PORT}  ({mode})")
     httpd.serve_forever()

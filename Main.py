@@ -4020,4 +4020,22 @@ if __name__ == "__main__":
             print(f"Ошибка применения обновления: {e}")
             sys.exit(1)
         sys.exit(0)
+        # ЭКСПЕРИМЕНТАЛЬНЫЙ ВЕБ-РЕЖИМ (этап переезда интерфейса, MIGRATION.md):
+        #   OVERTIMETAB.exe --web            — база из настроек
+        #   OVERTIMETAB.exe --web --db ПУТЬ  — указанная база
+        # Поднимает локальный сервер (веб-интерфейс на движке программы)
+        # и открывает браузер. Окно программы не запускается.
+        if "--web" in sys.argv:
+            _web_db = None
+            if "--db" in sys.argv:
+                try:
+                    _web_db = sys.argv[sys.argv.index("--db") + 1]
+                except IndexError:
+                    pass
+            if not _web_db:
+                _web_db = _first_configured_db()
+            from webapp.server import run_web
+            run_web(_web_db)
+            sys.exit(0)
+
     main()

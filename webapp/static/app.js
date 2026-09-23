@@ -735,6 +735,28 @@ async function init() {
   }
   loadMonth();
 
+  // выключение веб-версии: первый клик — подтверждение, второй — стоп
+  const sb = $("#shutdownBtn");
+  sb.onclick = async () => {
+    if (!sb.classList.contains("confirm")) {
+      sb.classList.add("confirm");
+      sb.title = "Нажмите ещё раз — веб-версия выключится";
+      setTimeout(() => {
+        sb.classList.remove("confirm");
+        sb.title = "Выключить веб-версию";
+      }, 2600);
+      return;
+    }
+    try { await post("/api/shutdown", {}); } catch (e) { /* уже погас */ }
+    const bye = document.createElement("div");
+    bye.className = "bye";
+    bye.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+        stroke-linecap="round"><path d="M12 3v9"/><path d="M18.4 6.6a9 9 0 1 1-12.8 0"/></svg>
+      <b>Веб-версия остановлена</b>
+      <span>Вкладку можно закрыть. Обычная программа запускается как всегда.</span>`;
+    document.body.appendChild(bye);
+  };
   $("#themeBtn").onclick = () => {
     state.theme = state.theme === "light" ? "dark" : "light";
     localStorage.setItem("ot-theme", state.theme);
