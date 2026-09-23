@@ -16,14 +16,10 @@ const state = {
   month: new Date().getMonth() + 1,
   view:  "month",            // month | year
   empId: 0,
-  theme: localStorage.getItem("ot-theme") || "light",
-  variant: localStorage.getItem("ot-variant") || "squares",
-  search: "",
   groupSel: 0,               // 0 = все
   today: null,
   employees: [],
   groups: [],
-  miniMax: 1,
   selDate: null,             // открытый в инспекторе день
 };
 
@@ -108,11 +104,6 @@ function renderGroups() {
 /* ═══════════════════════════════════════════════════════════════
    СПИСОК СОТРУДНИКОВ + МИНИ-ГОД
    ═══════════════════════════════════════════════════════════════ */
-function isFutureMonth(m) {
-  const t = state.today;
-  return state.year > t.y || (state.year === t.y && m > t.m);
-}
-
 function renderList() {
   const box = $("#empList");
   const q = state.search.trim().toLowerCase();
@@ -128,57 +119,17 @@ function renderList() {
     return;
   }
 
-  box.innerHTML = list.map(e => {
-    let mini = "";
-    if (state.variant !== "off") {
-      const cells = e.mini.map((v, m) => {
-        const fut = isFutureMonth(m + 1);
-        const cur = state.today.y === state.year && state.today.m === m + 1;
-        const picked = e.id === state.empId &&
-          ((state.view === "month" && state.month === m + 1) || state.view === "year");
-        const tip = fut
-          ? `${MONTHS[m]} ${state.year} — ещё не наступил`
-          : `${MONTHS[m]} ${state.year} — всего дней: ${v}`;
-        if (state.variant === "squares") {
-          const bg = fut ? "" :
-            v === 0 ? `background:var(--zero)` :
-            `background:rgba(3,116,181,${(0.16 + 0.74 * Math.min(1, v / state.miniMax)).toFixed(2)})`;
-          return `<i class="m ${fut ? "future" : ""} ${cur ? "cur" : ""} ${picked ? "picked" : ""}"
-                    style="${bg}" title="${esc(tip)}" data-m="${m + 1}"></i>`;
-        }
-        const h = fut || v === 0 ? "" :
-          `height:${Math.max(4, Math.round(v / state.miniMax * 24))}px;opacity:${(0.5 + 0.5 * Math.min(1, v / state.miniMax)).toFixed(2)}`;
-        return `<i class="m ${fut ? "future" : v === 0 ? "zero" : ""} ${cur ? "cur" : ""} ${picked ? "picked" : ""}"
-                  title="${esc(tip)}" data-m="${m + 1}">${h ? `<i style="${h}"></i>` : "<i></i>"}</i>`;
-      }).join("");
-      mini = `<div class="mini ${state.variant === "squares" ? "sq" : "bars"}">${cells}</div>`;
-    }
-    return `
+  box.innerHTML = list.map(e => `
       <div class="emp ${e.id === state.empId ? "sel" : ""}" data-id="${e.id}">
         <div class="info">
           <div class="fio">${esc(e.fio)}</div>
           <div class="pos">${esc(e.position)}</div>
           <div class="normbar"><i style="width:${Math.min(100, Math.round(e.ratio * 88))}%"></i></div>
         </div>
-        ${mini}
-      </div>`;
-  }).join("");
+      </div>`).join("");
 
   box.querySelectorAll(".emp").forEach(el =>
-    el.onclick = (ev) => {
-      selectEmp(+el.dataset.id);
-      const m = ev.target.closest(".m:not(.future)")?.dataset.m;
-      if (m) gotoMonth(+m);
-    });
-}
-
-function recalcMiniMax() {
-  const t = state.today;
-  let mx = 1;
-  for (const e of state.employees)
-    for (let m = 0; m < (t.y === state.year ? t.m : 12); m++)
-      mx = Math.max(mx, e.mini[m]);
-  state.miniMax = mx;
+    el.onclick = () => selectEmp(+el.dataset.id));
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -419,25 +370,20 @@ function renderInspector(d) {
       <span class="k">${code}</span>${STATUS_INFO[code]}</button>`;
 
   const dutyCards = d.duties.map(x => {
-    const cross = x.multi;
-    const time = cross
-      ? `${fmtDT(x.start)} – ${fmtDT(x.end)}`
-      : `${fmtDT(x.start)} – ${fmtDT(x.end)}`;
-    const span = cross
-      ? `<div class="cm">с ${fmtDM(x.start)} по ${fmtDM(x.end)} · в этот день ${x.slice}</div>` : "";
     const brks = (x.breaks || []).map(b =>
-      `<div class="brk">перерыв ${b}</div>`).join("");
+      `<div class="brk">перерыв ${esc(b.start)}–${esc(b.end)}</div>`).join("");
     return `
       <div class="duty-card">
         <div class="dr-top">
-          <span class="time">${time}</span>
+          <span class="time">${fmtDT(x.start)} – ${fmtDT(x.end)}</span>
           <span class="chip-s ${x.is_shift ? "" : "ns"}">${x.is_shift ? "сменное" : "сверх нормы"}</span>
-          <button class="del" data-id="${x.id}" title="Удалить дежурство">
+          <button class="edt" data-id="${x.id}" title="Изменить дежурство">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-              stroke-linecap="round"><path d="M3 6h18M8 6V4h8v2m1 0-1 14H8L7 6"/></svg>
+              stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z"/></svg>
           </button>
+          <button class="del" data-id="${x.id}" title="Удалить дежурство">${svgTrash()}</button>
         </div>
-        ${span}
+        ${x.multi ? `<div class="cm">с ${fmtDM(x.start)} по ${fmtDM(x.end)} · в этот день ${x.slice}</div>` : ""}
         ${x.comment ? `<div class="cm">${esc(x.comment)}</div>` : ""}
         ${brks}
       </div>`;
@@ -484,13 +430,18 @@ function renderInspector(d) {
             <label style="width:auto">Комментарий</label>
             <input type="text" id="fComment" class="f-txt" placeholder="необязательно" style="flex:1">
           </div>
+          <div class="brk-box">
+            <div class="cap2">Перерывы <span class="cap2-hint">(не входят в отработанное время)</span></div>
+            <div id="breaksBox"></div>
+            <button type="button" class="brk-add" id="brkAdd">+ перерыв</button>
+          </div>
           <div class="cm" style="font-size:10.5px;color:var(--txt3)">
             Конец раньше начала = дежурство до следующего дня
           </div>
           <div class="form-err" id="formErr"></div>
           <div class="f-row" style="justify-content:flex-end">
             <button type="button" class="btn ghost" id="fCancel">Отмена</button>
-            <button type="submit" class="btn primary">Сохранить</button>
+            <button type="submit" class="btn primary" id="fSubmit">Сохранить</button>
           </div>
         </form>
       </div>
@@ -534,36 +485,90 @@ function renderInspector(d) {
         { id: +b.dataset.id, emp: state.empId, year: state.year, month: state.month }));
     });
 
-  // форма добавления
+  // ── форма добавления / редактирования дежурства ──
   const form = box.querySelector("#addForm");
-  box.querySelector("#addToggle").onclick = () => {
-    form.style.display = form.style.display === "none" ? "flex" : "none";
-    box.querySelector("#addToggle").style.display =
-      form.style.display === "none" ? "" : "none";
-    if (form.style.display !== "none") box.querySelector("#fStart").focus();
-  };
-  box.querySelector("#fCancel").onclick = () => {
+  const addToggle = box.querySelector("#addToggle");
+  const breaksBox = box.querySelector("#breaksBox");
+  const err = box.querySelector("#formErr");
+  let editId = null;        // null = добавление, число = редактирование
+  let breaks = [];          // [{start:"12:00", end:"13:00"}]
+
+  function renderBreaks() {
+    breaksBox.innerHTML = breaks.map((b, i) => `
+      <div class="brk-row" data-i="${i}">
+        <input type="time" class="b-start" value="${esc(b.start)}">
+        <span class="b-sep">–</span>
+        <input type="time" class="b-end" value="${esc(b.end)}">
+        <button type="button" class="b-del" title="Убрать перерыв">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+            stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>`).join("") ||
+      '<div class="cm" style="font-size:10.5px;margin:0">Без перерывов</div>';
+    breaksBox.querySelectorAll(".brk-row").forEach(row => {
+      const i = +row.dataset.i;
+      row.querySelector(".b-start").oninput = (e) => { breaks[i].start = e.target.value; };
+      row.querySelector(".b-end").oninput = (e) => { breaks[i].end = e.target.value; };
+      row.querySelector(".b-del").onclick = () => { breaks.splice(i, 1); renderBreaks(); };
+    });
+  }
+
+  function openForm(duty) {
+    editId = duty ? duty.id : null;
+    breaks = duty ? duty.breaks.map(b => ({ ...b })) : [];
+    box.querySelector("#fStart").value = duty ? duty.start.slice(11, 16) : "08:00";
+    box.querySelector("#fEnd").value = duty ? duty.end.slice(11, 16) : "20:00";
+    box.querySelector("#fShift").checked = duty ? duty.is_shift : true;
+    box.querySelector("#fComment").value = duty ? (duty.comment || "") : "";
+    box.querySelector("#fSubmit").textContent = duty ? "Сохранить изменения" : "Сохранить";
+    err.classList.remove("show");
+    renderBreaks();
+    form.style.display = "flex";
+    addToggle.style.display = "none";
+    box.querySelector("#fStart").focus();
+  }
+
+  function closeForm() {
+    editId = null;
     form.style.display = "none";
-    box.querySelector("#addToggle").style.display = "";
-    box.querySelector("#formErr").classList.remove("show");
+    addToggle.style.display = "";
+    err.classList.remove("show");
+  }
+
+  addToggle.onclick = () => openForm(null);
+  box.querySelector("#brkAdd").onclick = () => {
+    breaks.push({ start: "12:00", end: "13:00" });
+    renderBreaks();
   };
+  box.querySelector("#fCancel").onclick = closeForm;
+
+  // изменить существующее дежурство
+  box.querySelectorAll(".edt").forEach(b =>
+    b.onclick = () => {
+      const duty = d.duties.find(x => x.id === +b.dataset.id);
+      if (duty) openForm(duty);
+    });
+
   form.onsubmit = async (e) => {
     e.preventDefault();
-    const err = box.querySelector("#formErr");
     err.classList.remove("show");
-    const res = await post("/api/duty/add", {
+    const payload = {
       emp: state.empId,
-      date: d.date,
+      date: editId ? d.duties.find(x => x.id === editId).start.slice(0, 10) : d.date,
       start: box.querySelector("#fStart").value,
       end: box.querySelector("#fEnd").value,
       is_shift: box.querySelector("#fShift").checked,
       comment: box.querySelector("#fComment").value.trim(),
-    });
+      breaks: breaks.filter(b => b.start && b.end),
+    };
+    const res = await post(editId ? "/api/duty/update" : "/api/duty/add",
+      editId ? { ...payload, id: editId } : payload);
     if (!res.ok) {
       err.textContent = res.message || "Ошибка сохранения";
       err.classList.add("show");
       return;
     }
+    closeForm();
     afterWrite(res);
   };
 
@@ -611,7 +616,6 @@ async function loadBootstrap() {
   state.today = b.today;
   state.groups = b.groups;
   state.employees = b.employees;
-  recalcMiniMax();
   renderGroups();
   renderList();
   renderTabs();
@@ -622,11 +626,7 @@ function applyMonth(d) {
   renderCalendar(d);
   renderSummary(d);
   const i = state.employees.findIndex(e => e.id === d.emp.id);
-  if (i >= 0) {
-    state.employees[i].ratio = d.ratio;
-    state.employees[i].mini = d.mini;
-  }
-  recalcMiniMax();
+  if (i >= 0) state.employees[i].ratio = d.ratio;
   renderList();
   renderTabs();
 }
@@ -713,19 +713,11 @@ function applyTheme() {
   $("#iconSun").style.display = state.theme === "dark" ? "" : "none";
 }
 
-function applyVariant() {
-  localStorage.setItem("ot-variant", state.variant);
-  document.querySelectorAll("#variantSeg button").forEach(b =>
-    b.classList.toggle("on", b.dataset.v === state.variant));
-  renderList();
-}
-
 /* ═══════════════════════════════════════════════════════════════
    СТАРТ
    ═══════════════════════════════════════════════════════════════ */
 async function init() {
   applyTheme();
-  applyVariant();
   try {
     await loadBootstrap();
   } catch (e) {
@@ -748,8 +740,6 @@ async function init() {
     localStorage.setItem("ot-theme", state.theme);
     applyTheme();
   };
-  document.querySelectorAll("#variantSeg button").forEach(b =>
-    b.onclick = () => { state.variant = b.dataset.v; applyVariant(); });
   $("#search").oninput = (e) => { state.search = e.target.value; renderList(); };
   $("#todayBtn").onclick = async () => {
     if (state.year !== state.today.y) await setYear(state.today.y);

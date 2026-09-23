@@ -19,16 +19,29 @@ from datetime import date, datetime, timedelta
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.dirname(ROOT))          # доступ к ядру приложения
+# ── пути ──────────────────────────────────────────────────────────
+# Обычный запуск:  python3 webapp/server.py  — ядро лежит в корне репо.
+# Запуск из сборки: OVERTIMETAB.exe --web — модули и статика зашиты
+# внутрь exe PyInstaller'ом, всё лежит в sys._MEIPASS.
+FROZEN = bool(getattr(sys, "frozen", False))
+if FROZEN:
+    ROOT = os.path.join(sys._MEIPASS, "webapp")
+    sys.path.insert(0, sys._MEIPASS)
+else:
+    ROOT = os.path.dirname(os.path.abspath(__file__))
+    sys.path.insert(0, os.path.dirname(ROOT))      # доступ к ядру приложения
 from database import DB                             # noqa: E402
 from logic import (compute_month_summary,           # noqa: E402
                    build_shifted_weekend_checker,
                    resolve_is_working)
-from utils import (d_iso, dt_parse, subtract_intervals, intersect,  # noqa: E402
+from utils import (d_iso, dt_parse, dt_iso, subtract_intervals, intersect,  # noqa: E402
                    month_bounds_dt, fmt_minutes_ru_words, parse_hhmm)
 
-DEMO_DB = os.path.join(ROOT, "demo.db")
+if FROZEN:
+    import tempfile
+    DEMO_DB = os.path.join(tempfile.gettempdir(), "overtimetab_web_demo.db")
+else:
+    DEMO_DB = os.path.join(ROOT, "demo.db")
 PORT = 8081
 
 # Реальная база — только по явному указанию (флаг --db или переменная
@@ -168,7 +181,7 @@ def seed(db: DB):
     # у Иванова одно дежурство в августе 2026 — с обеденным перерывом
     aug = [r for r in db.list_duties_for_period(
         ivan, datetime(2026, 8, 1), datetime(2026, 9, 1))
-        if dt_parse(r["start_dt"]).day == 15]
+        if dt_parse(r["start_dt"]).day == 14]
     if aug:
         did = int(aug[0]["id"])
         s = dt_parse(aug[0]["start_dt"])
@@ -390,8 +403,10 @@ def build_day(db, emp_id, d: date):
         })
     breaks_map = db.breaks_for_duty_ids([x["id"] for x in duties])
     for x in duties:
+        # breaks_for_duty_ids возвращает кортежи datetime — не строки
         x["breaks"] = [
-            f"{dt_parse(b[0]).strftime('%H:%M')}-{dt_parse(b[1]).strftime('%H:%M')}"
+            {"start": b[0].strftime("%H:%M"),
+             "end": b[1].strftime("%H:%M")}
             for b in breaks_map.get(x["id"], [])]
 
     comps = []
@@ -439,7 +454,6 @@ def month_payload(db, emp_id, year, month):
         "period": f"{MONTHS_RU[month - 1]} {year}",
         "days": build_month_grid(db, emp_id, year, month),
         "summary": build_summary(db, emp_id, year, month),
-        "mini": mini_year(db, emp_id, year),
         "ratio": round(max(0, s.get("shift_minutes", 0)) / norm, 3) if norm else 0,
     }
 
@@ -506,6 +520,8 @@ class Handler(SimpleHTTPRequestHandler):
         try:
             if u.path == "/api/duty/add":
                 self.api_duty_add()
+            elif u.path == "/api/duty/update":
+                self.api_duty_update()
             elif u.path == "/api/duty/delete":
                 self.api_duty_delete()
             elif u.path == "/api/day/set-status":
@@ -543,7 +559,6 @@ class Handler(SimpleHTTPRequestHandler):
                 "group_id": int(e["group_id"]) if e["group_id"] is not None else None,
                 "start_month": e["start_month"],
                 "ratio": round(max(0, s.get("shift_minutes", 0)) / norm, 3) if norm else 0,
-                "mini": mini_year(db, eid, year),
             })
         self.json_out({
             "today": {"y": date.today().year, "m": date.today().month,
@@ -596,6 +611,55 @@ class Handler(SimpleHTTPRequestHandler):
                         bool(b.get("is_shift", False)))
         bump_undo()
         self.after_write(emp, d0.year, d0.month, "Дежурство сохранено")
+
+    # ── POST /api/duty/update ──────────────────────────────────
+    # Порт updateDuty из Main.py: пересечения проверяются с исключением
+    # самого дежурства, перерывы через полночь досчитываются сервером.
+    def api_duty_update(self):
+        db = self.db
+        b = self.body_json()
+        duty_id = int(b["id"])
+        emp = int(b["emp"])
+        d0 = date.fromisoformat(b["date"])       # якорь = дата НАЧАЛА дежурства
+        try:
+            s_t = parse_hhmm(b.get("start", ""))
+            e_t = parse_hhmm(b.get("end", ""))
+        except Exception:
+            self.json_out({"ok": False, "message": "Неверное время"}, 400)
+            return
+        start_dt = datetime.combine(d0, s_t)
+        end_dt = datetime.combine(d0, e_t)
+        if end_dt <= start_dt:
+            end_dt += timedelta(days=1)
+
+        overlaps = db.find_overlapping_duties(emp, start_dt, end_dt,
+                                              exclude_duty_id=duty_id)
+        if overlaps:
+            self.json_out({"ok": False,
+                           "message": "Ошибка: пересечение с другим дежурством"},
+                          409)
+            return
+
+        breaks_list = []
+        for br in (b.get("breaks") or []):
+            bs_t = parse_hhmm(br.get("start", ""))
+            be_t = parse_hhmm(br.get("end", ""))
+            bs_dt = datetime.combine(d0, bs_t)
+            if bs_dt < start_dt:
+                bs_dt += timedelta(days=1)
+            be_dt = datetime.combine(bs_dt.date(), be_t)
+            if be_dt <= bs_dt:
+                be_dt += timedelta(days=1)
+            breaks_list.append((bs_dt, be_dt))
+
+        with db.transaction():
+            db.conn.execute(
+                "UPDATE duty SET start_dt=?, end_dt=?, comment=?, is_shift=? WHERE id=?",
+                (dt_iso(start_dt), dt_iso(end_dt), b.get("comment") or None,
+                 int(bool(b.get("is_shift", False))), duty_id))
+            db.replace_duty_breaks(duty_id, breaks_list)
+        bump_undo()
+        self.after_write(emp, d0.year, d0.month, "Дежурство обновлено")
 
     # ── POST /api/duty/delete {id, emp, year, month} ───────────
     def api_duty_delete(self):
@@ -655,6 +719,43 @@ class Handler(SimpleHTTPRequestHandler):
             "panorama": build_year(db, emp, year),
             "mini": mini_year(db, emp, year),
         })
+
+
+def run_web(db_path=None, port=None):
+    """Режим OVERTIMETAB.exe --web: поднять сервер и открыть браузер.
+
+    Вызывается из Main.py ДО запуска Qt. Порт 8081, при занятости —
+    ближайший свободный (браузер откроется на правильном).
+    """
+    global REAL_DB
+    import webbrowser
+    if db_path:
+        REAL_DB = db_path
+    Handler.db = open_db()
+
+    p = port or PORT
+    httpd = None
+    for attempt in range(10):
+        try:
+            httpd = HTTPServer(("127.0.0.1", p), Handler)
+            break
+        except OSError:
+            p += 1
+    if httpd is None:
+        print("Не удалось занять порт для веб-режима")
+        sys.exit(1)
+
+    mode = f"РЕАЛЬНАЯ база: {REAL_DB}" if REAL_DB else "демо-база"
+    print(f"Веб-версия OVERTIMETAB: http://127.0.0.1:{p}  ({mode})")
+    print("Один интерфейс за раз: не редактируйте одну базу")
+    print("одновременно в программе и в веб-режиме.")
+    webbrowser.open(f"http://127.0.0.1:{p}")
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        httpd.server_close()
 
 
 def main():

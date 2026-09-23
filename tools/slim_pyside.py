@@ -112,7 +112,8 @@ UNUSED_STDLIB = (
     "ensurepip",
     "venv",
     "xmlrpc",
-    "http.server",
+    # http.server НЕ исключать: на нём работает экспериментальный
+    # веб-режим (webapp/server.py, OVERTIMETAB.exe --web)
     "matplotlib",
     "numpy",
     "pandas",

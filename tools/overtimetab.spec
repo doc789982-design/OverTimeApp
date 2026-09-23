@@ -60,6 +60,7 @@ HIDDENIMPORTS = [
     "pythoncom",
     "pywintypes",
     "app_update",
+    "webapp.server",          # экспериментальный веб-режим (--web)
 ]
 
 EXCLUDES = list(UNUSED_STDLIB) + list(UNUSED_PYSIDE_MODULES)
@@ -75,6 +76,10 @@ if _version_json.exists():
     _datas.append((str(_version_json), "."))
 if _changelog.exists():
     _datas.append((str(_changelog), "."))
+# Веб-версия (этап переезда): статика интерфейса для режима --web
+_web_static = ROOT / "webapp" / "static"
+if _web_static.exists():
+    _datas.append((str(_web_static), "webapp/static"))
 
 a = Analysis(
     [str(ROOT / "Main.py")],

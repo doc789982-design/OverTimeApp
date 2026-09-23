@@ -3980,6 +3980,33 @@ def main():
     del engine
     sys.exit(exit_code)
 
+def _first_configured_db():
+    """Первая база из настроек — для экспериментального режима --web.
+
+    Обходит те же места, что и программа (Documents, портативная data\,
+    старый профиль), но без Qt: режим запускается до создания окна.
+    """
+    candidates = [
+        Path.home() / "Documents" / "OverTimeTab" / "config.json",
+        Path(sys.argv[0]).resolve().parent / "data" / "config.json",
+        Path.home() / ".overtimetab" / "config.json",
+    ]
+    for cfg in candidates:
+        try:
+            if not cfg.exists():
+                continue
+            data = json.loads(cfg.read_text(encoding="utf-8"))
+            for p in data.get("db_paths", []):
+                pp = Path(p)
+                if not pp.is_absolute():
+                    pp = (cfg.parent / pp).resolve()
+                if pp.exists():
+                    return str(pp)
+        except Exception:
+            continue
+    return None
+
+
 if __name__ == "__main__":
     apply = app_update.parse_apply_argv(sys.argv)
     if apply:

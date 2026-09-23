@@ -163,25 +163,6 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--brand);outline-
 .emp.sel .fio{color:var(--brand);font-weight:700}
 .emp.sel .normbar i{background:var(--brand)}
 
-/* ═══ МИНИ-ГОД В КАРТОЧКЕ ══════════════════════════════════════ */
-.mini{flex:none;display:flex;align-items:center;gap:3px;padding-right:2px}
-.mini .m{position:relative;cursor:pointer;transition:transform .1s}
-.mini .m:hover{transform:scale(1.25);z-index:5}
-.mini .m.picked{outline:2px solid var(--brand);outline-offset:1px;border-radius:4px}
-
-.mini.sq .m{width:12px;height:12px;border-radius:4px;background:var(--zero)}
-.mini.sq .m.future{background:var(--future);opacity:.55;cursor:default}
-.mini.sq .m.future:hover{transform:none}
-.mini.sq .m.cur::after{content:"";position:absolute;inset:-3px;border:1.5px solid var(--warn);border-radius:6px}
-
-.mini.bars{align-items:flex-end;height:28px}
-.mini.bars .m{width:7px;height:28px;display:flex;align-items:flex-end}
-.mini.bars .m i{display:block;width:100%;border-radius:2px;background:var(--brand)}
-.mini.bars .m.zero i{height:2px;background:var(--txt3);opacity:.35}
-.mini.bars .m.future i{height:0;border-bottom:2px dotted var(--txt3);opacity:.4}
-.mini.bars .m.future:hover{transform:none}
-.mini.bars .m.cur::after{content:"";position:absolute;left:-2px;right:-2px;top:-3px;bottom:-3px;border:1.5px solid var(--warn);border-radius:4px}
-
 /* ═══ ВКЛАДКИ ПЕРИОДА ══════════════════════════════════════════ */
 .workspace{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0;
   background:var(--bg)}
@@ -456,6 +437,31 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--brand);outline-
 .duty-card .del svg{width:13px;height:13px}
 .duty-card .del.confirm{background:var(--danger-soft);color:var(--danger);
   font-size:10px;font-weight:800;width:auto;padding:0 8px}
+.duty-card .edt{
+  margin-left:auto;width:26px;height:26px;border-radius:7px;
+  display:grid;place-items:center;color:var(--txt3);transition:all .13s;
+}
+.duty-card .edt:hover{background:var(--brand-soft);color:var(--brand)}
+.duty-card .edt svg{width:13px;height:13px}
+.duty-card .del{margin-left:0}
+
+.brk-box{display:flex;flex-direction:column;gap:6px}
+.cap2{font-size:10.5px;font-weight:800;letter-spacing:.4px;color:var(--txt3);
+  text-transform:uppercase}
+.cap2-hint{font-weight:600;text-transform:none;letter-spacing:0;opacity:.8}
+.brk-row{display:flex;align-items:center;gap:6px}
+.b-sep{color:var(--txt3);font-size:11px}
+.b-del{
+  width:24px;height:24px;border-radius:6px;display:grid;place-items:center;
+  color:var(--txt3);transition:all .13s;
+}
+.b-del:hover{background:var(--danger-soft);color:var(--danger)}
+.b-del svg{width:12px;height:12px}
+.brk-add{
+  align-self:flex-start;font-size:11px;font-weight:700;color:var(--brand);
+  padding:3px 8px;border-radius:6px;transition:background .13s;
+}
+.brk-add:hover{background:var(--brand-soft)}
 
 .add-form{
   border:1px dashed var(--border);border-radius:var(--r-m);padding:11px;
