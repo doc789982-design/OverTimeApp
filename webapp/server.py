@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-ВЕБ-СРЕЗ OVERTIMETAB — вертикальный срез для решения о миграции на HTML.
+ВЕБ-ВЕРСИЯ OVERTIMETAB (этап переезда) — вертикальный срез для решения о миграции на HTML.
 
 Работает на НАСТОЯЩЕМ ядре программы: database.py, logic.py и utils.py
 из корня репозитория. Ни одного выдуманного числа: календарь, дежурства,
 остатки и «всего дней» считаются теми же функциями, что и в QML-версии.
 
-Запуск:  python3 web_slice/server.py   →  http://localhost:8081
+Запуск:  python3 webapp/server.py   →  http://localhost:8081
 Только стандартная библиотека + модули самого приложения.
 """
 import json
@@ -26,10 +26,24 @@ from logic import (compute_month_summary,           # noqa: E402
                    build_shifted_weekend_checker,
                    resolve_is_working)
 from utils import (d_iso, dt_parse, subtract_intervals, intersect,  # noqa: E402
-                   month_bounds_dt, fmt_minutes_ru_words)
+                   month_bounds_dt, fmt_minutes_ru_words, parse_hhmm)
 
 DEMO_DB = os.path.join(ROOT, "demo.db")
 PORT = 8081
+
+# Реальная база — только по явному указанию (флаг --db или переменная
+# окружения OVERTIMETAB_DB). Без него работает демо-база: постепенный
+# переезд не должен рисковать данными пользователей.
+REAL_DB = None
+
+# Сколько правок сделала ЭТА сессия сервера: отмена не должна трогать
+# снапшоты, оставшиеся в чужой базе от прошлых запусков программы.
+_session_undo = 0
+
+
+def bump_undo():
+    global _session_undo
+    _session_undo += 1
 
 # ════════════════════════════════════════════════════════════════════
 # ОФОРМЛЕНИЕ ОСТАТКОВ — порт из Main.py (там они рядом с PySide6,
@@ -353,10 +367,91 @@ def fio(e):
 
 
 # ════════════════════════════════════════════════════════════════════
+# ДЕНЬ: данные инспектора (дежурства с перерывами, компенсации, статус)
+# ════════════════════════════════════════════════════════════════════
+
+def build_day(db, emp_id, d: date):
+    day_start = datetime.combine(d, datetime.min.time())
+    day_end = day_start + timedelta(days=1)
+    duties = []
+    for r in db.list_duties_for_period(emp_id, day_start, day_end):
+        s0, e0 = dt_parse(r["start_dt"]), dt_parse(r["end_dt"])
+        inter = intersect(s0, e0, day_start, day_end)
+        if not inter:
+            continue
+        duties.append({
+            "id": int(r["id"]),
+            "is_shift": bool(int(r["is_shift"] or 0)),
+            "comment": r["comment"] or "",
+            "start": r["start_dt"][:16],
+            "end": r["end_dt"][:16],
+            "slice": f"{inter[0].strftime('%H:%M')}-{inter[1].strftime('%H:%M')}",
+            "multi": s0.date() != (e0 - timedelta(seconds=1)).date(),
+        })
+    breaks_map = db.breaks_for_duty_ids([x["id"] for x in duties])
+    for x in duties:
+        x["breaks"] = [
+            f"{dt_parse(b[0]).strftime('%H:%M')}-{dt_parse(b[1]).strftime('%H:%M')}"
+            for b in breaks_map.get(x["id"], [])]
+
+    comps = []
+    for c in db.list_compensations_for_period(emp_id, d_iso(d), d_iso(d)):
+        if c["unit"] in ("hours", "overtime"):
+            dd = c["order_date"] if c["order_date"] else c["event_date"]
+            if dd == d_iso(d):
+                h = int(c["amount_minutes"] or 0) / 60
+                comps.append({"kind": "hours",
+                              "text": f"{'сверх нормы' if c['unit'] == 'overtime' else 'ДВО'} · {h:g} ч."})
+        else:
+            if d_iso(d) in db.get_comp_dates(int(c["id"])):
+                comps.append({"kind": "days", "text": f"отгул · {c['amount_days']} дн."})
+
+    gs, ge = d_iso(d), d_iso(d)
+    work_map = db.get_calendar_month(gs, ge)
+    holidays = db.get_holidays_month(gs, ge)
+    overrides = db.get_calendar_overrides(gs, ge)
+    pre = db.get_pre_holidays_month(gs, ge)
+    shifted = build_shifted_weekend_checker(db, emp_id)
+    is_working = resolve_is_working(d, bool(shifted and shifted(d)),
+                                    work_map, holidays, overrides)
+    statuses = db.get_statuses_for_period(emp_id, gs, ge)
+
+    return {
+        "date": d_iso(d),
+        "is_working": is_working,
+        "is_holiday": d in holidays,
+        "is_pre_holiday": d in pre,
+        "status": statuses.get(d, ""),
+        "duties": duties,
+        "comps": comps,
+    }
+
+
+def month_payload(db, emp_id, year, month):
+    """Полный ответ «месяц» — им же отвечают правки, чтобы интерфейс
+    обновлялся за один круг."""
+    e = db.get_employee(emp_id)
+    s = compute_month_summary(db, emp_id, year, month)
+    norm = s.get("norm_minutes", 0)
+    return {
+        "emp": {"id": emp_id, "fio": fio(e), "position": e["position"] or ""},
+        "year": year, "month": month,
+        "period": f"{MONTHS_RU[month - 1]} {year}",
+        "days": build_month_grid(db, emp_id, year, month),
+        "summary": build_summary(db, emp_id, year, month),
+        "mini": mini_year(db, emp_id, year),
+        "ratio": round(max(0, s.get("shift_minutes", 0)) / norm, 3) if norm else 0,
+    }
+
+
+# ════════════════════════════════════════════════════════════════════
 # HTTP
 # ════════════════════════════════════════════════════════════════════
 
 def open_db():
+    if REAL_DB:
+        print("Открываю реальную базу:", REAL_DB)
+        return DB(REAL_DB)
     fresh = not os.path.exists(DEMO_DB)
     db = DB(DEMO_DB)
     if fresh:
@@ -383,6 +478,10 @@ class Handler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def body_json(self):
+        n = int(self.headers.get("Content-Length") or 0)
+        return json.loads(self.rfile.read(n) or b"{}")
+
     def do_GET(self):
         u = urlparse(self.path)
         q = parse_qs(u.query)
@@ -393,12 +492,38 @@ class Handler(SimpleHTTPRequestHandler):
                 self.api_month(q)
             elif u.path == "/api/year":
                 self.api_year(q)
+            elif u.path == "/api/day":
+                self.api_day(q)
             else:
                 super().do_GET()
         except Exception as ex:  # noqa: BLE001
             self.json_out({"error": f"{type(ex).__name__}: {ex}"}, 500)
             import traceback
             traceback.print_exc()
+
+    def do_POST(self):
+        u = urlparse(self.path)
+        try:
+            if u.path == "/api/duty/add":
+                self.api_duty_add()
+            elif u.path == "/api/duty/delete":
+                self.api_duty_delete()
+            elif u.path == "/api/day/set-status":
+                self.api_set_status()
+            elif u.path == "/api/undo":
+                self.api_undo()
+            else:
+                self.json_out({"error": "неизвестный запрос"}, 404)
+        except Exception as ex:  # noqa: BLE001
+            self.json_out({"error": f"{type(ex).__name__}: {ex}"}, 500)
+            import traceback
+            traceback.print_exc()
+
+    def after_write(self, emp_id, year, month, message, kind="success"):
+        """После правки: сброс кэшей, свежие данные месяца одним ответом."""
+        _mini_cache.clear()
+        self.json_out({"ok": True, "message": message, "kind": kind,
+                       "month": month_payload(self.db, emp_id, year, month)})
 
     # ── /api/bootstrap?year=2026 ────────────────────────────────
     def api_bootstrap(self, q):
@@ -434,16 +559,89 @@ class Handler(SimpleHTTPRequestHandler):
         emp = int(q.get("emp", [0])[0])
         year = int(q.get("year", [date.today().year])[0])
         month = int(q.get("month", [date.today().month])[0])
-        e = db.get_employee(emp)
-        s = build_summary(db, emp, year, month)
-        self.json_out({
-            "emp": {"id": emp, "fio": fio(e), "position": e["position"] or ""},
-            "year": year, "month": month,
-            "period": f"{MONTHS_RU[month - 1]} {year}",
-            "days": build_month_grid(db, emp, year, month),
-            "summary": s,
-            "mini": mini_year(db, emp, year),
-        })
+        self.json_out(month_payload(db, emp, year, month))
+
+    # ── /api/day?emp=1&date=2026-09-23 ──────────────────────────
+    def api_day(self, q):
+        db = self.db
+        emp = int(q.get("emp", [0])[0])
+        d = date.fromisoformat(q.get("date", [date.today().isoformat()])[0])
+        self.json_out(build_day(db, emp, d))
+
+    # ── POST /api/duty/add ─────────────────────────────────────
+    def api_duty_add(self):
+        db = self.db
+        b = self.body_json()
+        emp = int(b["emp"])
+        d0 = date.fromisoformat(b["date"])
+        try:
+            s_t = parse_hhmm(b.get("start", ""))
+            e_t = parse_hhmm(b.get("end", ""))
+        except Exception:
+            self.json_out({"ok": False, "message": "Неверное время"}, 400)
+            return
+        start_dt = datetime.combine(d0, s_t)
+        end_dt = datetime.combine(d0, e_t)
+        if end_dt <= start_dt:
+            end_dt += timedelta(days=1)          # дежурство через полночь
+
+        overlaps = db.find_overlapping_duties(emp, start_dt, end_dt)
+        if overlaps:
+            self.json_out({"ok": False,
+                           "message": "Ошибка: пересечение с другим дежурством"},
+                          409)
+            return
+        with db.transaction():
+            db.add_duty(emp, start_dt, end_dt, b.get("comment", ""),
+                        bool(b.get("is_shift", False)))
+        bump_undo()
+        self.after_write(emp, d0.year, d0.month, "Дежурство сохранено")
+
+    # ── POST /api/duty/delete {id, emp, year, month} ───────────
+    def api_duty_delete(self):
+        db = self.db
+        b = self.body_json()
+        with db.transaction():
+            db.delete_duty(int(b["id"]))
+        bump_undo()
+        self.after_write(int(b["emp"]), int(b.get("year", date.today().year)),
+                         int(b.get("month", date.today().month)),
+                         "Дежурство удалено")
+
+    # ── POST /api/day/set-status {emp, date, status} ───────────
+    def api_set_status(self):
+        db = self.db
+        b = self.body_json()
+        emp = int(b["emp"])
+        d0 = date.fromisoformat(b["date"])
+        status = b.get("status", "")
+        if status not in ("", "К", "Б", "О"):
+            self.json_out({"ok": False, "message": "Неизвестный статус"}, 400)
+            return
+        with db.transaction():
+            db.set_day_status(emp, d0, status)
+        bump_undo()
+        msg = "Статус снят" if not status else f"Статус: {status}"
+        self.after_write(emp, d0.year, d0.month, msg)
+
+    # ── POST /api/undo ─────────────────────────────────────────
+    def api_undo(self):
+        global _session_undo
+        db = self.db
+        if _session_undo <= 0:
+            self.json_out({"ok": False, "message": "Нечего отменять",
+                           "kind": "error"})
+            return
+        if not db.undo():
+            _session_undo = 0
+            self.json_out({"ok": False, "message": "Нечего отменять",
+                           "kind": "error"})
+            return
+        _session_undo -= 1
+        _mini_cache.clear()
+        # отменённое могло быть в любом месяце — интерфейс перечитает всё
+        self.json_out({"ok": True, "message": "Действие отменено",
+                       "reload": True})
 
     # ── /api/year?emp=1&year=2026 ───────────────────────────────
     def api_year(self, q):
@@ -460,9 +658,19 @@ class Handler(SimpleHTTPRequestHandler):
 
 
 def main():
+    global REAL_DB
+    args = sys.argv[1:]
+    if "--db" in args:
+        REAL_DB = args[args.index("--db") + 1]
+    elif os.environ.get("OVERTIMETAB_DB"):
+        REAL_DB = os.environ["OVERTIMETAB_DB"]
+    if REAL_DB and not os.path.exists(REAL_DB):
+        print("База не найдена:", REAL_DB)
+        sys.exit(1)
     Handler.db = open_db()
     httpd = HTTPServer(("0.0.0.0", PORT), Handler)
-    print(f"Веб-срез OVERTIMETAB: http://0.0.0.0:{PORT}  (движок приложения, демо-база)")
+    mode = f"РЕАЛЬНАЯ база: {REAL_DB}" if REAL_DB else "демо-база"
+    print(f"Веб-версия OVERTIMETAB: http://0.0.0.0:{PORT}  ({mode})")
     httpd.serve_forever()
 
 

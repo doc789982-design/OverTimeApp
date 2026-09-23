@@ -1,12 +1,15 @@
 /* ═══════════════════════════════════════════════════════════════
-   OVERTIMETAB · веб-срез — логика интерфейса.
-   Данные приходят из настоящего движка программы (см. server.py).
+   OVERTIMETAB · веб-версия — логика интерфейса.
+   Данные и ПРАВКИ идут через настоящий движок программы (server.py
+   импортирует database.py + logic.py). Этап 1: чтение всего главного
+   экрана + правка дня (статусы К/Б/О, дежурства, отмена).
    ═══════════════════════════════════════════════════════════════ */
 
 const MONTHS  = ["Январь","Февраль","Март","Апрель","Май","Июнь",
                  "Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь"];
 const MONTHS_S= ["Янв","Фев","Мар","Апр","Май","Июн","Июл","Авг","Сен","Окт","Ноя","Дек"];
 const WEEKDAYS= ["Пн","Вт","Ср","Чт","Пт","Сб","Вс"];
+const WD_FULL = ["понедельник","вторник","среда","четверг","пятница","суббота","воскресенье"];
 
 const state = {
   year:  new Date().getFullYear(),
@@ -21,6 +24,7 @@ const state = {
   employees: [],
   groups: [],
   miniMax: 1,
+  selDate: null,             // открытый в инспекторе день
 };
 
 const $ = (s) => document.querySelector(s);
@@ -32,6 +36,15 @@ async function api(path) {
   const j = await r.json();
   if (j.error) throw new Error(j.error);
   return j;
+}
+
+async function post(path, body) {
+  const r = await fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return r.json();
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -58,6 +71,18 @@ function odo(el, val, html) {
   cur.style.transform = "translateY(0)";
   setTimeout(() => { old.textContent = ""; old.style.cssText = "";
                      cur.style.cssText = ""; }, 260);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ТОСТЫ — как в программе: тихие капсулы снизу по центру
+   ═══════════════════════════════════════════════════════════════ */
+function toast(message, kind = "success") {
+  const t = document.createElement("div");
+  t.className = `toast ${kind === "error" ? "error" : ""}`;
+  t.innerHTML = `<span class="dot"></span>${esc(message)}`;
+  $("#toasts").appendChild(t);
+  setTimeout(() => t.classList.add("out"), kind === "error" ? 3200 : 2200);
+  setTimeout(() => t.remove(), kind === "error" ? 3500 : 2500);
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -188,11 +213,12 @@ function renderCalendar(data) {
     if (!d.in_month) cls.push("out");
     if (d.is_holiday) cls.push("hol");
     if (d.date === todayIso) cls.push("today");
+    if (d.date === state.selDate) cls.push("picked");
     const nCls = ["n"];
     if (d.is_weekend || d.is_holiday) nCls.push("red");
     let flags = "";
     if (d.has_comp) flags += `<span class="badge comp" title="Компенсация (приказ)">В</span>`;
-    if (d.status) flags += `<span class="badge st-${d.status}" title="${d.status === "О" ? "Отпуск" : "Больничный"}">${d.status}</span>`;
+    if (d.status) flags += `<span class="badge st-${d.status}" title="${{К:"Командировка",Б:"Больничный",О:"Отпуск"}[d.status] || d.status}">${d.status}</span>`;
     const duties = d.duties.map(x =>
       `<span class="duty ${x.is_shift ? "shift" : ""}">${esc(x.text)}</span>`).join("");
     const pre = d.is_pre_holiday ? '<span class="pre" title="Предпраздничный день"></span>' : "";
@@ -202,7 +228,7 @@ function renderCalendar(data) {
       (d.is_pre_holiday ? " · предпраздничный" : "") +
       (d.duties.length ? "\nДежурства: " + d.duties.map(x => x.text).join(", ") : "") +
       (d.has_comp ? "\nКомпенсация" : "") + (d.status ? "\nСтатус: " + d.status : "");
-    return `<div class="${cls.join(" ")}" title="${esc(tip)}">
+    return `<div class="${cls.join(" ")}" data-date="${d.date}" title="${esc(tip)}">
       <div class="top"><span class="${nCls.join(" ")}">${d.n}</span>
         <span class="flags">${flags}</span></div>
       <div class="duties">${duties}</div>${pre}
@@ -212,6 +238,8 @@ function renderCalendar(data) {
   $("#calendarWrap").innerHTML = `
     <div class="cal-head">${wd}</div>
     <div class="cal-grid">${cells}</div>`;
+  $("#calendarWrap").querySelectorAll(".day").forEach(el =>
+    el.onclick = () => dayClicked(el.dataset.date));
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -341,6 +369,239 @@ function renderYearSummary(data) {
 }
 
 /* ═══════════════════════════════════════════════════════════════
+   ИНСПЕКТОР ДНЯ — просмотр и первые правки
+   ═══════════════════════════════════════════════════════════════ */
+const STATUS_INFO = { "К": "Командировка", "Б": "Больничный", "О": "Отпуск" };
+
+function fmtDT(iso) { return iso.slice(11, 16); }
+function fmtDM(iso) { return iso.slice(8, 10) + "." + iso.slice(5, 7); }
+
+async function dayClicked(dateIso) {
+  if (state.selDate === dateIso) { closeInspector(); return; }
+  // клик по «чужому» дню из соседнего месяца — сначала открываем тот месяц
+  const m = +dateIso.slice(5, 7);
+  if (m !== state.month) { state.month = m; state.view = "month"; await loadMonth(); }
+  await openInspector(dateIso);
+}
+
+async function openInspector(dateIso) {
+  state.selDate = dateIso;
+  try {
+    const d = await api(`/api/day?emp=${state.empId}&date=${dateIso}`);
+    if (state.selDate === dateIso) renderInspector(d);
+  } catch (e) {
+    toast(e.message, "error");
+  }
+}
+
+function closeInspector() {
+  state.selDate = null;
+  $("#inspector").classList.remove("open");
+  if (monthCache) renderCalendar(monthCache);
+}
+
+function renderInspector(d) {
+  const box = $("#inspector");
+  const dt = new Date(d.date + "T00:00:00");
+  const t = state.today;
+  const isToday = d.date === `${t.y}-${String(t.m).padStart(2, "0")}-${String(t.d).padStart(2, "0")}`;
+  const pills = [
+    d.is_holiday ? '<span class="pill hol">праздник</span>' : "",
+    (!d.is_working && !d.is_holiday) ? '<span class="pill">выходной</span>' : "",
+    d.is_working && !d.is_holiday ? '<span class="pill">рабочий</span>' : "",
+    d.is_pre_holiday ? '<span class="pill pre">предпраздничный</span>' : "",
+    isToday ? '<span class="pill tdy">сегодня</span>' : "",
+  ].filter(Boolean).join("");
+
+  const stBtn = (code) => `
+    <button class="st-btn ${d.status === code ? "on-" + code : ""}" data-st="${code}"
+      title="${STATUS_INFO[code]}">
+      <span class="k">${code}</span>${STATUS_INFO[code]}</button>`;
+
+  const dutyCards = d.duties.map(x => {
+    const cross = x.multi;
+    const time = cross
+      ? `${fmtDT(x.start)} – ${fmtDT(x.end)}`
+      : `${fmtDT(x.start)} – ${fmtDT(x.end)}`;
+    const span = cross
+      ? `<div class="cm">с ${fmtDM(x.start)} по ${fmtDM(x.end)} · в этот день ${x.slice}</div>` : "";
+    const brks = (x.breaks || []).map(b =>
+      `<div class="brk">перерыв ${b}</div>`).join("");
+    return `
+      <div class="duty-card">
+        <div class="dr-top">
+          <span class="time">${time}</span>
+          <span class="chip-s ${x.is_shift ? "" : "ns"}">${x.is_shift ? "сменное" : "сверх нормы"}</span>
+          <button class="del" data-id="${x.id}" title="Удалить дежурство">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round"><path d="M3 6h18M8 6V4h8v2m1 0-1 14H8L7 6"/></svg>
+          </button>
+        </div>
+        ${span}
+        ${x.comment ? `<div class="cm">${esc(x.comment)}</div>` : ""}
+        ${brks}
+      </div>`;
+  }).join("");
+
+  const comps = d.comps.map(c =>
+    `<div class="brk" style="margin-top:0">${esc(c.text)}</div>`).join("");
+
+  box.innerHTML = `
+    <div class="insp-head">
+      <div>
+        <div class="insp-date">${dt.getDate()} ${MONTHS[dt.getMonth()].toLowerCase()}, ${WD_FULL[dt.getDay() === 0 ? 6 : dt.getDay() - 1]}</div>
+        <div class="insp-sub">${pills}</div>
+      </div>
+      <button class="insp-close" title="Закрыть (Esc)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
+          stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="insp-body">
+      <div class="insp-sec">
+        <div class="cap">Статус дня</div>
+        <div class="status-row">
+          ${stBtn("К")}${stBtn("Б")}${stBtn("О")}
+          <button class="st-none" data-st="" title="Снять статус">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+              stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="insp-sec">
+        <div class="cap">Дежурства · ${d.duties.length}</div>
+        ${dutyCards || '<div class="cm" style="font-size:11.5px;color:var(--txt3)">В этот день дежурств нет</div>'}
+        <button class="add-toggle" id="addToggle">+ Добавить дежурство</button>
+        <form class="add-form" id="addForm" style="display:none">
+          <div class="f-row">
+            <label>Начало</label><input type="time" id="fStart" value="08:00" required>
+            <label style="width:auto">Конец</label><input type="time" id="fEnd" value="20:00" required>
+          </div>
+          <div class="f-row">
+            <label>Тип</label>
+            <label class="f-check"><input type="checkbox" id="fShift" checked> сменное</label>
+            <label style="width:auto">Комментарий</label>
+            <input type="text" id="fComment" class="f-txt" placeholder="необязательно" style="flex:1">
+          </div>
+          <div class="cm" style="font-size:10.5px;color:var(--txt3)">
+            Конец раньше начала = дежурство до следующего дня
+          </div>
+          <div class="form-err" id="formErr"></div>
+          <div class="f-row" style="justify-content:flex-end">
+            <button type="button" class="btn ghost" id="fCancel">Отмена</button>
+            <button type="submit" class="btn primary">Сохранить</button>
+          </div>
+        </form>
+      </div>
+
+      ${comps ? `
+      <div class="insp-sec">
+        <div class="cap">Компенсации в этот день</div>
+        ${comps}
+      </div>` : ""}
+    </div>
+    <div class="insp-foot">
+      <button class="undo-btn" id="undoBtn" title="Отменить последнее действие">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg>
+        Отменить
+      </button>
+      <span class="insp-hint">Ctrl+Z тоже работает</span>
+    </div>`;
+  box.classList.add("open");
+
+  box.querySelector(".insp-close").onclick = closeInspector;
+
+  // статусы
+  box.querySelectorAll("[data-st]").forEach(b =>
+    b.onclick = () => applyWrite(post("/api/day/set-status",
+      { emp: state.empId, date: d.date, status: b.dataset.st })));
+
+  // удаление дежурства: первый клик — подтверждение, второй — удаление
+  box.querySelectorAll(".del").forEach(b =>
+    b.onclick = () => {
+      if (!b.classList.contains("confirm")) {
+        b.classList.add("confirm");
+        b.textContent = "Точно?";
+        setTimeout(() => { if (b.isConnected) {
+          b.classList.remove("confirm");
+          b.innerHTML = svgTrash();
+        }}, 2600);
+        return;
+      }
+      applyWrite(post("/api/duty/delete",
+        { id: +b.dataset.id, emp: state.empId, year: state.year, month: state.month }));
+    });
+
+  // форма добавления
+  const form = box.querySelector("#addForm");
+  box.querySelector("#addToggle").onclick = () => {
+    form.style.display = form.style.display === "none" ? "flex" : "none";
+    box.querySelector("#addToggle").style.display =
+      form.style.display === "none" ? "" : "none";
+    if (form.style.display !== "none") box.querySelector("#fStart").focus();
+  };
+  box.querySelector("#fCancel").onclick = () => {
+    form.style.display = "none";
+    box.querySelector("#addToggle").style.display = "";
+    box.querySelector("#formErr").classList.remove("show");
+  };
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    const err = box.querySelector("#formErr");
+    err.classList.remove("show");
+    const res = await post("/api/duty/add", {
+      emp: state.empId,
+      date: d.date,
+      start: box.querySelector("#fStart").value,
+      end: box.querySelector("#fEnd").value,
+      is_shift: box.querySelector("#fShift").checked,
+      comment: box.querySelector("#fComment").value.trim(),
+    });
+    if (!res.ok) {
+      err.textContent = res.message || "Ошибка сохранения";
+      err.classList.add("show");
+      return;
+    }
+    afterWrite(res);
+  };
+
+  box.querySelector("#undoBtn").onclick = doUndo;
+}
+
+function svgTrash() {
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+    stroke-linecap="round"><path d="M3 6h18M8 6V4h8v2m1 0-1 14H8L7 6"/></svg>`;
+}
+
+/* Единая обработка ответов правок: тост + свежий месяц + инспектор */
+function afterWrite(res) {
+  toast(res.message, res.ok ? "success" : "error");
+  if (!res.ok) return;
+  if (res.reload) { hardReload(); return; }
+  if (res.month) {
+    applyMonth(res.month);
+    if (state.selDate) openInspector(state.selDate);
+  }
+}
+
+async function applyWrite(promise) {
+  try { afterWrite(await promise); }
+  catch (e) { toast("Ошибка: " + e.message, "error"); }
+}
+
+async function doUndo() {
+  applyWrite(post("/api/undo", {}));
+}
+
+async function hardReload() {
+  await loadBootstrap();
+  await loadMonth();
+  if (state.selDate) openInspector(state.selDate);
+}
+
+/* ═══════════════════════════════════════════════════════════════
    ЗАГРУЗКА ДАННЫХ
    ═══════════════════════════════════════════════════════════════ */
 let monthCache = null;
@@ -356,6 +617,20 @@ async function loadBootstrap() {
   renderTabs();
 }
 
+function applyMonth(d) {
+  monthCache = d;
+  renderCalendar(d);
+  renderSummary(d);
+  const i = state.employees.findIndex(e => e.id === d.emp.id);
+  if (i >= 0) {
+    state.employees[i].ratio = d.ratio;
+    state.employees[i].mini = d.mini;
+  }
+  recalcMiniMax();
+  renderList();
+  renderTabs();
+}
+
 async function loadMonth() {
   const wrap = $("#calendarWrap");
   wrap.className = "calendar-wrap loading";
@@ -363,10 +638,7 @@ async function loadMonth() {
     <div class="cal-grid">${"<div class=\"skeleton\"></div>".repeat(42)}</div>`;
   try {
     const d = await api(`/api/month?emp=${state.empId}&year=${state.year}&month=${state.month}`);
-    monthCache = d;
-    renderCalendar(d);
-    renderSummary(d);
-    renderTabs();
+    applyMonth(d);
     updateTodayBtn();
   } catch (e) {
     wrap.className = "calendar-wrap";
@@ -397,18 +669,22 @@ async function loadYear() {
 function selectEmp(id) {
   if (state.empId === id) return;
   state.empId = id;
+  closeInspector();
   renderList();
   state.view === "year" ? loadYear() : loadMonth();
 }
 
 function gotoMonth(m) {
+  if (state.month === m && state.view === "month") return;
   state.month = m;
   state.view = "month";
+  closeInspector();
   loadMonth();
 }
 
 function showYear() {
   state.view = "year";
+  closeInspector();
   loadYear();
 }
 
@@ -416,6 +692,7 @@ async function setYear(y) {
   if (state.year === y) return;
   state.year = y;
   $("#yearWrap")?.classList.remove("open");
+  closeInspector();
   await loadBootstrap();          // мини-годы пересчитаются под новый год
   state.view === "year" ? loadYear() : loadMonth();
 }
@@ -455,8 +732,8 @@ async function init() {
     document.body.innerHTML =
       `<div style="height:100vh;display:grid;place-items:center;text-align:center;
         font-family:Segoe UI,Arial,sans-serif;color:#6B7780;padding:20px">
-        <div><b style="color:#2D3B45">Нет связи с сервером среза.</b><br><br>
-        Откройте живое превью процесса «Веб-срез OVERTIMETAB» (порт 8081) —<br>
+        <div><b style="color:#2D3B45">Нет связи с сервером веб-версии.</b><br><br>
+        Откройте живое превью процесса «Веб-версия OVERTIMETAB» (порт 8081) —<br>
         интерфейсу нужен движок программы, который считает данные.</div></div>`;
     return;
   }
@@ -478,6 +755,13 @@ async function init() {
     if (state.year !== state.today.y) await setYear(state.today.y);
     gotoMonth(state.today.m);
   };
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeInspector();
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
+      e.preventDefault();
+      doUndo();
+    }
+  });
 
   // меню года
   const yw = document.querySelector(".year-wrap");
