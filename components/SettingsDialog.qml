@@ -786,6 +786,20 @@ AppLargeModal {
                             font.pixelSize: AppTheme.sizeBodyLarge
                             font.weight: AppTheme.weightBold
                         }
+
+                        AppSwitch {
+                            text: "Обновлять при запуске"
+                            checked: backend.startupUpdateEnabled
+                            onCheckedChanged: backend.setStartupUpdateEnabled(checked)
+                        }
+                        Text {
+                            width: parent.width
+                            text: "При запуске программа тихо проверит обновления и, если вышла новая версия, сама скачает и установит её до открытия табеля. Если обновление было скачано, но не установлено — поставится при следующем запуске. Когда сети нет, программа просто открывается как обычно."
+                            color: AppTheme.textSecondary
+                            font.family: AppTheme.fontFamily
+                            font.pixelSize: AppTheme.sizeBody
+                            wrapMode: Text.WordWrap
+                        }
                         Text {
                             width: parent.width
                             text: "Положите zip рядом с OVERTIMETAB.exe или на флешку — программа сама её заметит (имя файла не важно, смотрим содержимое) и покажет кнопку внизу слева. Либо укажите файл вручную."

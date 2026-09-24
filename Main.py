@@ -12,10 +12,10 @@ from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from datetime import date, datetime, timedelta, time
 from pathlib import Path
 
-from PySide6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
+from PySide6.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QWidget, QLabel, QProgressBar, QVBoxLayout, QHBoxLayout
 from PySide6.QtGui import QIcon, QAction
 from PySide6.QtQml import QQmlApplicationEngine
-from PySide6.QtCore import QObject, Slot, Signal, Property, QUrl, QThread, QTimer
+from PySide6.QtCore import QObject, Slot, Signal, Property, QUrl, QThread, QTimer, Qt
 
 from database import DB
 from utils import fmt_date_iso, fmt_dt_iso, d_iso, d_parse, dt_parse, dt_iso, parse_hhmm, subtract_intervals, intersect, merge_intervals, fmt_minutes_ru_words
@@ -390,6 +390,7 @@ class Backend(QObject):
     moneyCompsChanged = Signal()
     showToast = Signal(str, str)    
     webReady = Signal(str, bool)   # адрес веб-версии + удалось ли
+    startupUpdateEnabledChanged = Signal()
     timeInputModeChanged = Signal()    
     hotkeysListChanged = Signal()
     printerListChanged = Signal()
@@ -435,6 +436,7 @@ class Backend(QObject):
         self._year_summary = {}
         self._is_dark_theme = True
         self._reminder_enabled = True    # Напоминание "сдать табель" (28-е — 5-е число)
+        self._startup_update_enabled = True    # обновление при запуске
         self._tray_hint_shown = False    # Показывали ли подсказку про работу в фоне
         # Данные хранятся в Documents\OverTimeTab; из папки программы автоматически переносятся
         self.app_dir = Path(__file__).parent
@@ -738,6 +740,7 @@ class Backend(QObject):
                 self._time_input_mode = ui_cfg.get("time_input_mode", "tumbler")
                 self._is_dark_theme = ui_cfg.get("theme", "dark") == "dark"
                 self._reminder_enabled = ui_cfg.get("reminder_enabled", True)
+                self._startup_update_enabled = bool(ui_cfg.get("startup_update", True))
                 self._tray_hint_shown = ui_cfg.get("tray_hint_shown", False)
                 self._update_url = str(ui_cfg.get("update_url", "") or "").strip()
                 
@@ -960,6 +963,18 @@ class Backend(QObject):
     @Property(bool, notify=reminderEnabledChanged)
     def reminderEnabled(self):
         return self._reminder_enabled
+
+    # ── Обновление при запуске (тумблер в настройках) ────────────────
+    @Property(bool, notify=startupUpdateEnabledChanged)
+    def startupUpdateEnabled(self):
+        return self._startup_update_enabled
+
+    @Slot(bool)
+    def setStartupUpdateEnabled(self, enabled):
+        if self._startup_update_enabled == bool(enabled): return
+        self._startup_update_enabled = bool(enabled)
+        self._write_ui_config("startup_update", self._startup_update_enabled)
+        self.startupUpdateEnabledChanged.emit()
 
     @Slot(bool)
     def setReminderEnabled(self, enabled):
@@ -3973,6 +3988,12 @@ def main():
     server.listen(APP_ID)
     # --------------------------------
 
+    # Обновление при запуске (в стиле Discord): проверка, скачивание и
+    # установка до открытия главного окна. False — обновляемся, процесс
+    # завершится, помощник откроет программу заново уже новой.
+    if not _startup_update_flow(app):
+        return
+
     app_icon = QIcon(APP_ICON_PATH)
     app.setWindowIcon(app_icon)
 
@@ -4085,6 +4106,263 @@ def _first_configured_db():
         except Exception:
             continue
     return None
+
+
+
+# ═══════════════════════════════════════════════════════════════════
+# ОБНОВЛЕНИЕ ПРИ ЗАПУСКЕ (в стиле Discord)
+# До открытия главного окна: маленькое окно → проверка → скачивание →
+# установка → программа открывается уже новой. Отложенное обновление
+# (скачали, но не установили) ставится при следующем запуске первым
+# делом. Управляется тумблером в настройках, по умолчанию включено.
+# ═══════════════════════════════════════════════════════════════════
+
+def _startup_ui_config(cfg_paths=None):
+    """Секция ui конфига без Qt — решаем, обновляться ли при старте."""
+    if cfg_paths is None:
+        cfg_paths = [
+            Path.home() / "Documents" / "OverTimeTab" / "config.json",
+            Path(sys.argv[0]).resolve().parent / "data" / "config.json",
+            Path.home() / ".overtimetab" / "config.json",
+        ]
+    for cfg in cfg_paths:
+        try:
+            if cfg.exists():
+                return json.loads(cfg.read_text(encoding="utf-8")).get("ui", {}) or {}
+        except Exception:
+            continue
+    return {}
+
+
+def _startup_candidate_urls(ui):
+    """Тот же порядок источников, что и у проверки в программе:
+    адрес из настроек → GitHub → post.mvd.ru (дубликаты пропускаем)."""
+    urls = []
+    stored = str(ui.get("update_url") or "").strip()
+    if stored:
+        urls.append(stored)
+    urls.append(app_update.DEFAULT_UPDATE_URL)
+    urls.append(app_update.FALLBACK_UPDATE_URL)
+    seen, out = set(), []
+    for u in urls:
+        u = (u or "").strip()
+        if u and u not in seen:
+            seen.add(u)
+            out.append(u)
+    return out
+
+
+def _startup_find_update(app_dir, cur_ver, cur_bld, ui, fetch=None):
+    """Синхронный поиск нового обновления по всем источникам.
+
+    Возвращает info (с base_url) или None. fetch подменяется в тестах.
+    """
+    fetch = fetch or app_update.fetch_update_info
+    for base in _startup_candidate_urls(ui):
+        try:
+            info, _err = fetch(base, timeout=4.0)
+        except Exception:
+            continue
+        if not info:
+            continue
+        ver = str(info.get("version") or "")
+        bld = int(info.get("build") or 0)
+        if ver and app_update.is_newer(ver, cur_ver, bld, cur_bld):
+            info = dict(info)
+            info["base_url"] = base
+            return info
+    return None
+
+
+class _UpdaterSplash(QWidget):
+    """Маленькое тёмное окно обновления — как в Discord при запуске."""
+
+    def __init__(self):
+        super().__init__(None)
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setFixedSize(400, 232)
+
+        card = QWidget(self)
+        card.setObjectName("splashCard")
+        card.setGeometry(0, 0, self.width(), self.height())
+
+        logo = QLabel("ОТ", card)
+        logo.setObjectName("splashLogo")
+        logo.setAlignment(Qt.AlignCenter)
+        logo.setFixedSize(56, 56)
+
+        title = QLabel("OVERTIMETAB", card)
+        title.setObjectName("splashTitle")
+        self._status = QLabel("…", card)
+        self._status.setObjectName("splashStatus")
+        self._status.setWordWrap(True)
+
+        self._bar = QProgressBar(card)
+        self._bar.setObjectName("splashBar")
+        self._bar.setTextVisible(False)
+        self._bar.setFixedHeight(6)
+        self._bar.setRange(0, 0)          # «бегунок», пока нет процентов
+
+        hint = QLabel("обновление при запуске", card)
+        hint.setObjectName("splashHint")
+
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(16)
+        row.addWidget(logo)
+        col = QVBoxLayout()
+        col.setContentsMargins(0, 0, 0, 0)
+        col.setSpacing(4)
+        col.addWidget(title)
+        col.addWidget(self._status)
+        row.addLayout(col)
+
+        v = QVBoxLayout(card)
+        v.setContentsMargins(28, 30, 28, 20)
+        v.setSpacing(14)
+        v.addLayout(row)
+        v.addStretch(1)
+        v.addWidget(self._bar)
+        v.addWidget(hint)
+
+        self.setStyleSheet("""
+            #splashCard  { background: #1F2328; border-radius: 14px; }
+            #splashLogo  { background: #0374B5; color: #FFFFFF;
+                           border-radius: 14px; font-size: 20px; font-weight: 800; }
+            #splashTitle { color: #FFFFFF; font-size: 17px; font-weight: 700; }
+            #splashStatus{ color: #A6B0B9; font-size: 12.5px; }
+            #splashHint  { color: #77828B; font-size: 11px; }
+            #splashBar   { background: #2A2F36; border: none; border-radius: 3px; }
+            #splashBar::chunk { background: #4FA3D8; border-radius: 3px; }
+        """)
+
+        screen = QApplication.primaryScreen().availableGeometry()
+        self.move(screen.center().x() - self.width() // 2,
+                  screen.center().y() - self.height() // 2)
+
+    def set_state(self, text):
+        self._status.setText(text)
+        self._bar.setRange(0, 0)
+        QApplication.processEvents()
+
+    def set_progress(self, done, total):
+        if total > 0:
+            self._bar.setRange(0, 100)
+            self._bar.setValue(max(0, min(100, int(done * 100 / total))))
+        else:
+            self._bar.setRange(0, 0)
+        QApplication.processEvents()
+
+
+def _startup_update_flow(app) -> bool:
+    """Проверка/установка обновления до запуска программы.
+
+    True  — запускаемся дальше как обычно.
+    False — обновляемся: помощник доустановит файлы и сам откроет
+            программу заново (наш процесс завершается).
+    """
+    if not IS_FROZEN:
+        return True                      # из редактора кода не обновляемся
+    try:
+        ui = _startup_ui_config()
+        if not ui.get("startup_update", True):
+            return True                  # выключено тумблером в настройках
+    except Exception:
+        ui = {}
+
+    app_dir = Path(sys.executable).resolve().parent
+    try:
+        cur_ver = app_update.current_app_version(app_dir)
+        cur_bld = app_update.current_app_build(app_dir)
+    except Exception:
+        return True
+
+    # 1) Отложенное обновление: скачали в прошлый раз, но не установили —
+    #    ставим ПЕРВЫМ делом, до открытия программы.
+    try:
+        staged = app_update.staged_info(app_dir)
+    except Exception:
+        staged = None
+    if staged and app_update.is_newer(
+            str(staged.get("version") or ""), cur_ver,
+            int(staged.get("build") or 0), cur_bld):
+        splash = _UpdaterSplash()
+        splash.show()
+        splash.set_state(
+            f"Устанавливаем {staged.get('display') or staged.get('version')}…")
+        app_update.launch_file_swap(
+            Path(staged["root"]), app_update.install_root(app_dir), os.getpid())
+        os._exit(0)
+
+    # 2) Проверка в интернете — с окном и дедлайном: сеть молчит → просто
+    #    запускаемся (не держим пользователя).
+    splash = _UpdaterSplash()
+    splash.show()
+    splash.set_state("Проверяем обновления…")
+
+    found = {}
+    def _check():
+        try:
+            info = _startup_find_update(app_dir, cur_ver, cur_bld, ui)
+            if info:
+                found.update(info)
+        except Exception:
+            pass
+    t = threading.Thread(target=_check, daemon=True)
+    t.start()
+    t.join(8.0)
+    if t.is_alive() or not found:
+        splash.close()
+        return True
+
+    # 3) Скачивание с прогрессом (заглохло — запускаемся, докачает
+    #    кнопка в шапке уже открытой программы).
+    display = found.get("display") or found.get("version") or "новую версию"
+    zip_ref = str(found.get("url") or found.get("zip") or "").strip()
+    if not zip_ref:
+        splash.close()
+        return True
+    splash.set_state(f"Скачиваем {display}…")
+    try:
+        dl_url = app_update.resolve_download_url(
+            zip_ref, str(found.get("base_url") or ""))
+        dest_dir = app_update.install_root(app_dir) / "update_download"
+        deadline = {"total": time.time() + 900, "last_change": time.time(),
+                    "last_done": -1}
+        def _prog(done, total):
+            if time.time() > deadline["total"]:
+                raise app_update.UpdateError("Скачивание прервано: слишком долго")
+            if done != deadline["last_done"]:
+                deadline["last_done"] = done
+                deadline["last_change"] = time.time()
+            elif time.time() - deadline["last_change"] > 90:
+                raise app_update.UpdateError("Скачивание заглохло")
+            splash.set_progress(done, total)
+        local_zip = app_update.download_zip(
+            dl_url, dest_dir,
+            sha256=str(found.get("sha256") or "").strip(),
+            progress=_prog)
+    except Exception:
+        splash.close()
+        return True
+
+    # 4) Подготовка и установка — помощник докопирует и откроет программу.
+    splash.set_state("Устанавливаем…")
+    try:
+        app_update.stage_package(Path(local_zip), app_dir)
+        staged = app_update.staged_info(app_dir)
+    except Exception:
+        splash.close()
+        return True
+    if staged and app_update.is_newer(
+            str(staged.get("version") or ""), cur_ver,
+            int(staged.get("build") or 0), cur_bld):
+        app_update.launch_file_swap(
+            Path(staged["root"]), app_update.install_root(app_dir), os.getpid())
+        os._exit(0)
+    splash.close()
+    return True
 
 
 if __name__ == "__main__":
