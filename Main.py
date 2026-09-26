@@ -4169,22 +4169,30 @@ def _startup_candidate_urls(ui):
     return out
 
 
-def _startup_find_update(app_dir, cur_ver, cur_bld, ui, fetch=None):
+def _startup_find_update(app_dir, cur_ver, cur_bld, ui, fetch=None, log=None):
     """Синхронный поиск нового обновления по всем источникам.
 
     Возвращает info (с base_url) или None. fetch подменяется в тестах.
+    Каждый источник и вердикт пишутся в журнал (log) — «проверила и
+    не нашла» больше не отличима от «не смогла проверить».
     """
     fetch = fetch or app_update.fetch_update_info
+    log = log or (lambda msg: None)
     for base in _startup_candidate_urls(ui):
         try:
-            info, _err = fetch(base, timeout=4.0)
-        except Exception:
+            info, err = fetch(base, timeout=8.0)
+        except Exception as e:
+            log(f"источник {base}: ошибка {type(e).__name__}: {e}")
             continue
         if not info:
+            log(f"источник {base}: данных нет ({err})")
             continue
         ver = str(info.get("version") or "")
         bld = int(info.get("build") or 0)
-        if ver and app_update.is_newer(ver, cur_ver, bld, cur_bld):
+        newer = bool(ver) and app_update.is_newer(ver, cur_ver, bld, cur_bld)
+        log(f"источник {base}: {ver} · сборка {bld} → "
+            f"{'НОВЕЕ — забираем' if newer else 'не новее, пропускаем'}")
+        if newer:
             info = dict(info)
             info["base_url"] = base
             return info
@@ -4272,6 +4280,18 @@ class _UpdaterSplash(QWidget):
         QApplication.processEvents()
 
 
+def _startup_log(msg):
+    """Журнал обновления при запуске: Documents\OverTimeTab\startup_update.log"""
+    try:
+        log_path = (Path.home() / "Documents" / "OverTimeTab"
+                    / "startup_update.log")
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(f"{datetime.now():%Y-%m-%d %H:%M:%S}  {msg}\n")
+    except Exception:
+        pass
+
+
 def _startup_update_flow(app) -> bool:
     """Проверка/установка обновления до запуска программы.
 
@@ -4308,30 +4328,63 @@ def _startup_update_flow(app) -> bool:
         splash.show()
         splash.set_state(
             f"Устанавливаем {staged.get('display') or staged.get('version')}…")
-        app_update.launch_file_swap(
-            Path(staged["root"]), app_update.install_root(app_dir), os.getpid())
-        os._exit(0)
+        try:
+            _startup_log(f"ставим отложенное обновление {staged.get('version')} · сборка {staged.get('build')}")
+            app_update.launch_file_swap(
+                Path(staged["root"]), app_update.install_root(app_dir), os.getpid())
+            os._exit(0)
+        except Exception as e:
+            _startup_log(f"установка отложенного не удалась: {type(e).__name__}: {e}")
+            splash.set_state("Не удалось установить — запускаем программу")
+            QApplication.processEvents()
+            time.sleep(1.0)
+            splash.close()
+            return True
 
-    # 2) Проверка в интернете — с окном и дедлайном: сеть молчит → просто
-    #    запускаемся (не держим пользователя).
+    # 2) Проверка в интернете. Сеть бывает медленной (GitHub из закрытых
+    #    сетей отвечает дольше пары секунд), поэтому: 8 секунд на источник,
+    #    до 30 на всё, окно живёт (processEvents) и ГОВОРИТ исход —
+    #    «последняя версия», «не удалось проверить» или «проверка затянулась».
     splash = _UpdaterSplash()
     splash.show()
     splash.set_state("Проверяем обновления…")
 
+    _startup_log(f"── запуск программы: сейчас {cur_ver} · сборка {cur_bld}")
+
     found = {}
+    check_error = []
+
     def _check():
         try:
-            info = _startup_find_update(app_dir, cur_ver, cur_bld, ui)
+            info = _startup_find_update(app_dir, cur_ver, cur_bld, ui,
+                                        log=_log)
             if info:
                 found.update(info)
-        except Exception:
-            pass
+        except Exception as e:
+            check_error.append(f"{type(e).__name__}: {e}")
+
     t = threading.Thread(target=_check, daemon=True)
     t.start()
-    t.join(8.0)
-    if t.is_alive() or not found:
+    deadline = time.time() + 30.0
+    while time.time() < deadline and t.is_alive():
+        QApplication.processEvents()
+        time.sleep(0.1)
+
+    if not found:
+        if t.is_alive():
+            _startup_log("проверка не уложилась в 30 секунд — запускаемся без обновления")
+            splash.set_state("Проверка затянулась — запускаем программу")
+        elif check_error:
+            _startup_log("проверка закончилась ошибкой: " + check_error[0])
+            splash.set_state("Не удалось проверить обновления — запускаем")
+        else:
+            _startup_log("обновлений нет — у пользователя последняя версия")
+            splash.set_state(f"У вас последняя версия · сборка {cur_bld}")
+        QApplication.processEvents()
+        time.sleep(1.0)
         splash.close()
         return True
+    _startup_log(f"найдено обновление: {found.get('version')} · сборка {found.get('build')}")
 
     # 3) Скачивание с прогрессом (заглохло — запускаемся, докачает
     #    кнопка в шапке уже открытой программы).
@@ -4344,6 +4397,7 @@ def _startup_update_flow(app) -> bool:
     try:
         dl_url = app_update.resolve_download_url(
             zip_ref, str(found.get("base_url") or ""))
+        _startup_log(f"скачиваем {dl_url}")
         dest_dir = app_update.install_root(app_dir) / "update_download"
         deadline = {"total": time.time() + 900, "last_change": time.time(),
                     "last_done": -1}
@@ -4360,7 +4414,12 @@ def _startup_update_flow(app) -> bool:
             dl_url, dest_dir,
             sha256=str(found.get("sha256") or "").strip(),
             progress=_prog)
-    except Exception:
+        _startup_log(f"скачано: {local_zip}")
+    except Exception as e:
+        _startup_log(f"скачивание не удалось: {type(e).__name__}: {e}")
+        splash.set_state("Не удалось скачать — запускаем программу")
+        QApplication.processEvents()
+        time.sleep(1.0)
         splash.close()
         return True
 
@@ -4369,15 +4428,22 @@ def _startup_update_flow(app) -> bool:
     try:
         app_update.stage_package(Path(local_zip), app_dir)
         staged = app_update.staged_info(app_dir)
-    except Exception:
+        _startup_log("обновление подготовлено (pending_update)")
+    except Exception as e:
+        _startup_log(f"подготовка не удалась: {type(e).__name__}: {e}")
+        splash.set_state("Не удалось установить — запускаем программу")
+        QApplication.processEvents()
+        time.sleep(1.0)
         splash.close()
         return True
     if staged and app_update.is_newer(
             str(staged.get("version") or ""), cur_ver,
             int(staged.get("build") or 0), cur_bld):
+        _startup_log("передаём установщику, процесс завершается")
         app_update.launch_file_swap(
             Path(staged["root"]), app_update.install_root(app_dir), os.getpid())
         os._exit(0)
+    _startup_log("подготовленное обновление не новее текущего — запускаемся")
     splash.close()
     return True
 
