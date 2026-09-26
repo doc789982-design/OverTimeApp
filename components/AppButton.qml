@@ -123,12 +123,13 @@ Button {
             Behavior on opacity { NumberAnimation { duration: AppTheme.durMicro; easing.type: AppTheme.easeColor } }
         }
 
-        // Волна от нажатия (ripple по MD3) — ПОСЛЕДНИМ ребёнком фона:
-        // самый верхний слой, доставка нажатия доходит до него раньше,
-        // чем до самой кнопки. Контент рисуется выше фона — волна под
-        // текстом, как в MD3. На залитых кнопках — цвет текста кнопки,
-        // на контурных и ghost — бренд.
+        // Волна от нажатия (ripple по MD3) — верхний слой фона, контент
+        // кнопки рисуется выше — волна под текстом, как в MD3. Драйвер —
+        // состояние pressed самой кнопки (паттерн Material-стиля Qt),
+        // клику ничего не мешает. На залитых кнопках — цвет текста
+        // кнопки, на контурных и ghost — бренд.
         AppRipple {
+            pressed: control.pressed
             rippleColor: (control.variant === "primary" || control.variant === "success" || control.variant === "danger")
                           ? (AppTheme.isDark ? Qt.rgba(11/255, 31/255, 51/255, 0.16)
                                              : Qt.rgba(1, 1, 1, 0.16))
