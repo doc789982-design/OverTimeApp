@@ -46,7 +46,7 @@ AppDialog {
             spacing: AppTheme.spaceM
 
             Text {
-                text: "Балансы:"
+                text: "Компенсации:"
                 color: AppTheme.textSecondary
                 font.family: AppTheme.fontFamily
                 font.pixelSize: AppTheme.sizeSmall
@@ -121,7 +121,7 @@ AppDialog {
                 id: empOpenHours
                 numericOnly: true
                 width: (parent.width - AppTheme.spaceS * 2) / 3
-                label: "Ночные (ч)"
+                label: "В ночное время (ч)"
                 text: "0"
                 visible: root.balanceYear === 0
             }
@@ -129,7 +129,7 @@ AppDialog {
                 id: empPrevOpenHours
                 numericOnly: true
                 width: (parent.width - AppTheme.spaceS * 2) / 3
-                label: "Ночные (ч)"
+                label: "В ночное время (ч)"
                 text: "0"
                 visible: root.balanceYear === 1
             }
@@ -138,7 +138,7 @@ AppDialog {
                 id: empOpenOvertime
                 numericOnly: true
                 width: (parent.width - AppTheme.spaceS * 2) / 3
-                label: "Сверх нормы (ч)"
+                label: "Сверхурочно (ч)"
                 text: "0"
                 visible: root.balanceYear === 0
             }
@@ -146,7 +146,7 @@ AppDialog {
                 id: empPrevOpenOvertime
                 numericOnly: true
                 width: (parent.width - AppTheme.spaceS * 2) / 3
-                label: "Сверх нормы (ч)"
+                label: "Сверхурочно (ч)"
                 text: "0"
                 visible: root.balanceYear === 1
             }
@@ -155,7 +155,7 @@ AppDialog {
                 id: empOpenDays
                 numericOnly: true
                 width: (parent.width - AppTheme.spaceS * 2) / 3
-                label: "Дни"
+                label: "Дни отдыха"
                 text: "0"
                 visible: root.balanceYear === 0
             }
@@ -163,7 +163,7 @@ AppDialog {
                 id: empPrevOpenDays
                 numericOnly: true
                 width: (parent.width - AppTheme.spaceS * 2) / 3
-                label: "Дни"
+                label: "Дни отдыха"
                 text: "0"
                 visible: root.balanceYear === 1
             }

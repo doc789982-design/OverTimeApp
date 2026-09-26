@@ -289,7 +289,7 @@ Popup {
                                 // Нормы месяца — полными словами
                                 Text {
                                     width: parent.width
-                                    text: "Часы за месяц: " + modelData.h40 + " при 40-часовой неделе, "
+                                    text: "Норма часов: " + modelData.h40 + " при 40-часовой неделе, "
                                           + modelData.h36 + " при 36-часовой, "
                                           + modelData.h24 + " при 24-часовой."
                                     color: AppTheme.textTertiary
@@ -349,7 +349,7 @@ Popup {
                         }
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
-                            text: "нерабочий праздничный день — работа оплачивается в двойном размере"
+                            text: "нерабочий праздничный день — компенсация в виде дополнительного дня отдыха"
                             color: AppTheme.textSecondary
                             font.family: AppTheme.fontFamily
                             font.pixelSize: AppTheme.sizeSmall

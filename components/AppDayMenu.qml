@@ -130,8 +130,8 @@ Menu {
 
                 Repeater {
                     model: [
-                        { "t": "К", "tool": "Командировка", "c": AppTheme.accentPurple, "st": "К" },
-                        { "t": "Б", "tool": "Больничный",     "c": AppTheme.accentDanger, "st": "Б" },
+                        { "t": "К", "tool": "Служебная командировка", "c": AppTheme.accentPurple, "st": "К" },
+                        { "t": "Б", "tool": "Временная нетрудоспособность",     "c": AppTheme.accentDanger, "st": "Б" },
                         { "t": "О", "tool": "Отпуск",         "c": AppTheme.accentWarning, "st": "О" }
                     ]
                     Rectangle {
@@ -270,7 +270,7 @@ Menu {
     AppMenuItem {
         visible: root.menuIsWeekend || root.menuIsHoliday
         iconSource: "../icons/calendar.svg"
-        text: "Сделать рабочим"
+        text: "Сделать служебным"
         customColor: AppTheme.accentTeal
         onClicked: {
             backend.setDayType(root.targetDate, "work")
@@ -290,7 +290,7 @@ Menu {
     AppMenuItem {
         visible: !root.menuIsHoliday
         iconSource: "../icons/sparkle.svg"
-        text: "Сделать праздничным"
+        text: "Сделать нерабочим праздничным"
         customColor: AppTheme.accentPurple
         onClicked: {
             backend.setDayType(root.targetDate, "holiday")

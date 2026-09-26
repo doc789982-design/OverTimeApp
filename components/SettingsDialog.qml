@@ -282,7 +282,7 @@ AppLargeModal {
                                     font.weight: AppTheme.weightBold
                                 }
                                 Text {
-                                    text: "Переключайтесь между отделами, создавайте новые и управляйте существующими базами."
+                                    text: "Переключайтесь между подразделениями, создавайте новые и управляйте существующими базами."
                                     color: AppTheme.textSecondary
                                     font.family: AppTheme.fontFamily
                                     font.pixelSize: AppTheme.sizeBody

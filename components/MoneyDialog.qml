@@ -33,7 +33,7 @@ AppDialog {
         if (group.length > 0) {
             root.activeComps = group
         } else {
-            let labels = { "hours": "Ночные (ч)", "overtime": "Сверх нормы (ч)", "days": "Дни" }
+            let labels = { "hours": "В ночное время (ч)", "overtime": "Сверхурочно (ч)", "days": "Дни отдыха" }
             root.activeComps = [{
                 dbId: compData.id, unit: compData.unit,
                 label: labels[compData.unit] || compData.unit,
@@ -56,7 +56,7 @@ AppDialog {
         spacing: AppTheme.spaceS
 
         Text { 
-            text: "Что оплачиваем:"
+            text: "Что компенсируем:"
             color: AppTheme.textSecondary
             font.family: AppTheme.fontFamily
             font.pixelSize: AppTheme.sizeSmall
@@ -206,9 +206,9 @@ AppDialog {
         // блокируется, а складывается с уже добавленным; «прошлый год» —
         // отдельная запись (у неё свой остаток).
         property var availableTypes: [
-            { text: "Ночные (ч)", value: "hours" },
-            { text: "Сверх нормы (ч)", value: "overtime" },
-            { text: "Дни", value: "days" }
+            { text: "В ночное время (ч)", value: "hours" },
+            { text: "Сверхурочно (ч)", value: "overtime" },
+            { text: "Дни отдыха", value: "days" }
         ]
 
         onOpened: {

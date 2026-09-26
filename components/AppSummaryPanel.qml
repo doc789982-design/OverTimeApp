@@ -271,7 +271,7 @@ Item {
                 ColumnLayout {
                     spacing: 0
                     Text {
-                        text: "Балансы"
+                        text: "Компенсации"
                         color: AppTheme.textPrimary
                         font.family: AppTheme.fontFamily
                         font.pixelSize: AppTheme.sizeBodyLarge
@@ -316,7 +316,7 @@ Item {
                             font.weight: AppTheme.weightBold
                         }
                         Text {
-                            text: "Деньги"
+                            text: "Деньгами"
                             color: moneyPillArea.containsMouse ? AppTheme.accentBrand : AppTheme.textSecondary
                             font.family: AppTheme.fontFamily
                             font.pixelSize: AppTheme.sizeSmall
@@ -347,7 +347,7 @@ Item {
                     spacing: AppTheme.spaceXS
 
                     Text {
-                        text: "Всего"
+                        text: "Всего ДДО"
                         color: AppTheme.textTertiary
                         font.family: AppTheme.fontFamily
                         font.pixelSize: AppTheme.sizeSmall
@@ -381,7 +381,7 @@ Item {
                 spacing: AppTheme.spaceM
 
                 StatCard {
-                    title: "ДВО (ночные)"
+                    title: "ДВО (в ночное время)"
                     icon: "clock.svg"
                     accent: AppTheme.accentBrand
                     caption: root.endCaption
@@ -403,7 +403,7 @@ Item {
                     compText: root.summ.comp_days || "—"
                 }
                 StatCard {
-                    title: "Сверх нормы"
+                    title: "Сверхурочно (часы)"
                     icon: "overtime.svg"
                     accent: AppTheme.accentWarning
                     caption: root.endCaption
@@ -433,7 +433,7 @@ Item {
                     spacing: AppTheme.spaceXXS
                     IconImage { source: "../icons/night.svg";    width: 13; height: 13; color: shiftRow.nightC }
                     Text {
-                        text: "в ночь " + (backend.monthSummary.shift_night || "—")
+                        text: "в ночное время " + (backend.monthSummary.shift_night || "—")
                         color: shiftRow.nightC
                         font.family: AppTheme.fontFamily; font.pixelSize: AppTheme.sizeSmall
                     }
@@ -443,7 +443,7 @@ Item {
                     spacing: AppTheme.spaceXXS
                     IconImage { source: "../icons/sparkle.svg"; width: 13; height: 13; color: shiftRow.holC }
                     Text {
-                        text: "праздничные " + (backend.monthSummary.shift_holiday || "—")
+                        text: "в праздничные дни " + (backend.monthSummary.shift_holiday || "—")
                         color: shiftRow.holC
                         font.family: AppTheme.fontFamily; font.pixelSize: AppTheme.sizeSmall
                     }
@@ -453,7 +453,7 @@ Item {
                     spacing: AppTheme.spaceXXS
                     IconImage { source: "../icons/help.svg"; width: 13; height: 13; color: AppTheme.textTertiary }
                     Text {
-                        text: "норма " + (backend.monthSummary.norm_minutes || "0")
+                        text: "норма часов " + (backend.monthSummary.norm_minutes || "0")
                         color: AppTheme.textTertiary
                         font.family: AppTheme.fontFamily; font.pixelSize: AppTheme.sizeSmall
                     }

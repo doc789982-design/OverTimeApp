@@ -130,6 +130,7 @@ Button {
         // кнопки, на контурных и ghost — бренд.
         AppRipple {
             pressed: control.pressed
+            rippleShape: 1   // пилюля, вырастает до полных размеров кнопки
             rippleColor: (control.variant === "primary" || control.variant === "success" || control.variant === "danger")
                           ? (AppTheme.isDark ? Qt.rgba(11/255, 31/255, 51/255, 0.16)
                                              : Qt.rgba(1, 1, 1, 0.16))

@@ -572,14 +572,14 @@ Item {
 
                 Repeater {
                     model: [
-                        { "kind": "fill",   "color": AppTheme.yearDutyExtra, "text": "дежурство вне графика" },
-                        { "kind": "fill",   "color": AppTheme.yearDutyShift, "text": "дежурство в смене" },
-                        { "kind": "fill",   "color": AppTheme.yearWeekend,   "text": "выходной" },
-                        { "kind": "plain",  "color": AppTheme.bgCell,        "text": "обычный день" },
+                        { "kind": "fill",   "color": AppTheme.yearDutyExtra, "text": "суточное дежурство" },
+                        { "kind": "fill",   "color": AppTheme.yearDutyShift, "text": "дежурство по графику сменности" },
+                        { "kind": "fill",   "color": AppTheme.yearWeekend,   "text": "выходной день" },
+                        { "kind": "plain",  "color": AppTheme.bgCell,        "text": "служебный день" },
                         { "kind": "letter", "letter": "В", "soft": AppTheme.bgTealSoft,    "color": AppTheme.accentTeal,    "text": "компенсация" },
-                        { "kind": "letter", "letter": "Б", "soft": AppTheme.bgDangerSoft,  "color": AppTheme.accentDanger,  "text": "больничный" },
+                        { "kind": "letter", "letter": "Б", "soft": AppTheme.bgDangerSoft,  "color": AppTheme.accentDanger,  "text": "временная нетрудоспособность" },
                         { "kind": "letter", "letter": "О", "soft": AppTheme.bgWarningSoft, "color": AppTheme.accentWarning, "text": "отпуск" },
-                        { "kind": "letter", "letter": "К", "soft": AppTheme.bgPurpleSoft,  "color": AppTheme.accentPurple,  "text": "командировка" }
+                        { "kind": "letter", "letter": "К", "soft": AppTheme.bgPurpleSoft,  "color": AppTheme.accentPurple,  "text": "служебная командировка" }
                     ]
 
                     delegate: Row {

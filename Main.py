@@ -1354,15 +1354,15 @@ class Backend(QObject):
             suffix = " (за прошлый год)" if is_prev else ""
 
             if unit == "hours":
-                type_str = "Ночные часы"
+                type_str = "В ночное время"
                 amount_str = fmt_minutes_ru_words(int(c["amount_minutes"] or 0))
                 raw = int(c["amount_minutes"] or 0)
             elif unit == "overtime":
-                type_str = "Сверх нормы"
+                type_str = "Сверхурочно"
                 amount_str = fmt_minutes_ru_words(int(c["amount_minutes"] or 0))
                 raw = int(c["amount_minutes"] or 0)
             else:
-                type_str = "Дни"
+                type_str = "Дни отдыха"
                 amount_str = "1 день"
                 raw = 1
 
@@ -2228,13 +2228,13 @@ class Backend(QObject):
             suffix = " (прошлый год)" if is_prev else ""
             
             if u == "hours": 
-                typ, amt = "Часы (ночные)" + suffix, fmt_minutes_ru_words(int(r["amount_minutes"] or 0))
+                typ, amt = "Часы (в ночное время)" + suffix, fmt_minutes_ru_words(int(r["amount_minutes"] or 0))
                 raw_amt = int(r["amount_minutes"] or 0) // 60
             elif u == "overtime": 
-                typ, amt = "Сверх нормы" + suffix, fmt_minutes_ru_words(int(r["amount_minutes"] or 0))
+                typ, amt = "Сверхурочно" + suffix, fmt_minutes_ru_words(int(r["amount_minutes"] or 0))
                 raw_amt = int(r["amount_minutes"] or 0) // 60
             else: 
-                typ, amt = "Дни" + suffix, f"{int(r['amount_days'] or 0)} дн."
+                typ, amt = "Дни отдыха" + suffix, f"{int(r['amount_days'] or 0)} дн."
                 raw_amt = int(r["amount_days"] or 0)
             
             res.append({
@@ -3327,7 +3327,7 @@ class Backend(QObject):
                        ORDER BY id""",
                     (self._selected_employee_id, anchor["order_no"],
                      anchor["order_date"])).fetchall()
-            labels = {"hours": "Ночные (ч)", "overtime": "Сверх нормы (ч)", "days": "Дни"}
+            labels = {"hours": "В ночное время (ч)", "overtime": "Сверхурочно (ч)", "days": "Дни отдыха"}
             out = []
             for r in rows:
                 is_prev = bool(r["event_date"] and str(r["event_date"]).startswith("1900"))
@@ -4259,7 +4259,7 @@ def main():
     app.setWindowIcon(app_icon)
 
     tray_icon = QSystemTrayIcon(app_icon, app)
-    tray_icon.setToolTip("OVERTIMETAB — табель учёта переработок")
+    tray_icon.setToolTip("OVERTIMETAB — табель учёта служебного времени")
     
     tray_menu = QMenu()
     open_action = QAction("Развернуть", app)

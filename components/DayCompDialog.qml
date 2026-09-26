@@ -130,10 +130,10 @@ AppDialog {
             AppComboBox {
                 id: singleCompType
                 width: parent.width
-                label: "Что списываем?"
+                label: "Что предоставляем?"
                 model: backend.isSelectedEmployeeShift
-                    ? ["Ночные часы", "Сверх нормы", "Дни"]
-                    : ["Ночные часы", "Дни"]
+                    ? ["В ночное время", "Сверхурочно", "Дни отдыха"]
+                    : ["В ночное время", "Дни отдыха"]
                 onCurrentIndexChanged: {
                     singleErrorMsg.visible = false
                     compCol.validateSingleBalance()
@@ -556,7 +556,7 @@ AppDialog {
             // hours / overtime — сравниваем минуты
             let requestedMin = compTumbler.hours * 60 + compTumbler.minutes
             let availableMin = (balances[unit] || 0) * 60
-            let label = unit === "overtime" ? "сверх нормы" : "ночных"
+            let label = unit === "overtime" ? "сверхурочных" : "в ночное время"
             if (requestedMin > availableMin) {
                 let availH = Math.floor(availableMin / 60)
                 let availM = availableMin % 60

@@ -219,13 +219,13 @@ Item {
                             RowLayout {
                                 spacing: AppTheme.spaceL; Layout.fillWidth: true
                                 AppTimeInterval { id: hkTimeInput; startMinutes: 480; endMinutes: 1200 }
-                                AppCheckBox { id: hkShiftCheck; text: "Сменный график"; checked: true; Layout.alignment: Qt.AlignVCenter }
+                                AppCheckBox { id: hkShiftCheck; text: "График сменности"; checked: true; Layout.alignment: Qt.AlignVCenter }
                                 Item { Layout.fillWidth: true } 
                             }
                             
                             ColumnLayout {
                                 spacing: AppTheme.spaceXS; Layout.fillWidth: true
-                                Text { text: "Перерывы (опционально):"; color: AppTheme.textSecondary; font.family: AppTheme.fontFamily; font.pixelSize: AppTheme.sizeSmall }
+                                Text { text: "Перерывы для отдыха и питания (опционально):"; color: AppTheme.textSecondary; font.family: AppTheme.fontFamily; font.pixelSize: AppTheme.sizeSmall }
                                 
                                 Flow {
                                     Layout.fillWidth: true
@@ -253,7 +253,7 @@ Item {
                             AppComboBox {
                                 id: hkCompUnit; Layout.preferredWidth: 250; label: "Вид компенсации:"
                                 cutoutColor: AppTheme.bgSurface
-                                model: [{text: "Часы (ночные)", value: "hours"}, {text: "Сверх нормы (часы)", value: "overtime"}, {text: "Дни", value: "days"}]
+                                model: [{text: "В ночное время (часы)", value: "hours"}, {text: "Сверхурочно (часы)", value: "overtime"}, {text: "Дни отдыха", value: "days"}]
                                 textRole: "text"; valueRole: "value"
                             }
                             AppTextField { 
@@ -283,7 +283,7 @@ Item {
                             AppComboBox {
                                 id: hkStatusUnit; Layout.preferredWidth: 250; label: "Какой статус поставить?"
                                 cutoutColor: AppTheme.bgSurface
-                                model: [{text: "Больничный (Б)", value: "Б"}, {text: "Отпуск (О)", value: "О"}, {text: "Командировка (К)", value: "К"}]
+                                model: [{text: "Временная нетрудоспособность (Б)", value: "Б"}, {text: "Отпуск (О)", value: "О"}, {text: "Служебная командировка (К)", value: "К"}]
                                 textRole: "text"; valueRole: "value"
                             }
                             Item { Layout.fillWidth: true }
@@ -346,7 +346,7 @@ Item {
                                                 if (hk.name && hk.name !== "") return hk.name
                                                 if (hk.type === "duty") return "Дежурство: " + hk.duty_start + " - " + hk.duty_end
                                                 if (hk.type === "status") return "Установить статус: " + hk.status_val
-                                                let unt = hk.comp_unit === "hours" ? "Ночные" : (hk.comp_unit === "days" ? "Дни" : "Сверх нормы")
+                                                let unt = hk.comp_unit === "hours" ? "в ночное время" : (hk.comp_unit === "days" ? "дни отдыха" : "сверхурочно")
                                                 let yr = hk.comp_prev_year ? " · прошлый год" : ""
                                                 return "Компенсация: " + unt + " (" + hk.comp_amount + ")" + yr
                                             }
@@ -361,7 +361,7 @@ Item {
                                                 let hk = modelData
                                                 if (hk.type === "duty") return "Дежурство: " + hk.duty_start + " — " + hk.duty_end
                                                 if (hk.type === "status") return "Статус: " + hk.status_val
-                                                let unt = hk.comp_unit === "hours" ? "Ночные" : (hk.comp_unit === "days" ? "Дни" : "Сверх нормы")
+                                                let unt = hk.comp_unit === "hours" ? "в ночное время" : (hk.comp_unit === "days" ? "дни отдыха" : "сверхурочно")
                                                 let yr = hk.comp_prev_year ? " · прошлый год" : ""
                                                 return "Компенсация: " + unt + " ×" + hk.comp_amount + yr
                                             }

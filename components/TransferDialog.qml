@@ -12,7 +12,7 @@ AppDialog {
     acceptText: "Перевести"
 
     Text {
-        text: "Норма и переработки пересчитаются с учетом указанной даты."
+        text: "Норма служебного времени и сверхурочные часы пересчитаются с учетом указанной даты."
         color: AppTheme.textSecondary
         font.family: AppTheme.fontFamily
         font.pixelSize: AppTheme.sizeBody
