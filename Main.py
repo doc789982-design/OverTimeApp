@@ -3012,11 +3012,37 @@ class Backend(QObject):
         else:
             self.showToast.emit("Больше нечего возвращать", "error")
 
-    @Slot(int)  # <--- ВОТ ЭТА МАГИЧЕСКАЯ СТРОЧКА!
+    def _nearest_month_for_employee(self, month):
+        """Ближайший существующий месяц для выбранного сотрудника.
+
+        Если сотрудник принят позже января выбранного года, январь ему
+        ещё не существует — открываем месяц приёма.
+        """
+        try:
+            if self.active_db and self._selected_employee_id:
+                from logic import safe_get_hire_date
+                emp = self.active_db.get_employee(self._selected_employee_id)
+                hire_y, hire_m = safe_get_hire_date(emp["start_month"])
+                if hire_y == self.current_year and month < hire_m:
+                    return hire_m
+        except Exception:
+            pass
+        return max(1, min(12, month))
+
+    @Slot(int)
     def setYear(self, new_year):
-        """Меняет год и перерисовывает всё"""
+        """Меняет год и перерисовывает всё.
+
+        Другой год открывается с января этого года; при возврате в
+        текущий (сегодняшний) — с идущего месяца. Если январь выбранного
+        года сотруднику ещё не существует (принят позже) — открывается
+        ближайший существующий месяц, а не пустой.
+        """
         if self.current_year != new_year:
             self.current_year = new_year
+            today = date.today()
+            want_month = today.month if new_year == today.year else 1
+            self.current_month = self._nearest_month_for_employee(want_month)
             self.refresh_calendar()
             self.refresh_employees()
             self.refresh_yearly_panorama()

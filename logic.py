@@ -299,7 +299,22 @@ def compute_month_summary(db, employee_id: int, year: int, month: int) -> dict:
     hire_y, hire_m = safe_get_hire_date(emp["start_month"])
     
     if year < hire_y or (year == hire_y and month < hire_m):
-        return {k: 0 for k in ["norm_minutes", "shift_minutes", "shift_night_minutes", "shift_holiday_minutes", "start_hours", "start_overtime", "start_days", "acc_hours", "acc_overtime", "acc_days", "comp_hours", "comp_overtime", "comp_days", "end_hours", "end_overtime", "end_days"]} | {"is_shift": False}
+        # Месяц до приёма сотрудника: полный набор нулей с ТОЧНО тем же
+        # составом ключей, что и у обычного итога месяца. Раньше здесь
+        # возвращался урезанный словарь (без prev_* и comp_*_prev), и
+        # открытие «несуществующего» месяца валило панель итогов с
+        # KeyError 'prev_h_end'.
+        return {k: 0 for k in [
+            "norm_minutes", "shift_minutes", "shift_night", "shift_holiday",
+            "start_hours", "start_overtime", "start_days",
+            "acc_hours", "acc_overtime", "acc_days",
+            "comp_h_real", "comp_h_prev", "comp_o_real", "comp_o_prev",
+            "comp_d_real", "comp_d_prev",
+            "comp_hours", "comp_overtime", "comp_days",
+            "end_hours", "end_overtime", "end_days",
+            "prev_h_start", "prev_o_start", "prev_d_start",
+            "prev_h_end", "prev_o_end", "prev_d_end",
+        ]} | {"is_shift": False}
 
     m_start, m_end = month_bounds_dt(year, month)
     m_s_iso, m_e_iso = d_iso(m_start.date()), d_iso(m_end.date())
