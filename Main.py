@@ -3428,6 +3428,39 @@ class Backend(QObject):
             self.showToast.emit(f"Ошибка открытия папки: {e}", "error")
 
     @Slot(str, str, result="QVariant")
+    def getWorkingDaysForPeriod(self, start_date_str: str, end_date_str: str):
+        """Рабочие дни периода по ФАКТИЧЕСКОМУ календарю.
+
+        Учитывает праздники и дни, отредактированные вручную («этот
+        вторник — праздничный», «эта суббота — рабочая»), и график
+        сотрудника — ровно те же клетки, что в календаре не красные.
+        Нужно окну компенсации периодом: «пропускать нерабочие дни»
+        смотрит на реальный календарь, а не только на сб/вс.
+        """
+        if not self.active_db or self._selected_employee_id == 0:
+            return []
+        try:
+            d0, d1 = d_parse(start_date_str), d_parse(end_date_str)
+            if d1 < d0:
+                return []
+            if (d1 - d0).days > 400:
+                d1 = d0 + timedelta(days=400)
+            work_map = self.active_db.get_calendar_month(d_iso(d0), d_iso(d1))
+            holidays_set = self.active_db.get_holidays_month(d_iso(d0), d_iso(d1))
+            override_set = self.active_db.get_calendar_overrides(d_iso(d0), d_iso(d1))
+            shifted_checker = build_shifted_weekend_checker(self.active_db, self._selected_employee_id)
+            out = []
+            cur = d0
+            while cur <= d1:
+                if resolve_is_working(cur, bool(shifted_checker(cur)),
+                                      work_map, holidays_set, override_set):
+                    out.append(d_iso(cur))
+                cur += timedelta(days=1)
+            return out
+        except Exception:
+            return []
+
+    @Slot(str, str, result="QVariant")
     def getShiftDatesForPeriod(self, start_date_str: str, end_date_str: str):
         """
         Анализирует паттерн сменщика и возвращает даты его рабочих дней

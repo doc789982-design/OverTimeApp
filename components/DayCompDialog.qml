@@ -268,7 +268,7 @@ AppDialog {
 
                 AppSwitch {
                     id: periodSkipWeekends
-                    text: "Пропускать выходные (Сб, Вс)"
+                    text: "Пропускать нерабочие дни"
                     checked: true
                     visible: !periodUseShiftPattern.checked
                     onCheckedChanged: compCol.recalcEndFromDays()
@@ -371,32 +371,57 @@ AppDialog {
         // ФУНКЦИИ КАЛЬКУЛЯТОРА
         // ==========================================
 
+        function isoOf(dt) {
+            let m = ("0" + (dt.getMonth() + 1)).slice(-2)
+            let d = ("0" + dt.getDate()).slice(-2)
+            return dt.getFullYear() + "-" + m + "-" + d
+        }
+
+        // Рабочие дни периода по фактическому календарю: праздники и
+        // ручные правки дней («этот вторник — праздничный», «эта
+        // суббота — рабочая») учитываются — те же клетки, что в
+        // календаре не красные.
+        function workingDaysBetween(startIso, endIso) {
+            try {
+                return backend.getWorkingDaysForPeriod(startIso, endIso) || []
+            } catch (e) {
+                return []
+            }
+        }
+
         function recalcEndFromDays() {
             if (isUpdating || !periodStartInput.selectedDate) return
             let d = parseInt(periodDaysInput.text)
             if (isNaN(d) || d < 1) return
 
             let parts = periodStartInput.selectedDate.split("-")
-            let cur = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]))
+            let start = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]))
+            let end = new Date(start)
 
-            let added = 1
-            let safety = 0
-            while (added < d && safety < 365) {
-                cur.setDate(cur.getDate() + 1)
-                if (periodSkipWeekends.checked) {
-                    if (cur.getDay() !== 0 && cur.getDay() !== 6) added++
-                } else {
-                    added++
+            if (periodSkipWeekends.checked) {
+                // Конец периода — d-й РАБОЧИЙ день от начала по
+                // фактическому календарю (праздники и правки — в деле).
+                let horizon = new Date(start)
+                horizon.setDate(horizon.getDate() + 400)
+                let working = workingDaysBetween(periodStartInput.selectedDate, isoOf(horizon))
+                let target = (working.length >= d) ? working[d - 1]
+                            : (working.length > 0 ? working[working.length - 1] : null)
+                if (target) {
+                    let wp = target.split("-")
+                    end = new Date(parseInt(wp[0]), parseInt(wp[1]) - 1, parseInt(wp[2]))
                 }
-                safety++
+            } else {
+                let added = 1
+                let safety = 0
+                while (added < d && safety < 730) {
+                    end.setDate(end.getDate() + 1)
+                    added++
+                    safety++
+                }
             }
 
-            let y = cur.getFullYear()
-            let m = ("0" + (cur.getMonth() + 1)).slice(-2)
-            let day = ("0" + cur.getDate()).slice(-2)
-
             isUpdating = true
-            periodEndInput.selectedDate = y + "-" + m + "-" + day
+            periodEndInput.selectedDate = isoOf(end)
             isUpdating = false
 
             validateBalances()
@@ -418,17 +443,17 @@ AppDialog {
                 return
             }
 
-            let cur = new Date(start)
             let count = 0
-            let safety = 0
-            while (cur <= end && safety < 365) {
-                if (periodSkipWeekends.checked) {
-                    if (cur.getDay() !== 0 && cur.getDay() !== 6) count++
-                } else {
+            if (periodSkipWeekends.checked) {
+                count = workingDaysBetween(periodStartInput.selectedDate, periodEndInput.selectedDate).length
+            } else {
+                let cur = new Date(start)
+                let safety = 0
+                while (cur <= end && safety < 730) {
                     count++
+                    cur.setDate(cur.getDate() + 1)
+                    safety++
                 }
-                cur.setDate(cur.getDate() + 1)
-                safety++
             }
 
             if (count === 0) count = 1
@@ -669,6 +694,10 @@ AppDialog {
 
                 if (periodUseShiftPattern.checked && compCol.shiftDates.length > 0) {
                     finalDates = compCol.shiftDates.slice()
+                } else if (periodSkipWeekends.checked) {
+                    // Только фактические рабочие дни — с праздниками
+                    // и ручными правками календаря.
+                    finalDates = compCol.workingDaysBetween(periodStartInput.selectedDate, periodEndInput.selectedDate)
                 } else {
                     let sp  = periodStartInput.selectedDate.split("-")
                     let ep  = periodEndInput.selectedDate.split("-")
@@ -676,14 +705,8 @@ AppDialog {
                     let end = new Date(parseInt(ep[0]), parseInt(ep[1]) - 1, parseInt(ep[2]))
 
                     let safety = 0
-                    while (cur <= end && safety < 365) {
-                        if (!periodSkipWeekends.checked ||
-                            (cur.getDay() !== 0 && cur.getDay() !== 6)) {
-                            let y = cur.getFullYear()
-                            let m = ("0" + (cur.getMonth() + 1)).slice(-2)
-                            let d = ("0" + cur.getDate()).slice(-2)
-                            finalDates.push(y + "-" + m + "-" + d)
-                        }
+                    while (cur <= end && safety < 730) {
+                        finalDates.push(compCol.isoOf(cur))
                         cur.setDate(cur.getDate() + 1)
                         safety++
                     }
