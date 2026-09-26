@@ -9,6 +9,7 @@ TextField {
     property bool isRequired: false
     property color cutoutColor: AppTheme.bgModal
     property bool numericOnly: false   // true = поле принимает только цифры
+    property bool hasError: false      // true = рамка ошибки (accentDanger по MD3)
     property bool isFloated: root.text.length > 0 || root.activeFocus
 
     // Защита числовых полей: буквы физически невозможно ввести
@@ -55,13 +56,14 @@ TextField {
     // ==========================================
     background: Rectangle {
         color: "transparent"
-        radius: AppTheme.radiusMedium
+        radius: AppTheme.radiusSmall
         
         border.color: !root.enabled ? AppTheme.borderDisabled :
+                      (root.hasError ? AppTheme.accentDanger :
                       (root.activeFocus ? AppTheme.borderFocus : 
-                      (root.hovered ? AppTheme.textSecondary : AppTheme.borderInput))
+                      (root.hovered ? AppTheme.textSecondary : AppTheme.borderInput)))
         
-        border.width: root.activeFocus ? AppTheme.focusWidth : 1
+        border.width: (root.activeFocus || root.hasError) ? AppTheme.focusWidth : 1
         Behavior on border.color { ColorAnimation { duration: AppTheme.durMicro } }
     }
 

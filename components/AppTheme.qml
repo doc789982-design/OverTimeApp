@@ -10,7 +10,7 @@ QtObject {
     // подхватят автоматически.
     // ==========================================
     readonly property string appVersion: "2.0.0-ALPHA.20"
-    readonly property int appBuild: 185
+    readonly property int appBuild: 186
     readonly property string appVersionFull: appVersion + " · сборка " + appBuild
 
     // ==========================================
@@ -116,8 +116,9 @@ QtObject {
     property color borderDisabled: isDark ? "#353B42" : "#DDE2E5" 
     property color borderError:    accentDanger 
     
-    // Фокус с вшитой 50% прозрачностью (80 в начале HEX)
-    property color borderFocus:    isDark ? "#804B9AEE" : "#800875E1"
+    // Фокус — сплошной бренд (по MD3 у полей 2px primary):
+    // полупрозрачная рамка была бледной и не отличалась от покоя
+    property color borderFocus:    isDark ? "#4B9AEE" : "#0374B5"
     
     property int   focusWidth:     2 
     property int   focusOffset:    2 

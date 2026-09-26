@@ -56,7 +56,7 @@ TextField {
     // ==========================================
     background: Rectangle {
         color: "transparent"
-        radius: AppTheme.radiusMedium
+        radius: AppTheme.radiusSmall
         
         border.color: !root.enabled ? AppTheme.borderDisabled :
                       (root.activeFocus || monthDialog.opened ? AppTheme.borderFocus : 

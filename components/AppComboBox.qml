@@ -39,7 +39,7 @@ ComboBox {
     // ==========================================
     background: Rectangle {
         color: "transparent"
-        radius: AppTheme.radiusMedium
+        radius: AppTheme.radiusSmall
         
         border.color: !control.enabled ? AppTheme.borderDisabled :
                       (control.activeFocus || control.popup.visible ? AppTheme.borderFocus : 
