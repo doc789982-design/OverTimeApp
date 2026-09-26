@@ -1,3 +1,13 @@
+# --- АВАРИЙНЫЙ ВОССТАНОВИТЕЛЬ ----------------------------------------------
+# Самый первый код программы (подробности — recovery.py): если прошлая
+# копия упала, предложит обновиться или откатиться, не дав намертво
+# залипнуть на сломанной версии. Никогда не мешает обычному запуску.
+try:
+    import recovery
+    recovery.guard()
+except Exception:
+    pass
+
 import os
 import tempfile
 import threading
@@ -3870,6 +3880,11 @@ class Backend(QObject):
             )
             # Помощник ждёт смерти PID. Не прячемся в трей и не ждём таймер —
             # иначе старый процесс живёт, а консоль обновления крутится вечно.
+            try:
+                import recovery
+                recovery.mark_updating()
+            except Exception:
+                pass
             os._exit(0)
         except Exception as e:
             self.showToast.emit(f"Не удалось запустить обновление: {e}", "error")
@@ -3966,6 +3981,11 @@ def _handle_uncaught(exc_type, exc_value, exc_tb):
         return
     details = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
     _write_crash_log(details)
+    try:
+        import recovery
+        recovery.mark_crash(details)
+    except Exception:
+        pass
     try:
         show_error_dialog("Непредвиденная ошибка", details)
     except Exception:
@@ -4082,9 +4102,19 @@ def main():
         # Показываем лог и даём скопировать его в буфер обмена.
         details = "\n".join(qml_errors) if qml_errors else "Не удалось загрузить интерфейс (QML). Подробности в crash_log.txt."
         _write_crash_log("QML load error\n" + details)
+        try:
+            import recovery
+            recovery.mark_crash("QML load error")
+        except Exception:
+            pass
         show_error_dialog("Не удалось запустить OverTimeTab", details)
         sys.exit(-1)
         
+    try:
+        import recovery
+        recovery.mark_ok()
+    except Exception:
+        pass
     app.setQuitOnLastWindowClosed(False)
 
     exit_code = app.exec()
@@ -4338,6 +4368,11 @@ def _startup_update_flow(app) -> bool:
             _startup_log(f"ставим отложенное обновление {staged.get('version')} · сборка {staged.get('build')}")
             app_update.launch_file_swap(
                 Path(staged["root"]), app_update.install_root(app_dir), os.getpid())
+            try:
+                import recovery
+                recovery.mark_updating()
+            except Exception:
+                pass
             os._exit(0)
         except Exception as e:
             _startup_log(f"установка отложенного не удалась: {type(e).__name__}: {e}")
@@ -4448,6 +4483,11 @@ def _startup_update_flow(app) -> bool:
         _startup_log("передаём установщику, процесс завершается")
         app_update.launch_file_swap(
             Path(staged["root"]), app_update.install_root(app_dir), os.getpid())
+        try:
+            import recovery
+            recovery.mark_updating()
+        except Exception:
+            pass
         os._exit(0)
     _startup_log("подготовленное обновление не новее текущего — запускаемся")
     splash.close()
@@ -4457,6 +4497,11 @@ def _startup_update_flow(app) -> bool:
 if __name__ == "__main__":
     apply = app_update.parse_apply_argv(sys.argv)
     if apply:
+        try:
+            import recovery
+            recovery.mark_updating()
+        except Exception:
+            pass
         try:
             app_update.apply_update_inplace(
                 Path(apply["source"]),

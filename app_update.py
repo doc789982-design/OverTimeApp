@@ -36,6 +36,8 @@ EXE_NAME = "OVERTIMETAB.exe"
 PENDING_DIRNAME = "pending_update"
 DATA_DIRNAME = "data"
 META_NAME = "UPDATE_META.json"
+ROLLBACK_DIRNAME = "rollback"
+ROLLBACK_META_NAME = "ROLLBACK_META.json"
 VERSION_JSON = "version.json"
 THEME_REL = Path("components") / "AppTheme.qml"
 
@@ -1093,8 +1095,73 @@ End Sub
 '''
 
 
-def launch_file_swap(source: Path, dest: Path, pid: int) -> Path:
-    """Пишет скрытый .vbs в TEMP и запускает его без консоли."""
+def rollback_root() -> Path:
+    """Documents\\OverTimeTab\\rollback — один слот предыдущей версии."""
+    home = (os.environ.get("OVERTIMETAB_RECOVERY_HOME")
+            or os.environ.get("USERPROFILE")
+            or os.environ.get("HOME"))
+    base = Path(home) / "Documents" if home else Path.home() / "Documents"
+    return base / "OverTimeTab" / ROLLBACK_DIRNAME
+
+
+def make_rollback_point(app_dir: Path) -> Optional[dict]:
+    """
+    Снимок текущей установки → Documents\\OverTimeTab\\rollback.
+    Его читает recovery.py: после аварии можно откатиться на эту версию.
+    Пользовательские данные (data/, базы) в снимок не входят.
+    Возвращает meta-словарь или None (неудача не мешает обновлению).
+    """
+    tmp = None
+    try:
+        root = install_root(app_dir)
+        if not _exe_in(root):
+            return None
+        dest = rollback_root()
+        tmp = dest.with_name(dest.name + ".__tmp")
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.rmtree(tmp, ignore_errors=True)
+
+        def _ignore(directory, names):
+            skipped = []
+            for n in names:
+                if (n in SKIP_NAMES or n == "update_download"
+                        or n == ROLLBACK_DIRNAME
+                        or n.endswith(".sqlite") or n.endswith(".sqlite-wal")
+                        or n.endswith(".sqlite-shm")):
+                    skipped.append(n)
+            return set(skipped)
+
+        shutil.copytree(root, tmp, ignore=_ignore)
+        ver = current_app_version(root)
+        bld = current_app_build(root)
+        meta = {
+            "version": ver,
+            "build": bld,
+            "display": format_version_label(ver, bld),
+            "ts": time.strftime("%Y-%m-%d %H:%M:%S"),
+        }
+        (tmp / ROLLBACK_META_NAME).write_text(
+            json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+        shutil.rmtree(dest, ignore_errors=True)
+        tmp.rename(dest)
+        return meta
+    except Exception:
+        if tmp is not None:
+            shutil.rmtree(tmp, ignore_errors=True)
+        return None
+
+
+def launch_file_swap(source: Path, dest: Path, pid: int, backup: bool = True) -> Path:
+    """Пишет скрытый .vbs в TEMP и запускает его без консоли.
+
+    backup=True (по умолчанию) — перед переодеванием делает снимок
+    текущей версии в rollback, чтобы recovery мог откатиться.
+    """
+    if backup:
+        try:
+            make_rollback_point(dest)
+        except Exception:
+            pass
     source = Path(source).resolve()
     dest = Path(dest).resolve()
     if not _exe_in(source):
@@ -1144,6 +1211,11 @@ def apply_update_inplace(source: Path, dest: Path, wait_pid: int | None = None) 
     dest = Path(dest).resolve()
     if source == dest:
         raise UpdateError("Источник и назначение совпадают")
+
+    try:
+        make_rollback_point(dest)
+    except Exception:
+        pass
 
     for item in source.iterdir():
         if item.name in SKIP_NAMES:

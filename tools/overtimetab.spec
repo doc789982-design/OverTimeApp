@@ -60,6 +60,7 @@ HIDDENIMPORTS = [
     "pythoncom",
     "pywintypes",
     "app_update",
+    "recovery",               # аварийный восстановитель (первый import Main.py)
     "webapp.server",          # экспериментальный веб-режим (--web)
 ]
 
