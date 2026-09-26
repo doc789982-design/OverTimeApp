@@ -2,14 +2,14 @@ import QtQuick
 import QtQuick.Controls
 
 // ============================================================
-// ПЕРЕКЛЮЧАТЕЛЬ — геометрия и поведение Material Design 3
+// ПЕРЕКЛЮЧАТЕЛЬ — геометрия Material Design 3, темп десктопный
 //
 // Трек 52×32. Бегунок живой: 16px в выключенном состоянии,
-// 24px во включённом, 28px под пальцем — и всё это анимируется
-// (250 мс, кривая emphasized). Цвета: выключенный бегунок — цвет
-// текста темы (аналог onSurface в MD3), включённый — цвет текста
-// на бренде (в тёмной теме тёмный, в светлой белый, как у кнопок).
-// Контур выключенного трека — 2px (по MD3, было 1px).
+// 24px во включённом, 28px под курсором. Переезд — на пружине
+// (резвый старт, лёгкий перелёт), рост — 120 мс. Цвета: выключенный
+// бегунок — цвет текста темы (onSurface в MD3), включённый — цвет
+// текста на бренде (в тёмной теме тёмный, в светлой белый, как у
+// кнопок). Контур выключенного трека — 2px (по MD3, было 1px).
 // ============================================================
 Switch {
     id: control
@@ -36,7 +36,7 @@ Switch {
             border.width: control.checked ? 0 : 2
             border.color: AppTheme.textSecondary
 
-            Behavior on color { ColorAnimation { duration: 250; easing.type: AppTheme.easeColor } }
+            Behavior on color { ColorAnimation { duration: 180; easing.type: AppTheme.easeColor } }
             Behavior on border.width { NumberAnimation { duration: AppTheme.durFast } }
         }
 
@@ -47,8 +47,9 @@ Switch {
                    : (control.hovered ? AppTheme.stateHover : "transparent")
         }
 
-        // Волна от нажатия — по всей зоне трека (MD3 ripple)
+        // Волна от нажатия — пилюля по форме трека, растёт из центра
         AppRipple {
+            rippleShape: 1
             rippleColor: control.checked
                           ? (AppTheme.isDark ? Qt.rgba(11/255, 31/255, 51/255, 0.16)
                                              : Qt.rgba(1, 1, 1, 0.16))
@@ -56,21 +57,29 @@ Switch {
                                              : Qt.rgba(3/255, 116/255, 181/255, 0.16))
         }
 
-        Rectangle {
-            id: thumb
-            // центры бегунка: 14px от левого края (выкл) и 38px (вкл)
-            property real centerX: control.checked ? parent.width - 14 : 14
-            // 16 (выкл) -> 24 (вкл), под пальцем подрастает до 28
-            width: control.pressed ? 28 : (control.checked ? 24 : 16)
-            height: width
-            radius: width / 2
-            anchors.verticalCenter: parent.verticalCenter
-            x: centerX - width / 2
-            color: control.checked ? AppTheme.textOnAccent : AppTheme.textPrimary
+        // Бегунок: позиция — отдельным позиционером по ЦЕНТРУ (14 выкл / 38 вкл),
+        // чтобы рост размера не дёргал цель пружины каждый кадр
+        Item {
+            id: thumbPos
+            x: control.checked ? parent.width - 14 : 14
+            y: parent.height / 2
 
-            Behavior on width { NumberAnimation { duration: 200; easing.type: AppTheme.easeStandard } }
-            Behavior on x { NumberAnimation { duration: 250; easing.type: AppTheme.easeStandard } }
-            Behavior on color { ColorAnimation { duration: 250; easing.type: AppTheme.easeColor } }
+            // резвый старт и лёгкий перелёт — «инерция» механического
+            // переключателя (в MD3 переезд описан пружиной)
+            Behavior on x { SpringAnimation { spring: 5.0; damping: 0.35; mass: 1.3 } }
+
+            Rectangle {
+                id: thumb
+                anchors.centerIn: parent
+                // 16 (выкл) -> 24 (вкл), под курсором подрастает до 28
+                width: control.pressed ? 28 : (control.checked ? 24 : 16)
+                height: width
+                radius: width / 2
+                color: control.checked ? AppTheme.textOnAccent : AppTheme.textPrimary
+
+                Behavior on width { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+                Behavior on color { ColorAnimation { duration: 180; easing.type: AppTheme.easeColor } }
+            }
         }
 
         Rectangle {

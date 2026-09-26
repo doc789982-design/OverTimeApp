@@ -27,12 +27,6 @@ Item {
         Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
     }
 
-    // Волна от нажатия (ripple по MD3)
-    AppRipple {
-        rippleColor: AppTheme.isDark ? Qt.rgba(77/255, 154/255, 238/255, 0.20)
-                                     : Qt.rgba(3/255, 116/255, 181/255, 0.16)
-    }
-
     IconImage {
         id: iconItem
         anchors.centerIn: parent
@@ -49,5 +43,13 @@ Item {
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
         onClicked: root.clicked()
+    }
+
+    // Волна от нажатия (ripple по MD3). ОБЯЗАТЕЛЬНО после MouseArea:
+    // доставка события идёт сверху вниз, MouseArea перехватывает
+    // нажатие — волна ниже неё никогда бы его не увидела.
+    AppRipple {
+        rippleColor: AppTheme.isDark ? Qt.rgba(77/255, 154/255, 238/255, 0.20)
+                                     : Qt.rgba(3/255, 116/255, 181/255, 0.16)
     }
 }

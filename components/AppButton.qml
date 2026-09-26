@@ -105,16 +105,6 @@ Button {
                 color: control.pressed ? AppTheme.statePress : (control.hovered ? AppTheme.stateHover : "transparent")
                 Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
             }
-
-            // Волна от нажатия (ripple по MD3): на залитых кнопках —
-            // цвет текста кнопки, на контурных и ghost — бренд
-            AppRipple {
-                rippleColor: (control.variant === "primary" || control.variant === "success" || control.variant === "danger")
-                              ? (AppTheme.isDark ? Qt.rgba(11/255, 31/255, 51/255, 0.16)
-                                                 : Qt.rgba(1, 1, 1, 0.16))
-                              : (AppTheme.isDark ? Qt.rgba(77/255, 154/255, 238/255, 0.20)
-                                                 : Qt.rgba(3/255, 116/255, 181/255, 0.16))
-            }
         }
 
         // ==========================================
@@ -131,6 +121,19 @@ Button {
             
             opacity: control.visualFocus ? 1.0 : 0.0
             Behavior on opacity { NumberAnimation { duration: AppTheme.durMicro; easing.type: AppTheme.easeColor } }
+        }
+
+        // Волна от нажатия (ripple по MD3) — ПОСЛЕДНИМ ребёнком фона:
+        // самый верхний слой, доставка нажатия доходит до него раньше,
+        // чем до самой кнопки. Контент рисуется выше фона — волна под
+        // текстом, как в MD3. На залитых кнопках — цвет текста кнопки,
+        // на контурных и ghost — бренд.
+        AppRipple {
+            rippleColor: (control.variant === "primary" || control.variant === "success" || control.variant === "danger")
+                          ? (AppTheme.isDark ? Qt.rgba(11/255, 31/255, 51/255, 0.16)
+                                             : Qt.rgba(1, 1, 1, 0.16))
+                          : (AppTheme.isDark ? Qt.rgba(77/255, 154/255, 238/255, 0.20)
+                                             : Qt.rgba(3/255, 116/255, 181/255, 0.16))
         }
     }
 

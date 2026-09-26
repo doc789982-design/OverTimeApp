@@ -61,7 +61,7 @@ TextField {
     // ==========================================
     background: Rectangle {
         color: "transparent"
-        radius: AppTheme.radiusSmall
+        radius: AppTheme.radiusMedium
         
         border.color: !root.enabled ? AppTheme.borderDisabled :
                       (root.activeFocus || calendarDialog.opened ? AppTheme.borderFocus : 
