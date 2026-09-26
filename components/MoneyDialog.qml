@@ -27,7 +27,20 @@ AppDialog {
 
     function openEdit(compData, callerItem, mouseX, mouseY) {
         root.editCompId = compData.id
-        root.activeComps = [{ unit: compData.unit, label: compData.type, amount: compData.raw_amount }]
+        // Загружаем весь приказ: все его записи, а не только кликнутую —
+        // в редактировании можно менять любые строки и добавлять новые.
+        let group = backend.getMoneyOrderGroup(compData.id)
+        if (group.length > 0) {
+            root.activeComps = group
+        } else {
+            let labels = { "hours": "Ночные (ч)", "overtime": "Сверх нормы (ч)", "days": "Дни" }
+            root.activeComps = [{
+                dbId: compData.id, unit: compData.unit,
+                label: labels[compData.unit] || compData.unit,
+                amount: compData.raw_amount,
+                usePrevYear: compData.type.indexOf("прошлый год") >= 0
+            }]
+        }
         moneyOrderInput.text = compData.order_no
         moneyCommentInput.text = compData.comment
         moneyErrorMsg.visible = false
@@ -70,6 +83,7 @@ AppDialog {
                         compEditDialog.targetUnit = modelData.unit
                         compEditDialog.targetLabel = modelData.label
                         compEditDialog.targetPrevYear = !!modelData.usePrevYear
+                        compEditDialog.targetOldAmount = modelData.amount
                         compEditDialog.amountText = modelData.amount.toString()
                         compEditDialog.showCentered()
                     }
@@ -88,7 +102,6 @@ AppDialog {
                 id: addCompBtn
                 isAction: true
                 text: "Добавить"
-                visible: root.editCompId === 0
                 onClicked: {
                     compEditDialog.isEditing = false
                     compEditDialog.amountText = ""
@@ -162,8 +175,8 @@ AppDialog {
         // ------------------------------
 
         if (root.editCompId > 0) {
-            let comp = root.activeComps[0]
-            backend.updateMoneyComp(root.editCompId, comp.unit, comp.amount.toString(), moneyOrderInput.text, moneyCommentInput.text)
+            let compsJson = JSON.stringify(root.activeComps)
+            backend.updateMoneyCompList(root.editCompId, compsJson, moneyOrderInput.text, moneyDateInput.selectedDate, moneyCommentInput.text)
         } else {
             let compsJson = JSON.stringify(root.activeComps)
             backend.saveMoneyCompList(compsJson, moneyOrderInput.text, moneyDateInput.selectedDate, moneyCommentInput.text)
@@ -186,6 +199,7 @@ AppDialog {
         property string targetLabel: ""
         property int targetIndex: -1        // индекс пилюли (вид+год могут повторяться)
         property bool targetPrevYear: false // год редактируемой записи
+        property int targetOldAmount: 0     // старая сумма записи (освобождает остаток)
         property alias amountText: amtInput.text
 
         // Все три вида доступны ВСЕГДА. Повторный вид того же года не
@@ -290,8 +304,16 @@ AppDialog {
                     break
                 }
             }
-            // При добавлении к уже введённому — остаток проверяем на СУММУ
-            let already = (!isEditing && sameIdx >= 0) ? arr[sameIdx].amount : 0
+            // При добавлении к уже введённому — остаток проверяем на СУММУ.
+            // В режиме редактирования записи приказа уже вычтены из остатков:
+            // при правке своей записи её старая сумма освобождается, а при
+            // добавлении новой остаток уже честно учитывает существующие.
+            let already = 0
+            if (root.editCompId === 0 && !isEditing && sameIdx >= 0) {
+                already = arr[sameIdx].amount
+            } else if (root.editCompId > 0 && isEditing) {
+                maxAllowed += (compEditDialog.targetOldAmount || 0)
+            }
 
             if (val + already > maxAllowed) {
                 compEditDialog.shake()
@@ -304,12 +326,13 @@ AppDialog {
             if (isEditing) {
                 // Правим именно эту запись: вид+год могут встречаться дважды
                 let idx = (targetIndex >= 0 && targetIndex < arr.length &&
-                           arr[targetIndex].unit === targetUnit) ? targetIndex : sameIdx
+                           arr[targetIndex].unit === targetUnit &&
+                           (!!arr[targetIndex].usePrevYear) === targetPrevYear) ? targetIndex : sameIdx
                 if (idx >= 0) arr[idx].amount = val
             } else if (sameIdx >= 0) {
                 arr[sameIdx].amount = arr[sameIdx].amount + val
             } else {
-                arr.push({ unit: currentUnit, label: currentLabel, amount: val, usePrevYear: usePrev })
+                arr.push({ dbId: 0, unit: currentUnit, label: currentLabel, amount: val, usePrevYear: usePrev })
             }
             
             root.activeComps = arr
