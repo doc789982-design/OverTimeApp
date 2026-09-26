@@ -29,7 +29,7 @@ from PySide6.QtCore import QObject, Slot, Signal, Property, QUrl, QThread, QTime
 
 from database import DB
 from utils import fmt_date_iso, fmt_dt_iso, d_iso, d_parse, dt_parse, dt_iso, parse_hhmm, subtract_intervals, intersect, merge_intervals, fmt_minutes_ru_words
-from logic import compute_month_summary, is_employee_shift, is_employee_shifted_weekends, validate_non_negative_over_year, default_is_working, build_shifted_weekend_checker, resolve_is_working, _row_flag
+from logic import compute_month_summary, is_employee_shift, is_employee_shifted_weekends, validate_non_negative_over_year, default_is_working, build_shifted_weekend_checker, resolve_is_working, _row_flag, summary_cache_scope
 import app_update
 
 # ====================================================
@@ -461,6 +461,15 @@ class Backend(QObject):
         self.loadHotkeys()
         self.generateYearList() # <--- Сразу вызываем функцию        
         self.active_db = None
+        
+        # Отложенная перерисовка года: панорама и «точки» месяцев не нужны
+        # немедленно после правки. Считаем их в следующем такте цикла
+        # событий, а серию быстрых правок схлопываем в один пересчёт —
+        # окно не замирает после каждого удаления.
+        self._lazy_year_timer = QTimer(self)
+        self._lazy_year_timer.setSingleShot(True)
+        self._lazy_year_timer.setInterval(120)
+        self._lazy_year_timer.timeout.connect(self._lazy_year_refresh)
         
         self.current_year = date.today().year
         self.current_month = date.today().month
@@ -1218,8 +1227,7 @@ class Backend(QObject):
                     raise Exception(err)
 
             self.refresh_calendar()
-            self.refresh_yearly_panorama()
-            self.refresh_pulse()
+            self._defer_year_refresh()
         except Exception as e:
             self.showToast.emit(str(e), "error")
 
@@ -1295,7 +1303,7 @@ class Backend(QObject):
                 is_valid, err = validate_non_negative_over_year(self.active_db, self._selected_employee_id, self.current_year)
                 if not is_valid: raise Exception(err)
                 
-            self.refresh_calendar(); self.refresh_employees(); self.refresh_yearly_panorama(); self.loadMoneyComps()
+            self.refresh_calendar(); self.refresh_employees(); self._defer_year_refresh(); self.loadMoneyComps()
             self.showToast.emit("Приказ сохранен", "success")
         except Exception as e:
             self.showToast.emit(str(e), "error")
@@ -1378,8 +1386,7 @@ class Backend(QObject):
             self.active_db.conn.execute("COMMIT;")
             
             self.refresh_calendar()
-            self.refresh_yearly_panorama()
-            self.refresh_pulse()            
+            self._defer_year_refresh()
             self.loadDayDetails(current_day_str)
             self.showToast.emit("Дежурство удалено. Отменить: Ctrl+Z", "success")
             
@@ -1414,8 +1421,7 @@ class Backend(QObject):
             self.active_db.conn.execute("COMMIT;")
 
             self.refresh_calendar()
-            self.refresh_yearly_panorama()
-            self.refresh_pulse()            
+            self._defer_year_refresh()
             self.loadDayDetails(current_day_str)
             self.showToast.emit("Компенсация удалена. Отменить: Ctrl+Z", "success")
 
@@ -1447,8 +1453,7 @@ class Backend(QObject):
             self.active_db.conn.execute("COMMIT;")
             
             self.refresh_calendar()
-            self.refresh_yearly_panorama()
-            self.refresh_pulse()            
+            self._defer_year_refresh()
             self.showToast.emit(f"Дежурства удалены. Отменить: Ctrl+Z", "success")
             # ...
         except Exception as e:
@@ -1495,8 +1500,7 @@ class Backend(QObject):
             self.active_db.conn.execute("COMMIT;")
             
             self.refresh_calendar()
-            self.refresh_yearly_panorama()
-            self.refresh_pulse()            
+            self._defer_year_refresh()
             self.showToast.emit(f"Компенсации удалены. Отменить: Ctrl+Z", "success")
         except Exception as e:
             self.active_db.conn.execute("ROLLBACK;")
@@ -1821,7 +1825,35 @@ class Backend(QObject):
             self._month_summary = {}
         self.monthSummaryChanged.emit()
 
+    def _lazy_year_refresh(self):
+        if not self.active_db:
+            return
+        with summary_cache_scope():
+            self.refresh_yearly_panorama()
+            self.refresh_pulse()
+
+    def _defer_year_refresh(self):
+        """Панорама года и точки месяцев — чуть позже, после отрисовки.
+
+        Календарь и панель дня обновляются сразу (пользователь ждёт
+        отклика), а пересчёт года не блокирует окно.
+        """
+        try:
+            self._lazy_year_timer.start()
+        except Exception:
+            self.refresh_yearly_panorama()
+            self.refresh_pulse()
+
     def refresh_yearly_panorama(self):
+        """Собирает данные за весь год для годовой сетки.
+
+        Считается под кэшем итогов месяцев: 12 месяцев делят между
+        собой декабри прошлых лет вместо десятков повторных расчётов.
+        """
+        with summary_cache_scope():
+            self._refresh_yearly_panorama_impl()
+
+    def _refresh_yearly_panorama_impl(self):
         """Собирает данные за весь год для годовой сетки"""
         if not self.active_db or self._selected_employee_id == 0:
             self._yearly_data = []
@@ -2020,8 +2052,7 @@ class Backend(QObject):
             
             self.refresh_calendar()
 
-            self.refresh_yearly_panorama()
-            self.refresh_pulse()
+            self._defer_year_refresh()
 
         except Exception as e:
             if self.active_db:
@@ -2041,7 +2072,7 @@ class Backend(QObject):
             
             self.refresh_calendar()
             #self.refresh_employees()
-            self.refresh_yearly_panorama()
+            self._defer_year_refresh()
             print(f"ПИТОН: День {date_str} стал -> {day_type}")
             
         except Exception as e:
@@ -2225,7 +2256,7 @@ class Backend(QObject):
         try:
             with self.active_db.transaction():
                 self.active_db.delete_compensation(comp_id)
-            self.refresh_calendar(); self.refresh_employees(); self.refresh_yearly_panorama(); self.loadMoneyComps()
+            self.refresh_calendar(); self.refresh_employees(); self._defer_year_refresh(); self.loadMoneyComps()
             self.showToast.emit("Выплата удалена", "success")
         except Exception as e:
             self.showToast.emit(f"Ошибка: {e}", "error")
@@ -2536,8 +2567,7 @@ class Backend(QObject):
             self.active_db.conn.execute("COMMIT;")
             self.refresh_calendar()
             self.refresh_employees()
-            self.refresh_yearly_panorama()
-            self.refresh_pulse()
+            self._defer_year_refresh()
             self.showToast.emit(f"Применено: {key_sequence}", "success")
             
         except Exception as e:
@@ -2568,7 +2598,7 @@ class Backend(QObject):
             self.refresh_groups()
             self.refresh_employees()
             self.refresh_calendar()
-            self.refresh_yearly_panorama()
+            self._defer_year_refresh()
             self.showToast.emit(
                 "Смещённые выходные включены" if enabled else "Обычные выходные",
                 "success",
@@ -2627,8 +2657,7 @@ class Backend(QObject):
                 
                 # 3. ПОЛНОСТЬЮ ПЕРЕСЧИТЫВАЕМ И ПЕРЕРИСОВЫВАЕМ ЕГО ДАННЫЕ
                 self.refresh_calendar()
-                self.refresh_yearly_panorama()
-                self.refresh_pulse()
+                self._defer_year_refresh()
             
             self.showToast.emit("Сотрудник перемещен", "success")
         except Exception as e:
@@ -2666,8 +2695,7 @@ class Backend(QObject):
             if emp_id == self._selected_employee_id:
                 self.selectedEmployeeChanged.emit()
                 self.refresh_calendar()
-                self.refresh_yearly_panorama()
-                self.refresh_pulse()
+                self._defer_year_refresh()
             self.showToast.emit(f"Официальный перевод с {date_str} сохранен", "success")
         except Exception as e:
             self.active_db.conn.execute("ROLLBACK;")
@@ -2837,8 +2865,7 @@ class Backend(QObject):
                         
                 self.active_db.conn.execute("COMMIT;")
                 self.refresh_calendar()
-                self.refresh_yearly_panorama()
-                self.refresh_pulse()
+                self._defer_year_refresh()
                 self.showToast.emit(f"Очищено: {date_str}", "success")
                 
             except Exception as e:
@@ -3181,7 +3208,7 @@ class Backend(QObject):
             if emp_id == self._selected_employee_id:
                 self.selectedEmployeeChanged.emit()
                 self.refresh_calendar()
-                self.refresh_yearly_panorama()
+                self._defer_year_refresh()
                 
             self.showToast.emit("Запись сохранена", "success")
         except Exception as e:
@@ -3202,7 +3229,7 @@ class Backend(QObject):
             if emp_id == self._selected_employee_id:
                 self.selectedEmployeeChanged.emit()
                 self.refresh_calendar()
-                self.refresh_yearly_panorama()
+                self._defer_year_refresh()
         except Exception as e:
             self.active_db.conn.execute("ROLLBACK;")
             self.showToast.emit(f"Ошибка удаления: {e}", "error")
@@ -3401,7 +3428,7 @@ class Backend(QObject):
 
             self.refresh_calendar()
             self.refresh_employees()
-            self.refresh_yearly_panorama()
+            self._defer_year_refresh()
             self.loadMoneyComps()
             self.showToast.emit("Приказ обновлен", "success")
         except Exception as e:

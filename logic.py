@@ -293,7 +293,38 @@ def _get_accruals_for_period(db, employee_id, start_dt, end_dt, shift_checker, h
     res["days"] += len(counted_days)
     return res
 
+# Кэш итогов месяцев. Живёт только внутри одного обновления экрана —
+# см. summary_cache_scope. Панорама года считает 12 месяцев, и каждый
+# тянет за собой декабри прошлых лет: без кэша это десятки повторных
+# расчётов и заметное подёргивание интерфейса при каждой правке.
+_SUMMARY_CACHE = {"depth": 0, "data": {}}
+
+
+class summary_cache_scope:
+    """Включает кэш итогов месяцев до выхода из контекста.
+
+    Протухнуть не может в принципе: кэш живёт ровно до конца одного
+    обновления, а любые правки данных происходят между обновлениями.
+    """
+
+    def __enter__(self):
+        _SUMMARY_CACHE["depth"] += 1
+        return self
+
+    def __exit__(self, *exc):
+        _SUMMARY_CACHE["depth"] -= 1
+        if _SUMMARY_CACHE["depth"] <= 0:
+            _SUMMARY_CACHE["depth"] = 0
+            _SUMMARY_CACHE["data"].clear()
+
+
 def compute_month_summary(db, employee_id: int, year: int, month: int) -> dict:
+    _cms_key = None
+    if _SUMMARY_CACHE["depth"] > 0:
+        _cms_key = (id(db), employee_id, int(year), int(month))
+        _cms_hit = _SUMMARY_CACHE["data"].get(_cms_key)
+        if _cms_hit is not None:
+            return _cms_hit
     shift_checker = build_shift_checker(db, employee_id)
     emp = db.get_employee(employee_id)
     hire_y, hire_m = safe_get_hire_date(emp["start_month"])
@@ -470,7 +501,7 @@ def compute_month_summary(db, employee_id: int, year: int, month: int) -> dict:
     prev_o_end = prev_o_start - spent_now["overtime"]
     prev_d_end = prev_d_start - spent_now["days"]
 
-    return {
+    result = {
         "norm_minutes": norm_m,
         "shift_minutes": this_acc["night"] if not shift_checker() else (norm_m + (this_acc["overtime_acc"] if norm_m > 0 else 0)),
         "is_shift": shift_checker(),
@@ -493,6 +524,9 @@ def compute_month_summary(db, employee_id: int, year: int, month: int) -> dict:
         "prev_h_start": prev_h_start, "prev_o_start": prev_o_start, "prev_d_start": prev_d_start,
         "prev_h_end": prev_h_end, "prev_o_end": prev_o_end, "prev_d_end": prev_d_end
     }
+    if _cms_key is not None:
+        _SUMMARY_CACHE["data"][_cms_key] = result
+    return result
 
 def validate_non_negative_over_year(db, employee_id: int, year: int) -> tuple[bool, str]:
     emp = db.get_employee(employee_id)
