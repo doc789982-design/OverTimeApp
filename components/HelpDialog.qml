@@ -11,6 +11,8 @@ AppSidePanel {
 
     // Открыть окно методических рекомендаций (подключается в main.qml).
     signal requestReco()
+    // Открыть производственный календарь года (подключается в main.qml).
+    signal requestCalendar(int year)
 
     // Человекочитаемое описание действия горячей клавиши (используется в подсказке
     // у иконки справки в главном окне — main.qml).
@@ -193,7 +195,7 @@ AppSidePanel {
                         }
                         Text {
                             width: parent.width
-                            text: "Как привлекать сотрудников к переработке — в будни, ночью, в выходные и праздники — и как предоставлять за это компенсации. С оглавлением, быстрыми переходами по пунктам и производственными календарями. С оглавлением, быстрыми переходами и производственными календарями."
+                            text: "Как привлекать сотрудников к переработке — в будни, ночью, в выходные и праздники — и как предоставлять за это компенсации. Оглавление в стиле КонсультантПлюс: клик по пункту переносит к нужному месту, примеры расчётов раскрываются по щелчку. С оглавлением, быстрыми переходами и производственными календарями."
                             color: AppTheme.textSecondary
                             font.family: AppTheme.fontFamily
                             font.pixelSize: AppTheme.sizeBody
@@ -208,6 +210,102 @@ AppSidePanel {
                     cursorShape: Qt.PointingHandCursor
                     hoverEnabled: true
                     onClicked: root.requestReco()
+                }
+            }
+
+            // ==========================================
+            // ПРОИЗВОДСТВЕННЫЕ КАЛЕНДАРИ 2026/2027
+            // ==========================================
+            Rectangle {
+                width: parent.width
+                height: Math.max(calRow.implicitHeight, 48 + AppTheme.spaceXS + 34 * 2 + AppTheme.spaceM * 2)
+                color: calHov.containsMouse ? AppTheme.bgElevated : AppTheme.bgSurface
+                radius: AppTheme.radiusMedium
+                border.color: AppTheme.borderDivider
+                border.width: 1
+                Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
+
+                RowLayout {
+                    id: calRow
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.margins: AppTheme.spaceM
+                    spacing: AppTheme.spaceM
+
+                    Rectangle {
+                        Layout.alignment: Qt.AlignTop
+                        width: 48; height: 48
+                        radius: AppTheme.radiusMedium
+                        color: AppTheme.bgBrandSoft
+                        IconImage {
+                            anchors.centerIn: parent
+                            source: "../icons/calendar.svg"
+                            width: AppTheme.iconLarge; height: AppTheme.iconLarge
+                            color: AppTheme.accentBrand
+                        }
+                    }
+
+                    Column {
+                        Layout.fillWidth: true
+                        Layout.alignment: Qt.AlignTop
+                        spacing: AppTheme.spaceXS
+
+                        Text {
+                            width: parent.width
+                            text: "Производственный календарь"
+                            color: AppTheme.textPrimary
+                            font.family: AppTheme.fontFamily
+                            font.pixelSize: AppTheme.sizeBodyLarge
+                            font.weight: AppTheme.weightBold
+                            wrapMode: Text.WordWrap
+                        }
+                        Text {
+                            width: parent.width
+                            text: "Сетки месяцев с праздниками, переносами и предпраздничными днями. Нормы рабочих дней и часов на 40-, 36- и 24-часовые недели — сверены с официальной таблицей норм."
+                            color: AppTheme.textSecondary
+                            font.family: AppTheme.fontFamily
+                            font.pixelSize: AppTheme.sizeBody
+                            wrapMode: Text.WordWrap
+                        }
+                    }
+
+                    // Кнопки годов
+                    Column {
+                        id: yearButtons
+                        Layout.alignment: Qt.AlignTop
+                        spacing: AppTheme.spaceXS
+
+                        Repeater {
+                            model: [2026, 2027]
+                            delegate: Rectangle {
+                                width: 74; height: 34
+                                radius: AppTheme.radiusMedium
+                                color: yHov.containsMouse ? AppTheme.stateSelected : AppTheme.bgElevated
+                                border.width: 1
+                                border.color: yHov.containsMouse ? "transparent" : AppTheme.borderDivider
+                                Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: modelData
+                                    color: yHov.containsMouse ? AppTheme.textOnSoft : AppTheme.textPrimary
+                                    font.family: AppTheme.fontFamily
+                                    font.pixelSize: AppTheme.sizeBody
+                                    font.weight: AppTheme.weightBold
+                                }
+                                MouseArea { id: yHov; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.requestCalendar(modelData) }
+                            }
+                        }
+                    }
+                }
+
+                MouseArea {
+                    id: calHov
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.requestCalendar(2026)
                 }
             }
 

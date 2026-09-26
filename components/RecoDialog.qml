@@ -6,24 +6,24 @@ import QtQuick.Layouts
 // ОКНО «МЕТОДИЧЕСКИЕ РЕКОМЕНДАЦИИ»
 //
 // Читалка в стиле КонсультантПлюс: слева оглавление с быстрыми
-// переходами, справа текст. Клик по пункту — мгновенный переход
-// к разделу; прокрутка текста подсвечивает текущий пункт.
-// Сверху — кнопки производственных календарей (2026/2027).
+// переходами (разделы И подпункты — клик переносит точно к пункту),
+// справа — текст, выровненный по ширине, с жирными терминами
+// и курсивными ссылками на нормативные акты. Примеры расчётов
+// убраны в раскрывающиеся карточки-спойлеры.
 // ============================================================
 Popup {
     id: root
 
     property string pageTitle: "Методические рекомендации"
     property var reco: ({ title: "", sections: [] })
-    property var tocModel: []          // плоское оглавление: {sec, level, label}
-    property int currentSection: 0
+    property var atoms: []          // плоская модель контента
+    property var tocModel: []       // оглавление: {level, atom, label}
+    property int currentAtom: 0
 
-    signal requestCalendar(int year)
-
-    width: 980
+    width: 1000
     height: Math.min(
-        (ApplicationWindow.window ? ApplicationWindow.window.height : 800) * 0.88,
-        (ApplicationWindow.window ? ApplicationWindow.window.height : 800) - 80)
+        (ApplicationWindow.window ? ApplicationWindow.window.height : 800) * 0.9,
+        (ApplicationWindow.window ? ApplicationWindow.window.height : 800) - 60)
     z: AppTheme.zModal
     modal: true
     dim: true
@@ -53,24 +53,38 @@ Popup {
 
     function openReco() {
         reco = backend.getRecoSections()
+        var a = []
         var toc = []
         var sections = (reco && reco.sections) ? reco.sections : []
         for (var i = 0; i < sections.length; i++) {
-            toc.push({ sec: i, level: 0, label: sections[i].num + ". " + sections[i].title })
-            var subs = sections[i].subs || []
-            for (var j = 0; j < subs.length; j++)
-                toc.push({ sec: i, level: 1, label: subs[j].num + ". " + subs[j].title })
+            var s = sections[i]
+            toc.push({ level: 0, atom: a.length, label: s.num + ". " + s.title })
+            a.push({ k: "sec", sec: i })
+            for (var j = 0; j < s.subs.length; j++) {
+                var sub = s.subs[j]
+                toc.push({ level: 1, atom: a.length, label: sub.num + ". " + sub.title })
+                a.push({ k: "sub", sec: i, sub: j })
+                for (var b = 0; b < sub.blocks.length; b++) {
+                    var blk = sub.blocks[b]
+                    if (blk.t === "ex") {
+                        a.push({ k: "ex", sec: i, sub: j, ex: blk })
+                    } else {
+                        a.push({ k: blk.t, sec: i, sub: j, x: blk.x })
+                    }
+                }
+            }
         }
+        atoms = a
         tocModel = toc
-        currentSection = 0
+        currentAtom = 0
         showCentered()
         contentView.positionViewAtBeginning()
     }
 
-    function jump(sec) {
-        currentSection = sec
-        contentView.currentIndex = sec
-        contentView.positionViewAtIndex(sec, ListView.Beginning)
+    function jump(atom) {
+        currentAtom = atom
+        contentView.currentIndex = atom
+        contentView.positionViewAtIndex(atom, ListView.Beginning)
     }
 
     function showCentered() {
@@ -132,7 +146,7 @@ Popup {
             // ── ЛЕВАЯ КОЛОНКА: ОГЛАВЛЕНИЕ ──
             Rectangle {
                 id: tocPanel
-                width: 300
+                width: 310
                 anchors.left: parent.left
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
@@ -158,60 +172,22 @@ Popup {
                         font.weight: AppTheme.weightBold
                     }
 
-                    // Кнопки производственных календарей
-                    Row {
-                        Layout.fillWidth: true
-                        Layout.leftMargin: AppTheme.spaceXXS
-                        spacing: AppTheme.spaceXS
-
-                        Repeater {
-                            model: [2026, 2027]
-                            delegate: Rectangle {
-                                width: (tocPanel.width - AppTheme.spaceS * 2 - AppTheme.spaceXS * 2 - AppTheme.spaceXXS) / 2
-                                height: 34
-                                radius: AppTheme.radiusMedium
-                                color: calHov.containsMouse ? AppTheme.stateHover : AppTheme.bgElevated
-                                border.color: AppTheme.borderDivider
-                                border.width: 1
-                                Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
-
-                                Row {
-                                    anchors.centerIn: parent
-                                    spacing: AppTheme.spaceXXS
-                                    IconImage { source: "../icons/calendar.svg"; width: AppTheme.iconMedium; height: AppTheme.iconMedium; color: AppTheme.accentBrand; anchors.verticalCenter: parent.verticalCenter }
-                                    Text {
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        text: modelData
-                                        color: AppTheme.textPrimary
-                                        font.family: AppTheme.fontFamily
-                                        font.pixelSize: AppTheme.sizeBody
-                                        font.weight: AppTheme.weightBold
-                                    }
-                                }
-                                MouseArea { id: calHov; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.requestCalendar(modelData) }
-                            }
-                        }
-                    }
-
-                    Rectangle { Layout.fillWidth: true; height: 1; color: AppTheme.borderDivider; Layout.topMargin: AppTheme.spaceXXS }
-
-                    // Само оглавление
                     ListView {
                         id: tocView
                         objectName: "tocView"
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         clip: true
-                        spacing: 2
+                        spacing: 1
                         ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
                         model: root.tocModel
 
                         delegate: Rectangle {
                             width: tocView.width
-                            height: tocLabel.implicitHeight + 10
+                            height: tocLabel.implicitHeight + 8
                             radius: AppTheme.radiusSmall
-                            color: modelData.sec === root.currentSection
+                            color: modelData.atom === root.currentAtom
                                    ? AppTheme.stateSelected
                                    : (tocHov.containsMouse ? AppTheme.stateHover : "transparent")
                             Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
@@ -221,10 +197,10 @@ Popup {
                                 anchors.left: parent.left
                                 anchors.right: parent.right
                                 anchors.verticalCenter: parent.verticalCenter
-                                anchors.leftMargin: (modelData.level === 0 ? 8 : 20)
+                                anchors.leftMargin: (modelData.level === 0 ? 8 : 22)
                                 anchors.rightMargin: 8
                                 text: modelData.label
-                                color: modelData.sec === root.currentSection
+                                color: modelData.atom === root.currentAtom
                                       ? AppTheme.textOnSoft
                                       : (modelData.level === 0 ? AppTheme.textPrimary : AppTheme.textSecondary)
                                 font.family: AppTheme.fontFamily
@@ -240,7 +216,7 @@ Popup {
                                 anchors.fill: parent
                                 hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
-                                onClicked: root.jump(modelData.sec)
+                                onClicked: root.jump(modelData.atom)
                             }
                         }
                     }
@@ -261,20 +237,27 @@ Popup {
                     objectName: "recoContentView"
                     anchors.fill: parent
                     clip: true
-                    spacing: AppTheme.spaceL
+                    spacing: AppTheme.spaceS
+                    boundsBehavior: Flickable.StopAtBounds
                     ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
-                    // Подсветка оглавления при прокрутке текста
+                    // подсветка оглавления при прокрутке: последний пункт выше края
                     onContentYChanged: {
                         if (!moving) return
-                        var idx = contentView.indexAt(contentView.contentX, contentView.contentY + 16)
-                        if (idx >= 0 && idx !== root.currentSection)
-                            root.currentSection = idx
+                        var idx = contentView.indexAt(contentView.contentX, contentView.contentY + 24)
+                        if (idx >= 0) {
+                            var cur = 0
+                            for (var i = 0; i < root.tocModel.length; i++) {
+                                if (root.tocModel[i].atom <= idx) cur = root.tocModel[i].atom
+                                else break
+                            }
+                            if (cur !== root.currentAtom) root.currentAtom = cur
+                        }
                     }
 
                     header: Item {
                         width: contentView.width
-                        height: recoTitleText.implicitHeight + AppTheme.spaceL
+                        height: recoTitleText.implicitHeight + AppTheme.spaceM
 
                         Text {
                             id: recoTitleText
@@ -287,67 +270,263 @@ Popup {
                         }
                     }
 
-                    model: (root.reco && root.reco.sections) ? root.reco.sections : []
+                    model: root.atoms
 
-                    delegate: Column {
+                    // Один делегат — пять вариантов, включается нужный.
+                    // (Inline-компоненты под Loader не видят контекст делегата,
+                    // поэтому обычные дети с visible.)
+                    delegate: Item {
+                        id: atomDel
                         width: contentView.width
-                        spacing: AppTheme.spaceM
+                        readonly property var d: modelData
+                        height: d.k === "sec" ? secCol.height
+                              : d.k === "sub" ? subCol.height
+                              : d.k === "p" ? pText.height
+                              : d.k === "li" ? liRow.height
+                              : exFrame.height
 
-                        // Заголовок раздела
-                        Text {
+                        // ── заголовок раздела ──
+                        Column {
+                            id: secCol
+                            visible: atomDel.d.k === "sec"
                             width: parent.width
-                            text: modelData.num + ". " + modelData.title
-                            color: AppTheme.textPrimary
-                            font.family: AppTheme.fontCondensed
-                            font.pixelSize: AppTheme.sizeH5
-                            font.weight: AppTheme.weightBold
-                            wrapMode: Text.WordWrap
-                        }
+                            spacing: AppTheme.spaceXS
+                            topPadding: AppTheme.spaceM
 
-                        Rectangle { width: parent.width; height: 1; color: AppTheme.borderDivider }
-
-                        // Абзацы раздела
-                        Repeater {
-                            model: modelData.paras
                             Text {
                                 width: parent.width
-                                text: modelData
+                                text: root.reco.sections[atomDel.d.sec] ? root.reco.sections[atomDel.d.sec].num + ". " + root.reco.sections[atomDel.d.sec].title : ""
+                                color: AppTheme.textPrimary
+                                font.family: AppTheme.fontCondensed
+                                font.pixelSize: AppTheme.sizeH4
+                                font.weight: AppTheme.weightBold
+                                wrapMode: Text.WordWrap
+                            }
+                            Text {
+                                width: parent.width - AppTheme.spaceL
+                                text: root.reco.sections[atomDel.d.sec] ? root.reco.sections[atomDel.d.sec].fullTitle : ""
+                                color: AppTheme.textTertiary
+                                font.family: AppTheme.fontFamily
+                                font.pixelSize: AppTheme.sizeSmall
+                                wrapMode: Text.WordWrap
+                            }
+                            Rectangle { width: parent.width; height: 2; color: AppTheme.borderDivider }
+                        }
+
+                        // ── заголовок подпункта ──
+                        Column {
+                            id: subCol
+                            visible: atomDel.d.k === "sub"
+                            width: parent.width
+                            spacing: AppTheme.spaceXS
+                            topPadding: AppTheme.spaceM
+
+                            Text {
+                                width: parent.width
+                                text: {
+                                    var s = root.reco.sections[atomDel.d.sec]
+                                    var sub = s ? s.subs[atomDel.d.sub] : null
+                                    return sub ? sub.num + ". " + sub.title : ""
+                                }
+                                color: AppTheme.accentBrand
+                                font.family: AppTheme.fontFamily
+                                font.pixelSize: AppTheme.sizeBodyLarge
+                                font.weight: AppTheme.weightBold
+                                wrapMode: Text.WordWrap
+                            }
+                            Rectangle { width: parent.width; height: 1; color: AppTheme.borderDivider; opacity: 0.6 }
+                        }
+
+                        // ── абзац ──
+                        Text {
+                            id: pText
+                            visible: atomDel.d.k === "p"
+                            width: parent.width
+                            text: atomDel.d.x || ""
+                            textFormat: Text.RichText
+                            horizontalAlignment: Text.AlignJustify
+                            wrapMode: Text.WordWrap
+                            color: AppTheme.textPrimary
+                            font.family: AppTheme.fontFamily
+                            font.pixelSize: AppTheme.sizeBody
+                            lineHeight: 1.35
+                        }
+
+                        // ── пункт списка ──
+                        Row {
+                            id: liRow
+                            visible: atomDel.d.k === "li"
+                            width: parent.width
+                            spacing: AppTheme.spaceXS
+
+                            Rectangle {
+                                width: 6; height: 6; radius: 3
+                                color: AppTheme.accentBrand
+                                opacity: 0.7
+                                anchors.top: parent.top
+                                anchors.topMargin: 8
+                            }
+                            Text {
+                                width: parent.width - 6 - AppTheme.spaceXS
+                                text: atomDel.d.x || ""
+                                textFormat: Text.RichText
+                                horizontalAlignment: Text.AlignJustify
+                                wrapMode: Text.WordWrap
                                 color: AppTheme.textPrimary
                                 font.family: AppTheme.fontFamily
                                 font.pixelSize: AppTheme.sizeBody
                                 lineHeight: 1.35
-                                wrapMode: Text.WordWrap
                             }
                         }
 
-                        // Подпункты
-                        Repeater {
-                            model: modelData.subs
-                            Column {
-                                width: parent.width
-                                spacing: AppTheme.spaceS
-                                topPadding: AppTheme.spaceS
+                        // ── пример-спойлер ──
+                        Rectangle {
+                            id: exFrame
+                            objectName: "exSpoiler"
+                            visible: atomDel.d.k === "ex"
+                            width: parent.width
+                            radius: AppTheme.radiusMedium
+                            color: AppTheme.bgSurface
+                            border.color: exHov.containsMouse || expanded ? AppTheme.accentBrand : AppTheme.borderDivider
+                            border.width: 1
+                            clip: true
 
-                                Text {
+                            property bool expanded: false
+                            height: exHeader.height + (expanded ? exBody.height + AppTheme.spaceS : 0) + AppTheme.spaceS * 2
+                            Behavior on height { NumberAnimation { duration: AppTheme.durStandard; easing.type: AppTheme.easeEnter } }
+                            Behavior on border.color { ColorAnimation { duration: AppTheme.durMicro } }
+
+                            // фирменная полоса слева
+                            Rectangle {
+                                anchors.left: parent.left
+                                anchors.top: parent.top
+                                anchors.bottom: parent.bottom
+                                width: 3
+                                color: AppTheme.accentBrand
+                                opacity: 0.55
+                            }
+
+                            Column {
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.margins: AppTheme.spaceM
+                                anchors.top: parent.top
+                                spacing: AppTheme.spaceS
+
+                                // заголовок-кнопка
+                                Item {
+                                    id: exHeader
                                     width: parent.width
-                                    text: modelData.num + ". " + modelData.title
-                                    color: AppTheme.accentBrand
-                                    font.family: AppTheme.fontFamily
-                                    font.pixelSize: AppTheme.sizeBody
-                                    font.weight: AppTheme.weightBold
-                                    wrapMode: Text.WordWrap
+                                    height: exTitleRow.implicitHeight
+
+                                    RowLayout {
+                                        id: exTitleRow
+                                        width: parent.width
+                                        spacing: AppTheme.spaceXS
+
+                                        Rectangle {
+                                            Layout.alignment: Qt.AlignTop
+                                            Layout.topMargin: 2
+                                            width: exBadge.implicitWidth + 14
+                                            height: 20
+                                            radius: AppTheme.radiusPill
+                                            color: AppTheme.bgBrandSoft
+                                            Text {
+                                                id: exBadge
+                                                anchors.centerIn: parent
+                                                text: "ПРИМЕР"
+                                                color: AppTheme.accentBrand
+                                                font.family: AppTheme.fontFamily
+                                                font.pixelSize: 10
+                                                font.letterSpacing: 0.8
+                                                font.weight: AppTheme.weightBold
+                                            }
+                                        }
+
+                                        Text {
+                                            Layout.fillWidth: true
+                                            Layout.alignment: Qt.AlignTop
+                                            text: atomDel.d.ex ? atomDel.d.ex.title : ""
+                                            color: AppTheme.textPrimary
+                                            font.family: AppTheme.fontFamily
+                                            font.pixelSize: AppTheme.sizeBody
+                                            font.weight: AppTheme.weightBold
+                                            wrapMode: Text.WordWrap
+                                        }
+
+                                        IconImage {
+                                            Layout.alignment: Qt.AlignTop
+                                            Layout.topMargin: 3
+                                            source: "../icons/chevron_down.svg"
+                                            width: AppTheme.iconMedium; height: AppTheme.iconMedium
+                                            color: AppTheme.textTertiary
+                                            rotation: exFrame.expanded ? 180 : 0
+                                            Behavior on rotation { NumberAnimation { duration: AppTheme.durFast; easing.type: AppTheme.easeEnter } }
+                                        }
+                                    }
+
+                                    MouseArea {
+                                        id: exHov
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: exFrame.expanded = !exFrame.expanded
+                                    }
                                 }
 
-                                Repeater {
-                                    model: modelData.paras
-                                    Text {
-                                        width: parent.width
-                                        text: modelData
-                                        color: AppTheme.textPrimary
-                                        font.family: AppTheme.fontFamily
-                                        font.pixelSize: AppTheme.sizeBody
-                                        lineHeight: 1.35
-                                        wrapMode: Text.WordWrap
+                                // содержимое примера
+                                Column {
+                                    id: exBody
+                                    width: parent.width
+                                    spacing: AppTheme.spaceS
+
+                                    Repeater {
+                                        model: atomDel.d.ex ? atomDel.d.ex.blocks : []
+
+                                        delegate: Item {
+                                            id: exBlock
+                                            width: exBody.width
+                                            readonly property var bd: modelData
+                                            height: bd.t === "li" ? exLiRow.height : exPara.height
+
+                                            Text {
+                                                id: exPara
+                                                visible: exBlock.bd.t !== "li"
+                                                width: parent.width
+                                                text: exBlock.bd.x || ""
+                                                textFormat: Text.RichText
+                                                horizontalAlignment: Text.AlignJustify
+                                                wrapMode: Text.WordWrap
+                                                color: AppTheme.textPrimary
+                                                font.family: AppTheme.fontFamily
+                                                font.pixelSize: AppTheme.sizeBody
+                                                lineHeight: 1.35
+                                            }
+
+                                            Row {
+                                                id: exLiRow
+                                                visible: exBlock.bd.t === "li"
+                                                width: parent.width
+                                                spacing: AppTheme.spaceXS
+                                                Rectangle {
+                                                    width: 6; height: 6; radius: 3
+                                                    color: AppTheme.accentWarning
+                                                    anchors.top: parent.top
+                                                    anchors.topMargin: 8
+                                                }
+                                                Text {
+                                                    width: parent.width - 6 - AppTheme.spaceXS
+                                                    text: exBlock.bd.x || ""
+                                                    textFormat: Text.RichText
+                                                    horizontalAlignment: Text.AlignJustify
+                                                    wrapMode: Text.WordWrap
+                                                    color: AppTheme.textPrimary
+                                                    font.family: AppTheme.fontFamily
+                                                    font.pixelSize: AppTheme.sizeBody
+                                                    lineHeight: 1.35
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }

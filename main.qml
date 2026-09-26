@@ -830,9 +830,13 @@ ApplicationWindow {
     // ДИАЛОГИ
     // ==========================================
     AppUI.WhatsNewDialog    { id: whatsNewDialog }
-    AppUI.RecoDialog         { id: recoDialog; onRequestCalendar: function(year) { prodCalendarDialog.openYear(year) } }
+    AppUI.RecoDialog         { id: recoDialog }
     AppUI.ProdCalendarDialog { id: prodCalendarDialog }
-    AppUI.HelpDialog        { id: helpDialog; onRequestReco: function() { recoDialog.openReco() } }
+    AppUI.HelpDialog        {
+        id: helpDialog
+        onRequestReco: function() { recoDialog.openReco() }
+        onRequestCalendar: function(year) { prodCalendarDialog.openYear(year) }
+    }
     AppUI.DayInspector      { id: dayInspector }
     AppUI.MoneyInspector    { 
         id: moneyInspector
