@@ -238,7 +238,7 @@ Popup {
                                             radius: AppTheme.radiusSmall
                                             color: !modelData ? "transparent"
                                                    : (modelData.hol ? AppTheme.bgDangerSoft
-                                                      : (modelData.off ? AppTheme.bgDayOff : AppTheme.bgCell))
+                                                      : (modelData.off ? AppTheme.bgPanel : AppTheme.bgCell))
 
                                             // Праздничный день: красная звезда
                                             // в верхнем левом углу, чуть повёрнутая —
@@ -362,7 +362,7 @@ Popup {
                             anchors.verticalCenter: parent.verticalCenter
                             width: 16; height: 16
                             radius: AppTheme.radiusSmall
-                            color: AppTheme.bgDayOff
+                            color: AppTheme.bgPanel
                             border.color: AppTheme.borderDivider
                             border.width: 1
                         }

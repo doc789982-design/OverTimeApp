@@ -10,7 +10,7 @@ QtObject {
     // подхватят автоматически.
     // ==========================================
     readonly property string appVersion: "2.0.0-ALPHA.20"
-    readonly property int appBuild: 184
+    readonly property int appBuild: 185
     readonly property string appVersionFull: appVersion + " · сборка " + appBuild
 
     // ==========================================
@@ -34,13 +34,9 @@ QtObject {
     // Светлая — Canvas (InstUI): белая страница, фарфор у панелей, карточки белые.
     // Тёмная — Material: #121212 и ступени elevation, календарь чуть светлее рельс.
     property color bgBase:     isDark ? "#1C1C1E" : "#FFFFFF"
-    // Панели — тон MD3 surfaceContainerLow, а не «чернее окна» (остаток MD2)
-    property color bgPanel:    isDark ? "#1D1D20" : "#F5F5F5"
+    property color bgPanel:    isDark ? "#121212" : "#F5F5F5"
     property color bgSurface:  isDark ? "#161618" : "#F8F9FA"
     property color bgCell:     isDark ? "#242426" : "#F4F5F7"
-    // Выходные дни в производственном календаре: собственный тон,
-    // чтобы выходные отличались и от рабочих дней, и от фона панелей
-    property color bgDayOff:   isDark ? "#1A1A1D" : "#ECEEF0"
     property color bgElevated: isDark ? "#2C2C2C" : "#FFFFFF"
     property color bgModal:    isDark ? "#333333" : "#FFFFFF"
     property color bgInput:    "transparent"
