@@ -10,7 +10,7 @@ QtObject {
     // подхватят автоматически.
     // ==========================================
     readonly property string appVersion: "2.0.0-ALPHA.20"
-    readonly property int appBuild: 180
+    readonly property int appBuild: 181
     readonly property string appVersionFull: appVersion + " · сборка " + appBuild
 
     // ==========================================
@@ -51,7 +51,7 @@ QtObject {
     property color accentBrand:   isDark ? "#4B9AEE" : "#0374B5" 
     property color accentInfo:    isDark ? "#82B1FF" : "#0056B3" 
     property color accentSuccess: isDark ? "#5CB85C" : "#107C3F" 
-    property color accentWarning: isDark ? "#F4AC5B" : "#E67300" 
+    property color accentWarning: isDark ? "#F4AC5B" : "#B45A00" 
     property color accentDanger:  isDark ? "#E76C78" : "#DE2E43" 
     property color accentPurple:  isDark ? "#C05C9A" : "#7C1052" 
     property color accentTeal:    isDark ? "#50A7B5" : "#006A7C" 
@@ -76,13 +76,13 @@ QtObject {
     // 3. ТЕКСТ (Typography Colors)
     // ==========================================
     property color textPrimary:   isDark ? "#DEE4EA" : "#2D3B45"
-    property color textSecondary: isDark ? "#8B949E" : "#6B7780"
-    property color textTertiary:  isDark ? "#6B757D" : "#8B969E"
+    property color textSecondary: isDark ? "#8B949E" : "#5F6B74"
+    property color textTertiary:  isDark ? "#6B757D" : "#767F87"
     property color textDisabled:  isDark ? "#484F58" : "#9AA0A6" 
     
     property color textInverse:   isDark ? "#202124" : "#FFFFFF" 
-    property color textOnAccent:  "#FFFFFF" 
-    property color textOnSoft:    accentBrand 
+    property color textOnAccent:  isDark ? "#0B1F33" : "#FFFFFF" 
+    property color textOnSoft:    isDark ? accentBrand : "#03629A" 
 
     // ==========================================
     // 4. ТИПОГРАФИКА (Strict Scale & Weights)
