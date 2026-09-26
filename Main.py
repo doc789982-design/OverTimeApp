@@ -9,7 +9,7 @@ import json
 import calendar
 import traceback
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
-from datetime import date, datetime, timedelta, time
+from datetime import date, datetime, timedelta, time as dt_time
 from pathlib import Path
 
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QWidget, QLabel, QProgressBar, QVBoxLayout, QHBoxLayout
@@ -1156,8 +1156,8 @@ class Backend(QObject):
                     breaks_data = json.loads(breaks_json)
                     breaks_list = []
                     for b in breaks_data:
-                        bs_time = time(int(b["start_h"]), int(b["start_m"]))
-                        be_time = time(int(b["end_h"]), int(b["end_m"]))
+                        bs_time = dt_time(int(b["start_h"]), int(b["start_m"]))
+                        be_time = dt_time(int(b["end_h"]), int(b["end_m"]))
                         
                         bs_dt = datetime.combine(d0, bs_time)
                         if bs_dt < start_dt: bs_dt += timedelta(days=1)
@@ -3196,8 +3196,8 @@ class Backend(QObject):
                     breaks_data = json.loads(breaks_json)
                     breaks_list = []
                     for b in breaks_data:
-                        bs_time = time(int(b["start_h"]), int(b["start_m"]))
-                        be_time = time(int(b["end_h"]), int(b["end_m"]))
+                        bs_time = dt_time(int(b["start_h"]), int(b["start_m"]))
+                        be_time = dt_time(int(b["end_h"]), int(b["end_m"]))
                         bs_dt = datetime.combine(d0, bs_time)
                         if bs_dt < start_dt: bs_dt += timedelta(days=1)
                         be_dt = datetime.combine(bs_dt.date(), be_time)
@@ -4008,8 +4008,14 @@ def main():
     # Обновление при запуске (в стиле Discord): проверка, скачивание и
     # установка до открытия главного окна. False — обновляемся, процесс
     # завершится, помощник откроет программу заново уже новой.
-    if not _startup_update_flow(app):
-        return
+    try:
+        if not _startup_update_flow(app):
+            return
+    except Exception:
+        # Страховка: сбой обновления при запуске никогда не должен
+        # мешать открыться программе.
+        _startup_log("СБОЙ проверки обновления: "
+                     + traceback.format_exc(limit=3))
 
     app_icon = QIcon(APP_ICON_PATH)
     app.setWindowIcon(app_icon)
@@ -4357,7 +4363,7 @@ def _startup_update_flow(app) -> bool:
     def _check():
         try:
             info = _startup_find_update(app_dir, cur_ver, cur_bld, ui,
-                                        log=_log)
+                                        log=_startup_log)
             if info:
                 found.update(info)
         except Exception as e:
