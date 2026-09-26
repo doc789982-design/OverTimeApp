@@ -78,11 +78,13 @@ Popup {
         tocModel = toc
         currentAtom = 0
         showCentered()
+        contentView.cancelWheelScroll()
         contentView.positionViewAtBeginning()
     }
 
     function jump(atom) {
         currentAtom = atom
+        contentView.cancelWheelScroll()
         contentView.currentIndex = atom
         contentView.positionViewAtIndex(atom, ListView.Beginning)
     }
@@ -172,7 +174,7 @@ Popup {
                         font.weight: AppTheme.weightBold
                     }
 
-                    ListView {
+                    SmoothListView {
                         id: tocView
                         objectName: "tocView"
                         Layout.fillWidth: true
@@ -232,7 +234,7 @@ Popup {
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
 
-                ListView {
+                SmoothListView {
                     id: contentView
                     objectName: "recoContentView"
                     anchors.fill: parent
@@ -243,7 +245,7 @@ Popup {
 
                     // подсветка оглавления при прокрутке: последний пункт выше края
                     onContentYChanged: {
-                        if (!moving) return
+                        if (!moving && !wheelScrolling) return
                         var idx = contentView.indexAt(contentView.contentX, contentView.contentY + 24)
                         if (idx >= 0) {
                             var cur = 0

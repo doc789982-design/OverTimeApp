@@ -5,11 +5,14 @@ import QtQuick.Layouts
 // ============================================================
 // ОКНО «ПРОИЗВОДСТВЕННЫЙ КАЛЕНДАРЬ» (2026 / 2027)
 //
-// Двенадцать месячных сеток: красным — праздничные и перенесённые
-// дни, серым — выходные, точкой отмечены предпраздничные
-// (сокращённые на час). Под каждым месяцем — полные нормы без
-// сокращений. Пояснения и переносы — внизу, прокручиваются вместе
-// с календарём. Данные сверены с таблицей норм до часа.
+// Двенадцать месячных сеток: праздничные и перенесённые дни
+// отмечены большой красной звездой на всю ячейку (как звёздочки
+// праздников в основном календаре), серым — обычные выходные,
+// оранжевой точкой — предпраздничные (сокращённые на час).
+// Под каждым месяцем — полные нормы без сокращений. Внизу окна,
+// всегда на виду: обозначения, справка о переносах и итог года.
+// Прокрутка — плавная, с инерцией, как в браузере. Данные
+// сверены с таблицей норм до часа.
 // ============================================================
 Popup {
     id: root
@@ -54,7 +57,8 @@ Popup {
         cal = backend.getProdCalendar(y)
         showCentered()
         Qt.callLater(function() {
-            if (scroll.flickableItem) scroll.flickableItem.contentY = 0
+            scroll.cancelWheelScroll()
+            scroll.contentY = 0
         })
     }
 
@@ -86,7 +90,8 @@ Popup {
                 font.weight: AppTheme.weightBold
             }
 
-            // Переключатель годов
+            // Переключатель годов — настоящие кнопки:
+            // выбранный год залит, второй — контурный
             Row {
                 anchors.right: parent.right
                 anchors.rightMargin: AppTheme.spaceM + 40
@@ -95,24 +100,11 @@ Popup {
 
                 Repeater {
                     model: root.years
-                    delegate: Rectangle {
-                        width: 74; height: 34
-                        radius: AppTheme.radiusMedium
-                        color: modelData === root.calYear ? AppTheme.stateSelected
-                               : (yHov.containsMouse ? AppTheme.stateHover : "transparent")
-                        border.color: modelData === root.calYear ? "transparent" : AppTheme.borderDivider
-                        border.width: 1
-                        Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
-
-                        Text {
-                            anchors.centerIn: parent
-                            text: modelData
-                            color: modelData === root.calYear ? AppTheme.textOnSoft : AppTheme.textSecondary
-                            font.family: AppTheme.fontFamily
-                            font.pixelSize: AppTheme.sizeBody
-                            font.weight: AppTheme.weightBold
-                        }
-                        MouseArea { id: yHov; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.openYear(modelData) }
+                    delegate: AppButton {
+                        width: 88
+                        text: modelData
+                        variant: modelData === root.calYear ? "primary" : "secondary"
+                        onClicked: root.openYear(modelData)
                     }
                 }
             }
@@ -136,7 +128,8 @@ Popup {
         }
 
         // ================= ПРОКРУЧИВАЕМЫЙ КОНТЕНТ =================
-        ScrollView {
+        // Плавная прокрутка с инерцией — как в браузере
+        SmoothFlickable {
             id: scroll
             objectName: "calScroll"
             anchors.top: headerBar.bottom
@@ -144,7 +137,11 @@ Popup {
             anchors.left: parent.left; anchors.right: parent.right
             anchors.bottom: footerBar.top
             clip: true
-            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+            flickableDirection: Flickable.VerticalFlick
+            boundsBehavior: Flickable.StopAtBounds
+            contentWidth: width
+            contentHeight: scrollColumn.height
+            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
             Column {
                 id: scrollColumn
@@ -235,21 +232,40 @@ Popup {
 
                                         delegate: Rectangle {
                                             width: monthCard.cellW
-                                            height: 25
+                                            height: 28
                                             radius: AppTheme.radiusSmall
                                             color: !modelData ? "transparent"
                                                    : (modelData.hol ? AppTheme.bgDangerSoft
                                                       : (modelData.off ? AppTheme.bgPanel : AppTheme.bgCell))
 
+                                            // Праздничный день: одна большая красная
+                                            // звезда на всю ячейку (за числом)
+                                            Image {
+                                                visible: modelData && modelData.hol
+                                                anchors.centerIn: parent
+                                                width: parent.height - 2
+                                                height: parent.height - 2
+                                                source: AppTheme.isDark
+                                                        ? "../icons/sparkle_danger_dark.svg"
+                                                        : "../icons/sparkle_danger_light.svg"
+                                                fillMode: Image.PreserveAspectFit
+                                                smooth: true
+                                                mipmap: true
+                                            }
+
                                             Text {
                                                 anchors.centerIn: parent
                                                 text: modelData ? modelData.d : ""
                                                 color: !modelData ? "transparent"
-                                                       : (modelData.hol ? AppTheme.accentDanger
+                                                       : (modelData.hol ? "#FFFFFF"
                                                           : (modelData.off ? AppTheme.textSecondary : AppTheme.textPrimary))
                                                 font.family: AppTheme.fontFamily
                                                 font.pixelSize: AppTheme.sizeSmall
                                                 font.weight: modelData && (modelData.hol || modelData.pre) ? AppTheme.weightBold : AppTheme.weightMedium
+                                                // белое число с красной каймой — читается
+                                                // и на звезде, и на подсвеченном фоне ячейки
+                                                style: modelData && modelData.hol ? Text.Outline : Text.Normal
+                                                styleColor: AppTheme.accentDanger
                                             }
 
                                             // Предпраздничный день: точка-звёздочка
@@ -284,124 +300,17 @@ Popup {
                     }
                 }
 
-                // ── ПОЯСНЕНИЯ (прокручиваются вместе с календарём) ──
-                Rectangle {
-                    width: parent.width
-                    height: legendCol.implicitHeight + AppTheme.spaceM * 2
-                    radius: AppTheme.radiusMedium
-                    color: AppTheme.bgSurface
-                    border.color: AppTheme.borderDivider
-                    border.width: 1
-
-                    Column {
-                        id: legendCol
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        anchors.margins: AppTheme.spaceM
-                        anchors.verticalCenter: parent.verticalCenter
-                        spacing: AppTheme.spaceXS
-
-                        Text {
-                            width: parent.width
-                            text: "ОБОЗНАЧЕНИЯ"
-                            color: AppTheme.textTertiary
-                            font.family: AppTheme.fontFamily
-                            font.pixelSize: AppTheme.sizeSmall
-                            font.letterSpacing: 1
-                            font.weight: AppTheme.weightBold
-                        }
-
-                        Row {
-                            spacing: AppTheme.spaceXS
-                            Rectangle { width: 18; height: 18; radius: AppTheme.radiusSmall; color: AppTheme.bgDangerSoft; border.width: 1; border.color: AppTheme.accentDanger; anchors.top: parent.top }
-                            Text {
-                                width: legendCol.width - 18 - AppTheme.spaceXS
-                                text: "красным — нерабочие праздничные дни и выходные, перенесённые на другие дни;"
-                                color: AppTheme.textSecondary
-                                font.family: AppTheme.fontFamily
-                                font.pixelSize: AppTheme.sizeSmall
-                                wrapMode: Text.WordWrap
-                            }
-                        }
-                        Row {
-                            spacing: AppTheme.spaceXS
-                            Rectangle { width: 18; height: 18; radius: AppTheme.radiusSmall; color: AppTheme.bgPanel; border.width: 1; border.color: AppTheme.borderDivider; anchors.top: parent.top }
-                            Text {
-                                width: legendCol.width - 18 - AppTheme.spaceXS
-                                text: "серым — обычные выходные дни (субботы и воскресенья);"
-                                color: AppTheme.textSecondary
-                                font.family: AppTheme.fontFamily
-                                font.pixelSize: AppTheme.sizeSmall
-                                wrapMode: Text.WordWrap
-                            }
-                        }
-                        Row {
-                            spacing: AppTheme.spaceXS
-                            Item {
-                                width: 18; height: 18
-                                Rectangle { anchors.centerIn: parent; width: 18; height: 18; radius: AppTheme.radiusSmall; color: AppTheme.bgCell }
-                                Rectangle { anchors.horizontalCenter: parent.horizontalCenter; anchors.bottom: parent.bottom; anchors.bottomMargin: 2; width: 4; height: 4; radius: 2; color: AppTheme.accentWarning }
-                            }
-                            Text {
-                                width: legendCol.width - 18 - AppTheme.spaceXS
-                                text: "оранжевая точка — предпраздничный день, служба сокращена на один час."
-                                color: AppTheme.textSecondary
-                                font.family: AppTheme.fontFamily
-                                font.pixelSize: AppTheme.sizeSmall
-                                wrapMode: Text.WordWrap
-                            }
-                        }
-                    }
-                }
-
-                // ── ПЕРЕНОСЫ ВЫХОДНЫХ ──
-                Rectangle {
-                    width: parent.width
-                    height: noteText.implicitHeight + AppTheme.spaceM * 2
-                    radius: AppTheme.radiusMedium
-                    color: AppTheme.bgSurface
-                    border.color: AppTheme.borderDivider
-                    border.width: 1
-
-                    Column {
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        anchors.margins: AppTheme.spaceM
-                        anchors.verticalCenter: parent.verticalCenter
-                        spacing: AppTheme.spaceXXS
-
-                        Text {
-                            width: parent.width
-                            text: "ПЕРЕНОСЫ ВЫХОДНЫХ ДНЕЙ"
-                            color: AppTheme.textTertiary
-                            font.family: AppTheme.fontFamily
-                            font.pixelSize: AppTheme.sizeSmall
-                            font.letterSpacing: 1
-                            font.weight: AppTheme.weightBold
-                        }
-                        Text {
-                            id: noteText
-                            width: parent.width
-                            text: (root.cal && root.cal.note) ? root.cal.note : ""
-                            color: AppTheme.textSecondary
-                            font.family: AppTheme.fontFamily
-                            font.pixelSize: AppTheme.sizeSmall
-                            wrapMode: Text.WordWrap
-                            lineHeight: 1.3
-                        }
-                    }
-                }
-
                 bottomPadding: AppTheme.spaceS
             }
         }
 
-        // ================= ПОДВАЛ: ИТОГ ГОДА =================
+        // ============ ПОДВАЛ: ОБОЗНАЧЕНИЯ · СПРАВКА · ИТОГ ГОДА ============
         Rectangle {
             id: footerBar
+            objectName: "calFooter"
             anchors.left: parent.left; anchors.right: parent.right
             anchors.bottom: parent.bottom
-            height: 66
+            height: footerCol.implicitHeight + AppTheme.spaceS * 2
             color: "transparent"
 
             Rectangle {
@@ -412,9 +321,87 @@ Popup {
             }
 
             Column {
-                anchors.fill: parent
+                id: footerCol
+                anchors.left: parent.left; anchors.right: parent.right
+                anchors.top: parent.top
                 anchors.margins: AppTheme.spaceS
-                spacing: AppTheme.spaceXXS
+                spacing: AppTheme.spaceXS
+
+                // Обозначения — всегда на виду, при любом положении прокрутки
+                Flow {
+                    width: parent.width
+                    spacing: AppTheme.spaceL
+
+                    Row {
+                        spacing: AppTheme.spaceXS
+                        Image {
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: 15; height: 15
+                            source: AppTheme.isDark
+                                    ? "../icons/sparkle_danger_dark.svg"
+                                    : "../icons/sparkle_danger_light.svg"
+                            fillMode: Image.PreserveAspectFit
+                            smooth: true
+                            mipmap: true
+                        }
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: "праздничный или перенесённый день"
+                            color: AppTheme.textSecondary
+                            font.family: AppTheme.fontFamily
+                            font.pixelSize: AppTheme.sizeSmall
+                        }
+                    }
+
+                    Row {
+                        spacing: AppTheme.spaceXS
+                        Rectangle {
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: 16; height: 16
+                            radius: AppTheme.radiusSmall
+                            color: AppTheme.bgPanel
+                            border.color: AppTheme.borderDivider
+                            border.width: 1
+                        }
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: "выходной (суббота, воскресенье)"
+                            color: AppTheme.textSecondary
+                            font.family: AppTheme.fontFamily
+                            font.pixelSize: AppTheme.sizeSmall
+                        }
+                    }
+
+                    Row {
+                        spacing: AppTheme.spaceXS
+                        Item {
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: 16; height: 16
+                            Rectangle {
+                                anchors.centerIn: parent
+                                width: 16; height: 16
+                                radius: AppTheme.radiusSmall
+                                color: AppTheme.bgCell
+                                border.color: AppTheme.borderDivider
+                                border.width: 1
+                            }
+                            Rectangle {
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                anchors.bottom: parent.bottom
+                                anchors.bottomMargin: 2
+                                width: 4; height: 4; radius: 2
+                                color: AppTheme.accentWarning
+                            }
+                        }
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: "предпраздничный — на час короче"
+                            color: AppTheme.textSecondary
+                            font.family: AppTheme.fontFamily
+                            font.pixelSize: AppTheme.sizeSmall
+                        }
+                    }
+                }
 
                 Text {
                     width: parent.width
@@ -440,6 +427,18 @@ Popup {
                     font.family: AppTheme.fontFamily
                     font.pixelSize: AppTheme.sizeSmall
                     elide: Text.ElideRight
+                }
+
+                // Справка о переносах — из производственного календаря
+                Text {
+                    width: parent.width
+                    visible: Boolean(root.cal && root.cal.note && root.cal.note !== "")
+                    text: (root.cal && root.cal.note) ? root.cal.note : ""
+                    color: AppTheme.textTertiary
+                    font.family: AppTheme.fontFamily
+                    font.pixelSize: AppTheme.sizeSmall
+                    wrapMode: Text.WordWrap
+                    lineHeight: 1.25
                 }
             }
         }

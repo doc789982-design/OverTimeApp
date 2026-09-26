@@ -218,12 +218,22 @@ AppSidePanel {
             // ==========================================
             Rectangle {
                 width: parent.width
-                height: Math.max(calRow.implicitHeight, 48 + AppTheme.spaceXS + 34 * 2 + AppTheme.spaceM * 2)
+                height: calRow.implicitHeight + AppTheme.spaceM * 2
                 color: calHov.containsMouse ? AppTheme.bgElevated : AppTheme.bgSurface
                 radius: AppTheme.radiusMedium
                 border.color: AppTheme.borderDivider
                 border.width: 1
                 Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
+
+                // Область клика «открыть 2026» — объявлена ПЕРВОЙ, поэтому
+                // лежит ПОД кнопками годов и не съедает их нажатия
+                MouseArea {
+                    id: calHov
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.requestCalendar(2026)
+                }
 
                 RowLayout {
                     id: calRow
@@ -270,7 +280,7 @@ AppSidePanel {
                         }
                     }
 
-                    // Кнопки годов
+                    // Годы — настоящие кнопки, со всеми состояниями
                     Column {
                         id: yearButtons
                         Layout.alignment: Qt.AlignTop
@@ -278,34 +288,14 @@ AppSidePanel {
 
                         Repeater {
                             model: [2026, 2027]
-                            delegate: Rectangle {
-                                width: 74; height: 34
-                                radius: AppTheme.radiusMedium
-                                color: yHov.containsMouse ? AppTheme.stateSelected : AppTheme.bgElevated
-                                border.width: 1
-                                border.color: yHov.containsMouse ? "transparent" : AppTheme.borderDivider
-                                Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
-
-                                Text {
-                                    anchors.centerIn: parent
-                                    text: modelData
-                                    color: yHov.containsMouse ? AppTheme.textOnSoft : AppTheme.textPrimary
-                                    font.family: AppTheme.fontFamily
-                                    font.pixelSize: AppTheme.sizeBody
-                                    font.weight: AppTheme.weightBold
-                                }
-                                MouseArea { id: yHov; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.requestCalendar(modelData) }
+                            delegate: AppButton {
+                                objectName: "calYearButton"
+                                text: modelData
+                                variant: "secondary"
+                                onClicked: root.requestCalendar(modelData)
                             }
                         }
                     }
-                }
-
-                MouseArea {
-                    id: calHov
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: root.requestCalendar(2026)
                 }
             }
 

@@ -129,13 +129,19 @@ Popup {
             }
         }
 
-        // КОНТЕНТ (Скроллируемый)
-        ScrollView {
+        // КОНТЕНТ (Скроллируемый) — плавно, с инерцией, как в браузере
+        SmoothFlickable {
+            id: panelScroll
+            objectName: "panelScroll"
             Layout.fillWidth: true
             Layout.fillHeight: true
             clip: true
-            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
-            
+            flickableDirection: Flickable.VerticalFlick
+            boundsBehavior: Flickable.StopAtBounds
+            contentWidth: width
+            contentHeight: contentArea.height + AppTheme.spaceS
+            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+
             Column {
                 id: contentArea
                 width: parent.width
