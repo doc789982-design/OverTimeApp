@@ -2492,13 +2492,30 @@ class Backend(QObject):
                     self.active_db.replace_duty_breaks(duty_id, breaks_list)
                     
             elif target_action["type"] == "comp":
+                # Компенсация хоткеем — та же механика, что в диалоге:
+                # «за прошлый год» = сентинел 1900-01-01 в event_date,
+                # реальный день пишется в order_date (для показа «В» в сетке)
                 unit = target_action["comp_unit"]
                 amount = int(target_action["comp_amount"])
+                prev_year = bool(target_action.get("comp_prev_year", False))
+                logic_date = date(1900, 1, 1) if prev_year else d0
                 if unit in ("hours", "overtime"):
-                    self.active_db.add_compensation_hours_dayoff(self._selected_employee_id, d0, amount * 60, f"Hotkey: {key_sequence}", unit=unit)
+                    self.active_db.conn.execute(
+                        "INSERT INTO compensation(employee_id,unit,method,event_date,order_date,amount_minutes,comment) VALUES (?,?,?,?,?,?,?)",
+                        (self._selected_employee_id, unit, "day_off", d_iso(logic_date), d_iso(d0), amount * 60, f"Hotkey: {key_sequence}")
+                    )
                 else:
                     dates_list = [d0 + timedelta(days=i) for i in range(amount)]
-                    self.active_db.add_compensation_days_dayoff(self._selected_employee_id, dates_list, f"Hotkey: {key_sequence}")
+                    cur = self.active_db.conn.execute(
+                        "INSERT INTO compensation(employee_id,unit,method,amount_days,comment,event_date) VALUES (?,?,?,?,?,?)",
+                        (self._selected_employee_id, "days", "day_off", len(dates_list), f"Hotkey: {key_sequence}", d_iso(logic_date)),
+                    )
+                    comp_id = cur.lastrowid
+                    for dd0 in dates_list:
+                        self.active_db.conn.execute(
+                            "INSERT INTO comp_day_off_date(compensation_id,employee_id,day_off_date) VALUES (?,?,?)",
+                            (comp_id, self._selected_employee_id, d_iso(dd0))
+                        )
             
             is_valid, err = validate_non_negative_over_year(self.active_db, self._selected_employee_id, d0.year)
             if not is_valid:

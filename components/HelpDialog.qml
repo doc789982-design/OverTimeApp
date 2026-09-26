@@ -34,7 +34,9 @@ AppSidePanel {
         if (hk.type === "comp") {
             let unit = hk.comp_unit === "days" ? getPlural(hk.comp_amount, "день", "дня", "дней")
                                                : getPlural(hk.comp_amount, "час", "часа", "часов")
-            return "Компенсация " + hk.comp_amount + " " + unit
+            let res = "Компенсация " + hk.comp_amount + " " + unit
+            if (hk.comp_prev_year) res += " (в счет прошлого года)"
+            return res
         }
         if (hk.type === "status") {
             let sNames = {"Б": "Больничный", "О": "Отпуск", "К": "Командировка"}

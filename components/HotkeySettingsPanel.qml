@@ -176,6 +176,7 @@ Item {
                                     newAction["type"] = "comp";
                                     newAction["comp_unit"] = hkCompUnit.currentValue;
                                     newAction["comp_amount"] = hkCompUnit.currentValue === "days" ? 1 : parseInt(hkCompAmt.text);
+                                    newAction["comp_prev_year"] = hkCompPrevYear.checked;
                                     
                                 } else if (hotkeyPageRoot.currentActionTab === 2) {
                                     newAction["type"] = "status";
@@ -267,6 +268,12 @@ Item {
                                 color: AppTheme.textSecondary; font.family: AppTheme.fontFamily; font.pixelSize: AppTheme.sizeSmall
                                 Layout.alignment: Qt.AlignVCenter
                             }
+                            AppCheckBox {
+                                id: hkCompPrevYear
+                                text: "В счет прошлого года"
+                                checked: false
+                                Layout.alignment: Qt.AlignVCenter
+                            }
                             Item { Layout.fillWidth: true }
                         }
 
@@ -340,7 +347,8 @@ Item {
                                                 if (hk.type === "duty") return "Дежурство: " + hk.duty_start + " - " + hk.duty_end
                                                 if (hk.type === "status") return "Установить статус: " + hk.status_val
                                                 let unt = hk.comp_unit === "hours" ? "Ночные" : (hk.comp_unit === "days" ? "Дни" : "Сверх нормы")
-                                                return "Компенсация: " + unt + " (" + hk.comp_amount + ")"
+                                                let yr = hk.comp_prev_year ? " · прошлый год" : ""
+                                                return "Компенсация: " + unt + " (" + hk.comp_amount + ")" + yr
                                             }
                                         }
 
@@ -354,7 +362,8 @@ Item {
                                                 if (hk.type === "duty") return "Дежурство: " + hk.duty_start + " — " + hk.duty_end
                                                 if (hk.type === "status") return "Статус: " + hk.status_val
                                                 let unt = hk.comp_unit === "hours" ? "Ночные" : (hk.comp_unit === "days" ? "Дни" : "Сверх нормы")
-                                                return "Компенсация: " + unt + " ×" + hk.comp_amount
+                                                let yr = hk.comp_prev_year ? " · прошлый год" : ""
+                                                return "Компенсация: " + unt + " ×" + hk.comp_amount + yr
                                             }
                                         }
                                     }
