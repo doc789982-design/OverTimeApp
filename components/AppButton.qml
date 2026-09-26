@@ -23,7 +23,7 @@ Button {
     // 1. АНИМАЦИЯ ВЖАТИЯ (Scale Physics)
     // ==========================================
     scale: control.pressed ? AppTheme.scaleActive : 1.0
-    Behavior on scale { NumberAnimation { duration: AppTheme.durFast; easing.type: AppTheme.easeStandard; easing.bezierCurve: AppTheme.curveStandard } }
+    Behavior on scale { NumberAnimation { duration: AppTheme.durFast; easing.type: AppTheme.easeStandard } }
     
     // Прозрачность для отключенной кнопки
     opacity: control.enabled ? 1.0 : AppTheme.alphaDisabled
@@ -77,8 +77,25 @@ Button {
             Behavior on color { ColorAnimation { duration: AppTheme.durFast } }
             Behavior on border.color { ColorAnimation { duration: AppTheme.durFast } }
 
-            // МАГИЯ 2: Тень-картинка; для Ghost и Secondary кнопок отключена!
-            AppShadow { level: 1; visible: control.variant !== "ghost" && control.variant !== "secondary" }
+            // МАГИЯ 2: мягкая тень по форме «стадиона». PNG-тень из AppShadow
+            // нарисована для прямоугольных карточек и не совпадает с полностью
+            // круглой кнопкой, поэтому собираем тень из полупрозрачных пилюль
+            // (стоимость — как у обычных Rectangle). Ghost и Secondary — без тени.
+            Repeater {
+                model: 4
+                Rectangle {
+                    z: -1
+                    radius: AppTheme.radiusPill
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.verticalCenterOffset: index + 1
+                    width: parent.width + index * 2
+                    height: parent.height + index * 2
+                    color: "#000000"
+                    opacity: (AppTheme.isDark ? 0.16 : 0.05) * (1.0 - index * 0.22)
+                    visible: control.variant !== "ghost" && control.variant !== "secondary"
+                }
+            }
 
             // МАГИЯ: Слой состояния (Hover / Press)
             // Он ложится поверх базового цвета, делая синий - темно-синим, а зеленый - темно-зеленым!

@@ -45,7 +45,7 @@ Item {
 
                     property real amplitude: titleHover.hovered ? 1.0 : 0.0
                     Behavior on amplitude { 
-                        NumberAnimation { duration: AppTheme.durSlow; easing.type: AppTheme.easeStandard; easing.bezierCurve: AppTheme.curveStandard } 
+                        NumberAnimation { duration: AppTheme.durSlow; easing.type: AppTheme.easeStandard } 
                     }
 
                     property real t: 0.0

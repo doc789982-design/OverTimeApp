@@ -17,7 +17,7 @@ CheckBox {
     opacity: control.enabled ? 1.0 : AppTheme.alphaDisabled
     scale: control.pressed ? AppTheme.scaleActive : 1.0
     
-    Behavior on scale { NumberAnimation { duration: AppTheme.durMicro; easing.type: AppTheme.easeStandard; easing.bezierCurve: AppTheme.curveStandard } }
+    Behavior on scale { NumberAnimation { duration: AppTheme.durMicro; easing.type: AppTheme.easeStandard } }
     Behavior on opacity { NumberAnimation { duration: AppTheme.durMicro; easing.type: AppTheme.easeColor } }
 
     indicator: Item {
@@ -59,7 +59,7 @@ CheckBox {
             
             // Анимация масштаба: галочка выпрыгивает из центра
             scale: control.checked ? 1.0 : 0.5
-            Behavior on scale { NumberAnimation { duration: AppTheme.durFast; easing.type: AppTheme.easeEnter; easing.bezierCurve: AppTheme.curveEnter } }
+            Behavior on scale { NumberAnimation { duration: AppTheme.durFast; easing.type: AppTheme.easeEnter } }
             Behavior on opacity { NumberAnimation { duration: AppTheme.durFast } }
 
             ShapePath {

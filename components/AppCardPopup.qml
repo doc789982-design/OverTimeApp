@@ -20,8 +20,8 @@ Popup {
     // ==========================================
     z: AppTheme.zModal + 10
 
-    Behavior on height { NumberAnimation { duration: AppTheme.durStandard; easing.type: AppTheme.easeStandard; easing.bezierCurve: AppTheme.curveStandard } }
-    Behavior on y { NumberAnimation { duration: AppTheme.durStandard; easing.type: AppTheme.easeStandard; easing.bezierCurve: AppTheme.curveStandard } }
+    Behavior on height { NumberAnimation { duration: AppTheme.durStandard; easing.type: AppTheme.easeStandard } }
+    Behavior on y { NumberAnimation { duration: AppTheme.durStandard; easing.type: AppTheme.easeStandard } }
 
     modal: true
     dim: true // Включаем затемнение!
@@ -41,14 +41,14 @@ Popup {
     // Анимации появления
     enter: Transition {
         ParallelAnimation {
-            NumberAnimation { property: "opacity"; from: 0.0; to: 1.0; duration: AppTheme.durFast; easing.type: AppTheme.easeEnter; easing.bezierCurve: AppTheme.curveEnter }
-            NumberAnimation { property: "scale"; from: 0.95; to: 1.0; duration: AppTheme.durFast; easing.type: AppTheme.easeEnter; easing.bezierCurve: AppTheme.curveEnter }
+            NumberAnimation { property: "opacity"; from: 0.0; to: 1.0; duration: AppTheme.durFast; easing.type: AppTheme.easeEnter }
+            NumberAnimation { property: "scale"; from: 0.92; to: 1.0; duration: AppTheme.durFast; easing.type: AppTheme.easeEnter }
         }
     }
     exit: Transition {
         ParallelAnimation {
-            NumberAnimation { property: "opacity"; from: 1.0; to: 0.0; duration: AppTheme.durMicro; easing.type: AppTheme.easeExit; easing.bezierCurve: AppTheme.curveExit }
-            NumberAnimation { property: "scale"; from: 1.0; to: 0.95; duration: AppTheme.durMicro; easing.type: AppTheme.easeExit; easing.bezierCurve: AppTheme.curveExit }
+            NumberAnimation { property: "opacity"; from: 1.0; to: 0.0; duration: AppTheme.durMicro; easing.type: AppTheme.easeExit }
+            NumberAnimation { property: "scale"; from: 1.0; to: 0.95; duration: AppTheme.durMicro; easing.type: AppTheme.easeExit }
         }
     }
 

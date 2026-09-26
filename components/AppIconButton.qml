@@ -17,7 +17,7 @@ Item {
     signal clicked()
 
     scale: mouseArea.pressed ? AppTheme.scaleActive : 1.0
-    Behavior on scale { NumberAnimation { duration: AppTheme.durFast; easing.type: AppTheme.easeStandard; easing.bezierCurve: AppTheme.curveStandard } }
+    Behavior on scale { NumberAnimation { duration: AppTheme.durFast; easing.type: AppTheme.easeStandard } }
 
     Rectangle {
         id: bg

@@ -30,7 +30,7 @@ Rectangle {
     Behavior on height { 
         NumberAnimation { 
             duration: AppTheme.durNormal 
-            easing.type: AppTheme.easeEnter; easing.bezierCurve: AppTheme.curveEnter 
+            easing.type: AppTheme.easeEnter 
         } 
     }
 }

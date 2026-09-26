@@ -54,12 +54,12 @@ Item {
         id: exportAnim
         
         ParallelAnimation {
-            NumberAnimation { target: arrowLayer; property: "y"; to: 6; duration: AppTheme.durStandard; easing.type: AppTheme.easeExit; easing.bezierCurve: AppTheme.curveExit }
+            NumberAnimation { target: arrowLayer; property: "y"; to: 6; duration: AppTheme.durStandard; easing.type: AppTheme.easeExit }
             NumberAnimation { target: arrowLayer; property: "opacity"; to: 0.0; duration: AppTheme.durStandard; easing.type: AppTheme.easeColor }
             
             SequentialAnimation {
                 PauseAnimation { duration: 100 }
-                NumberAnimation { target: boxLayer; property: "scale"; to: 0.85; duration: AppTheme.durFast; easing.type: AppTheme.easeExit; easing.bezierCurve: AppTheme.curveExit }
+                NumberAnimation { target: boxLayer; property: "scale"; to: 0.85; duration: AppTheme.durFast; easing.type: AppTheme.easeExit }
                 NumberAnimation { target: boxLayer; property: "scale"; to: 1.0; duration: AppTheme.durFast; easing.type: Easing.OutBounce }
             }
         }

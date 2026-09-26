@@ -112,7 +112,7 @@ ComboBox {
             height: AppTheme.iconSmall
             color: control.enabled ? AppTheme.textSecondary : AppTheme.textDisabled
             rotation: control.popup.visible ? 180 : 0
-            Behavior on rotation { NumberAnimation { duration: AppTheme.durNormal; easing.type: AppTheme.easeStandard; easing.bezierCurve: AppTheme.curveStandard } }
+            Behavior on rotation { NumberAnimation { duration: AppTheme.durNormal; easing.type: AppTheme.easeStandard } }
         }
     }
 
@@ -125,14 +125,14 @@ ComboBox {
 
         enter: Transition {
             ParallelAnimation {
-                NumberAnimation { property: "opacity"; from: 0.0; to: 1.0; duration: AppTheme.durFast; easing.type: AppTheme.easeEnter; easing.bezierCurve: AppTheme.curveEnter }
-                NumberAnimation { property: "y"; from: root.y - AppTheme.slideOffset; to: control.height + AppTheme.spaceXXS; duration: AppTheme.durFast; easing.type: AppTheme.easeEnter; easing.bezierCurve: AppTheme.curveEnter }
+                NumberAnimation { property: "opacity"; from: 0.0; to: 1.0; duration: AppTheme.durFast; easing.type: AppTheme.easeEnter }
+                NumberAnimation { property: "y"; from: root.y - AppTheme.slideOffset; to: control.height + AppTheme.spaceXXS; duration: AppTheme.durFast; easing.type: AppTheme.easeEnter }
             }
         }
         exit: Transition {
             ParallelAnimation {
-                NumberAnimation { property: "opacity"; from: 1.0; to: 0.0; duration: AppTheme.durMicro; easing.type: AppTheme.easeExit; easing.bezierCurve: AppTheme.curveExit }
-                NumberAnimation { property: "y"; from: control.height + AppTheme.spaceXXS; to: root.y - AppTheme.slideOffset; duration: AppTheme.durMicro; easing.type: AppTheme.easeExit; easing.bezierCurve: AppTheme.curveExit }
+                NumberAnimation { property: "opacity"; from: 1.0; to: 0.0; duration: AppTheme.durMicro; easing.type: AppTheme.easeExit }
+                NumberAnimation { property: "y"; from: control.height + AppTheme.spaceXXS; to: root.y - AppTheme.slideOffset; duration: AppTheme.durMicro; easing.type: AppTheme.easeExit }
             }
         }
 

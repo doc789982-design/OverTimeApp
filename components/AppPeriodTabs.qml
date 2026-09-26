@@ -135,7 +135,7 @@ Item {
                     Rectangle {
                         anchors.bottom: parent.bottom; anchors.horizontalCenter: parent.horizontalCenter
                         width: parent.isActive ? parent.width - AppTheme.spaceS : 0; height: 2; color: AppTheme.accentBrand
-                        Behavior on width { NumberAnimation { duration: AppTheme.durFast; easing.type: AppTheme.easeStandard; easing.bezierCurve: AppTheme.curveStandard } }
+                        Behavior on width { NumberAnimation { duration: AppTheme.durFast; easing.type: AppTheme.easeStandard } }
                     }
 
                     MouseArea {

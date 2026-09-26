@@ -38,10 +38,10 @@ Item {
         id: spinAnim
         NumberAnimation { 
             target: gearItem; property: "rotation"; to: 360 
-            duration: 800; easing.type: AppTheme.easeEnter; easing.bezierCurve: AppTheme.curveEnter
+            duration: 800; easing.type: AppTheme.easeEnter
         }
         SequentialAnimation {
-            NumberAnimation { target: gearItem; property: "scale"; to: 0.8; duration: AppTheme.durStandard; easing.type: AppTheme.easeExit; easing.bezierCurve: AppTheme.curveExit }
+            NumberAnimation { target: gearItem; property: "scale"; to: 0.8; duration: AppTheme.durStandard; easing.type: AppTheme.easeExit }
             NumberAnimation { target: gearItem; property: "scale"; to: 1.0; duration: AppTheme.durSlow; easing.type: Easing.OutBack }
         }
     }
@@ -50,9 +50,9 @@ Item {
         id: resetAnim
         NumberAnimation { 
             target: gearItem; property: "rotation"; to: 0
-            duration: AppTheme.durSlow; easing.type: AppTheme.easeStandard; easing.bezierCurve: AppTheme.curveStandard 
+            duration: AppTheme.durSlow; easing.type: AppTheme.easeStandard 
         }
-        NumberAnimation { target: gearItem; property: "scale"; to: 1.0; duration: AppTheme.durStandard; easing.type: AppTheme.easeEnter; easing.bezierCurve: AppTheme.curveEnter }
+        NumberAnimation { target: gearItem; property: "scale"; to: 1.0; duration: AppTheme.durStandard; easing.type: AppTheme.easeEnter }
     }
 
     MouseArea {

@@ -10,7 +10,7 @@ QtObject {
     // подхватят автоматически.
     // ==========================================
     readonly property string appVersion: "2.0.0-ALPHA.20"
-    readonly property int appBuild: 182
+    readonly property int appBuild: 183
     readonly property string appVersionFull: appVersion + " · сборка " + appBuild
 
     // ==========================================
@@ -227,14 +227,15 @@ QtObject {
     // Оставляем идеальные экспоненциальные кривые
     property int easeColor:    Easing.Linear
 
-    // Кривые Material Design 3 (emphasized), поданные через Easing.Bezier:
-    // у всех анимаций с этими токенами рядом ставится easing.bezierCurve.
-    property int easeEnter:    Easing.Bezier
-    property int easeExit:     Easing.Bezier
-    property int easeStandard: Easing.Bezier
-    property var curveEnter:    [0.05, 0.7, 0.1, 1]   // emphasized-decelerate
-    property var curveExit:     [0.3, 0.0, 0.8, 0.15] // emphasized-accelerate
-    property var curveStandard: [0.2, 0.0, 0.0, 1.0]  // emphasized
+    // Кривые движения — ближайшие встроенные аналоги MD3 emphasized.
+    // ВАЖНО: Easing.Bezier в Qt 6.11 НЕ РАБОТАЕТ — easing.bezierCurve
+    // молча игнорируется, и анимация становится линейной (проверено
+    // измерениями). Поэтому emphasized-decelerate = OutExpo (быстрый
+    // старт, мягкая посадка), emphasized-accelerate = InExpo,
+    // emphasized = InOutExpo — характер совпадает с кривыми MD3.
+    property int easeEnter:    Easing.OutExpo
+    property int easeExit:     Easing.InExpo
+    property int easeStandard: Easing.InOutExpo
 
     property int slideOffset:  20 // Чуть уменьшили разбег, чтобы соответствовало новой скорости
 

@@ -39,14 +39,14 @@ Popup {
             from: root.morphOpen ? root.x : root.x + root.width
             to: root.x
             duration: AppTheme.durStandard
-            easing.type: AppTheme.easeEnter; easing.bezierCurve: AppTheme.curveEnter 
+            easing.type: AppTheme.easeEnter 
         }
         NumberAnimation {
             property: "opacity"
             from: root.morphOpen ? 0.0 : 1.0
             to: 1.0
             duration: AppTheme.durStandard
-            easing.type: AppTheme.easeEnter; easing.bezierCurve: AppTheme.curveEnter
+            easing.type: AppTheme.easeEnter
         }
     }
     exit: Transition {
@@ -55,7 +55,7 @@ Popup {
             from: root.x
             to: root.morphOpen ? root.x : root.x + root.width
             duration: AppTheme.durFast // Уезжает быстрее, чем выезжает
-            easing.type: AppTheme.easeExit; easing.bezierCurve: AppTheme.curveExit 
+            easing.type: AppTheme.easeExit 
         }
     }
 

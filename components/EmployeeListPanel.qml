@@ -59,7 +59,7 @@ Rectangle {
                 border.width: searchInput.activeFocus ? AppTheme.focusWidth : 1
                 Behavior on color { ColorAnimation { duration: AppTheme.durNormal; easing.type: AppTheme.easeColor } }
                 Behavior on border.color { ColorAnimation { duration: AppTheme.durNormal; easing.type: AppTheme.easeColor } }
-                Behavior on border.width { NumberAnimation { duration: AppTheme.durFast; easing.type: AppTheme.easeStandard; easing.bezierCurve: AppTheme.curveStandard } }
+                Behavior on border.width { NumberAnimation { duration: AppTheme.durFast; easing.type: AppTheme.easeStandard } }
 
                 Rectangle {
                     anchors.fill: parent
@@ -70,7 +70,7 @@ Rectangle {
                     border.width: 2
                     opacity: searchInput.activeFocus ? 0.22 : 0
                     z: -1
-                    Behavior on opacity { NumberAnimation { duration: AppTheme.durNormal; easing.type: AppTheme.easeStandard; easing.bezierCurve: AppTheme.curveStandard } }
+                    Behavior on opacity { NumberAnimation { duration: AppTheme.durNormal; easing.type: AppTheme.easeStandard } }
                 }
 
                 RowLayout {
@@ -109,7 +109,7 @@ Rectangle {
                         clip: true
 
                         Behavior on Layout.preferredWidth {
-                            NumberAnimation { duration: AppTheme.durFast; easing.type: AppTheme.easeStandard; easing.bezierCurve: AppTheme.curveStandard }
+                            NumberAnimation { duration: AppTheme.durFast; easing.type: AppTheme.easeStandard }
                         }
 
                         Rectangle {
@@ -472,7 +472,7 @@ Rectangle {
                             Behavior on height {
                                 NumberAnimation {
                                     duration: AppTheme.durStandard
-                                    easing.type: AppTheme.easeStandard; easing.bezierCurve: AppTheme.curveStandard
+                                    easing.type: AppTheme.easeStandard
                                 }
                             }
                             Behavior on color {

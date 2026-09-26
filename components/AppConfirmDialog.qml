@@ -43,14 +43,14 @@ Popup {
 
     enter: Transition {
         ParallelAnimation {
-            NumberAnimation { property: "opacity"; from: 0.0; to: 1.0; duration: 150; easing.type: Easing.OutQuad }
-            NumberAnimation { property: "scale"; from: 0.9; to: 1.0; duration: AppTheme.durStandard; easing.type: AppTheme.easeEnter; easing.bezierCurve: AppTheme.curveEnter }
+            NumberAnimation { property: "opacity"; from: 0.0; to: 1.0; duration: AppTheme.durFast; easing.type: AppTheme.easeEnter }
+            NumberAnimation { property: "scale"; from: 0.92; to: 1.0; duration: AppTheme.durStandard; easing.type: AppTheme.easeEnter }
         }
     }
     exit: Transition {
         ParallelAnimation {
             NumberAnimation { property: "opacity"; from: 1.0; to: 0.0; duration: 100; easing.type: Easing.InQuad }
-            NumberAnimation { property: "scale"; from: 1.0; to: 0.95; duration: 150; easing.type: AppTheme.easeExit; easing.bezierCurve: AppTheme.curveExit }
+            NumberAnimation { property: "scale"; from: 1.0; to: 0.95; duration: 150; easing.type: AppTheme.easeExit }
         }
     }
 

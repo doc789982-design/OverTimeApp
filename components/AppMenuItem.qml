@@ -116,7 +116,7 @@ MenuItem {
 
         // Плавное выделение пункта при наведении — как в меню дня (ЛКМ по ячейке)
         Behavior on color {
-            ColorAnimation { duration: AppTheme.durMicro; easing.type: AppTheme.easeStandard; easing.bezierCurve: AppTheme.curveStandard }
+            ColorAnimation { duration: AppTheme.durMicro; easing.type: AppTheme.easeStandard }
         }
     }
 }
