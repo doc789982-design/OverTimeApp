@@ -9,6 +9,9 @@ AppSidePanel {
 
     readonly property string githubUrl: "https://github.com/doc789982-design/OverTimeApp/releases"
 
+    // Открыть окно методических рекомендаций (подключается в main.qml).
+    signal requestReco()
+
     // Человекочитаемое описание действия горячей клавиши (используется в подсказке
     // у иконки справки в главном окне — main.qml).
     function describeHotkey(hk) {
@@ -142,6 +145,72 @@ AppSidePanel {
                     onClicked: Qt.openUrlExternally(root.githubUrl)
                 }
             }
+            // ==========================================
+            // МЕТОДИЧЕСКИЕ РЕКОМЕНДАЦИИ ПО ПЕРЕРАБОТКЕ
+            // ==========================================
+            Rectangle {
+                width: parent.width
+                height: recoRow.implicitHeight + (AppTheme.spaceM * 2)
+                color: recoHov.containsMouse ? AppTheme.bgElevated : AppTheme.bgSurface
+                radius: AppTheme.radiusMedium
+                border.color: AppTheme.borderDivider
+                border.width: 1
+                Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
+
+                Row {
+                    id: recoRow
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.margins: AppTheme.spaceM
+                    spacing: AppTheme.spaceM
+
+                    Rectangle {
+                        width: 48; height: 48
+                        radius: AppTheme.radiusMedium
+                        color: AppTheme.bgBrandSoft
+                        IconImage {
+                            anchors.centerIn: parent
+                            source: "../icons/help.svg"
+                            width: AppTheme.iconLarge; height: AppTheme.iconLarge
+                            color: AppTheme.accentBrand
+                        }
+                    }
+
+                    Column {
+                        width: parent.width - 48 - AppTheme.spaceM
+                        spacing: AppTheme.spaceXS
+                        y: (parent.height - height) / 2
+
+                        Text {
+                            width: parent.width
+                            text: "Методические рекомендации"
+                            color: AppTheme.textPrimary
+                            font.family: AppTheme.fontFamily
+                            font.pixelSize: AppTheme.sizeBodyLarge
+                            font.weight: AppTheme.weightBold
+                            wrapMode: Text.WordWrap
+                        }
+                        Text {
+                            width: parent.width
+                            text: "Как привлекать сотрудников к переработке — в будни, ночью, в выходные и праздники — и как предоставлять за это компенсации. С оглавлением, быстрыми переходами по пунктам и производственными календарями. С оглавлением, быстрыми переходами и производственными календарями."
+                            color: AppTheme.textSecondary
+                            font.family: AppTheme.fontFamily
+                            font.pixelSize: AppTheme.sizeBody
+                            wrapMode: Text.WordWrap
+                        }
+                    }
+                }
+
+                MouseArea {
+                    id: recoHov
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    hoverEnabled: true
+                    onClicked: root.requestReco()
+                }
+            }
+
             // ==========================================
             // ВЕБ-ВЕРСИЯ — ЭТАП ПЕРЕЕЗДА ИНТЕРФЕЙСА
             // ==========================================

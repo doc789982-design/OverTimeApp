@@ -3487,8 +3487,32 @@ class Backend(QObject):
         except Exception:
             return []
 
-    @Slot(str, str, result="QVariant")
-    def getShiftDatesForPeriod(self, start_date_str: str, end_date_str: str):
+    @Slot(result="QVariant")
+    def getRecoSections(self):
+        """Методические рекомендации для окна с оглавлением.
+
+        Текст перенесён из официального PDF (см. methodical_data.py);
+        календарь разделов и подпунктов — в стиле справки КонсультантПлюс.
+        """
+        try:
+            from methodical_data import RECO_SECTIONS, RECO_TITLE
+            return {"title": RECO_TITLE, "sections": RECO_SECTIONS}
+        except Exception:
+            return {"title": "", "sections": []}
+
+    @Slot(int, result="QVariant")
+    def getProdCalendar(self, year):
+        """Производственный календарь года (2026/2027): сетки месяцев,
+        праздники, переносы и нормы рабочего времени. Данные сверены
+        с таблицей норм до часа."""
+        try:
+            from methodical_data import PROD_CALENDARS
+            return PROD_CALENDARS.get(int(year)) or {}
+        except Exception:
+            return {}
+
+    @Slot(str, str, result="QVariant")
+    def getShiftDatesForPeriod(self, start_date_str: str, end_date_str: str):
         """
         Анализирует паттерн сменщика и возвращает даты его рабочих дней
         в заданном периоде. Вызывается из окна компенсации (DayCompDialog).

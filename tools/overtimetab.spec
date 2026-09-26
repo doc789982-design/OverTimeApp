@@ -62,6 +62,7 @@ HIDDENIMPORTS = [
     "app_update",
     "recovery",               # аварийный восстановитель (первый import Main.py)
     "webapp.server",          # экспериментальный веб-режим (--web)
+    "methodical_data",        # методички и производственные календари (окно справки)
 ]
 
 EXCLUDES = list(UNUSED_STDLIB) + list(UNUSED_PYSIDE_MODULES)
