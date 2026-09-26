@@ -5,14 +5,16 @@ import QtQuick.Layouts
 // ============================================================
 // ОКНО «ПРОИЗВОДСТВЕННЫЙ КАЛЕНДАРЬ» (2026 / 2027)
 //
-// Двенадцать месячных сеток: праздничные и перенесённые дни
-// отмечены большой красной звездой на всю ячейку (как звёздочки
-// праздников в основном календаре), серым — обычные выходные,
-// оранжевой точкой — предпраздничные (сокращённые на час).
-// Под каждым месяцем — полные нормы без сокращений. Внизу окна,
-// всегда на виду: обозначения, справка о переносах и итог года.
-// Прокрутка — плавная, с инерцией, как в браузере. Данные
-// сверены с таблицей норм до часа.
+// Двенадцать месячных сеток. Красная звезда в углу ячейки —
+// нерабочий ПРАЗДНИЧНЫЙ день по ст. 112 ТК РФ (работа в такой
+// день оплачивается в двойном размере): ровно 14 дней в году,
+// перенесённые выходные сюда не попадают. Серым — выходные дни,
+// в том числе перенесённые (сб/вс и дни с переносов), оранжевой
+// точкой — предпраздничные (сокращённые на час). Под каждым
+// месяцем — полные нормы без сокращений. Внизу окна, всегда на
+// виду: обозначения, справка о переносах и итог года. Прокрутка
+// — плавная, с инерцией, как в браузере. Данные сверены с
+// таблицей норм до часа.
 // ============================================================
 Popup {
     id: root
@@ -238,13 +240,18 @@ Popup {
                                                    : (modelData.hol ? AppTheme.bgDangerSoft
                                                       : (modelData.off ? AppTheme.bgPanel : AppTheme.bgCell))
 
-                                            // Праздничный день: одна большая красная
-                                            // звезда на всю ячейку (за числом)
+                                            // Праздничный день: красная звезда
+                                            // в верхнем левом углу, чуть повёрнутая —
+                                            // число остаётся свободным по центру
                                             Image {
                                                 visible: modelData && modelData.hol
-                                                anchors.centerIn: parent
-                                                width: parent.height - 2
-                                                height: parent.height - 2
+                                                anchors.top: parent.top
+                                                anchors.left: parent.left
+                                                anchors.topMargin: 1
+                                                anchors.leftMargin: 2
+                                                width: 12
+                                                height: 12
+                                                rotation: 18
                                                 source: AppTheme.isDark
                                                         ? "../icons/sparkle_danger_dark.svg"
                                                         : "../icons/sparkle_danger_light.svg"
@@ -257,15 +264,11 @@ Popup {
                                                 anchors.centerIn: parent
                                                 text: modelData ? modelData.d : ""
                                                 color: !modelData ? "transparent"
-                                                       : (modelData.hol ? "#FFFFFF"
+                                                       : (modelData.hol ? AppTheme.accentDanger
                                                           : (modelData.off ? AppTheme.textSecondary : AppTheme.textPrimary))
                                                 font.family: AppTheme.fontFamily
                                                 font.pixelSize: AppTheme.sizeSmall
                                                 font.weight: modelData && (modelData.hol || modelData.pre) ? AppTheme.weightBold : AppTheme.weightMedium
-                                                // белое число с красной каймой — читается
-                                                // и на звезде, и на подсвеченном фоне ячейки
-                                                style: modelData && modelData.hol ? Text.Outline : Text.Normal
-                                                styleColor: AppTheme.accentDanger
                                             }
 
                                             // Предпраздничный день: точка-звёздочка
@@ -346,7 +349,7 @@ Popup {
                         }
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
-                            text: "праздничный или перенесённый день"
+                            text: "нерабочий праздничный день — работа оплачивается в двойном размере"
                             color: AppTheme.textSecondary
                             font.family: AppTheme.fontFamily
                             font.pixelSize: AppTheme.sizeSmall
@@ -365,7 +368,7 @@ Popup {
                         }
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
-                            text: "выходной (суббота, воскресенье)"
+                            text: "выходные дни, в том числе перенесённые (субботы и воскресенья)"
                             color: AppTheme.textSecondary
                             font.family: AppTheme.fontFamily
                             font.pixelSize: AppTheme.sizeSmall
