@@ -276,7 +276,7 @@ Item {
                             Behavior on scale {
                                 NumberAnimation {
                                     duration: AppTheme.durMicro
-                                    easing.type: AppTheme.easeStandard
+                                    easing.type: AppTheme.easeStandard; easing.bezierCurve: AppTheme.curveStandard
                                 }
                             }
                             Behavior on color {

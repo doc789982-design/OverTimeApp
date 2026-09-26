@@ -63,7 +63,7 @@ Item {
         // Squish анимация
         scale: root.draggingHandle === "start" ? AppTheme.scaleActive : (mouseArea.containsMouse ? 1.1 : 1.0)
         
-        Behavior on scale { NumberAnimation { duration: AppTheme.durFast; easing.type: AppTheme.easeStandard } }
+        Behavior on scale { NumberAnimation { duration: AppTheme.durFast; easing.type: AppTheme.easeStandard; easing.bezierCurve: AppTheme.curveStandard } }
         Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
 
         x: track.x + (root.startMinutes / 1440) * track.width - (width / 2)
@@ -87,7 +87,7 @@ Item {
             opacity: isVisible ? 1.0 : 0.0
             
             Behavior on opacity { NumberAnimation { duration: AppTheme.durFast; easing.type: AppTheme.easeColor } }
-            Behavior on anchors.bottomMargin { NumberAnimation { duration: AppTheme.durFast; easing.type: AppTheme.easeEnter } }
+            Behavior on anchors.bottomMargin { NumberAnimation { duration: AppTheme.durFast; easing.type: AppTheme.easeEnter; easing.bezierCurve: AppTheme.curveEnter } }
 
             // Тень-картинка вместо вычисляемой (Level 5)
             AppShadow { level: 5 }
@@ -117,7 +117,7 @@ Item {
         
         scale: root.draggingHandle === "end" ? AppTheme.scaleActive : (mouseArea.containsMouse ? 1.1 : 1.0)
         
-        Behavior on scale { NumberAnimation { duration: AppTheme.durFast; easing.type: AppTheme.easeStandard } }
+        Behavior on scale { NumberAnimation { duration: AppTheme.durFast; easing.type: AppTheme.easeStandard; easing.bezierCurve: AppTheme.curveStandard } }
         Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
 
         x: track.x + (root.endMinutes / 1440) * track.width - (width / 2)
@@ -141,7 +141,7 @@ Item {
             opacity: isVisible ? 1.0 : 0.0
             
             Behavior on opacity { NumberAnimation { duration: AppTheme.durFast; easing.type: AppTheme.easeColor } }
-            Behavior on anchors.bottomMargin { NumberAnimation { duration: AppTheme.durFast; easing.type: AppTheme.easeEnter } }
+            Behavior on anchors.bottomMargin { NumberAnimation { duration: AppTheme.durFast; easing.type: AppTheme.easeEnter; easing.bezierCurve: AppTheme.curveEnter } }
 
             // Тень-картинка вместо вычисляемой (Level 5)
             AppShadow { level: 5 }

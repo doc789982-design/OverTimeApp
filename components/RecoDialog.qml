@@ -32,14 +32,14 @@ Popup {
 
     enter: Transition {
         ParallelAnimation {
-            NumberAnimation { property: "opacity"; from: 0.0; to: 1.0; duration: AppTheme.durStandard; easing.type: AppTheme.easeEnter }
-            NumberAnimation { property: "scale"; from: 0.96; to: 1.0; duration: AppTheme.durStandard; easing.type: AppTheme.easeEnter }
+            NumberAnimation { property: "opacity"; from: 0.0; to: 1.0; duration: AppTheme.durStandard; easing.type: AppTheme.easeEnter; easing.bezierCurve: AppTheme.curveEnter }
+            NumberAnimation { property: "scale"; from: 0.96; to: 1.0; duration: AppTheme.durStandard; easing.type: AppTheme.easeEnter; easing.bezierCurve: AppTheme.curveEnter }
         }
     }
     exit: Transition {
         ParallelAnimation {
-            NumberAnimation { property: "opacity"; from: 1.0; to: 0.0; duration: AppTheme.durFast; easing.type: AppTheme.easeExit }
-            NumberAnimation { property: "scale"; from: 1.0; to: 0.96; duration: AppTheme.durFast; easing.type: AppTheme.easeExit }
+            NumberAnimation { property: "opacity"; from: 1.0; to: 0.0; duration: AppTheme.durFast; easing.type: AppTheme.easeExit; easing.bezierCurve: AppTheme.curveExit }
+            NumberAnimation { property: "scale"; from: 1.0; to: 0.96; duration: AppTheme.durFast; easing.type: AppTheme.easeExit; easing.bezierCurve: AppTheme.curveExit }
         }
     }
 
@@ -395,7 +395,7 @@ Popup {
 
                             property bool expanded: false
                             height: exHeader.height + (expanded ? exBody.height + AppTheme.spaceS : 0) + AppTheme.spaceS * 2
-                            Behavior on height { NumberAnimation { duration: AppTheme.durStandard; easing.type: AppTheme.easeEnter } }
+                            Behavior on height { NumberAnimation { duration: AppTheme.durStandard; easing.type: AppTheme.easeEnter; easing.bezierCurve: AppTheme.curveEnter } }
                             Behavior on border.color { ColorAnimation { duration: AppTheme.durMicro } }
 
                             // фирменная полоса слева
@@ -463,7 +463,7 @@ Popup {
                                             width: AppTheme.iconMedium; height: AppTheme.iconMedium
                                             color: AppTheme.textTertiary
                                             rotation: exFrame.expanded ? 180 : 0
-                                            Behavior on rotation { NumberAnimation { duration: AppTheme.durFast; easing.type: AppTheme.easeEnter } }
+                                            Behavior on rotation { NumberAnimation { duration: AppTheme.durFast; easing.type: AppTheme.easeEnter; easing.bezierCurve: AppTheme.curveEnter } }
                                         }
                                     }
 

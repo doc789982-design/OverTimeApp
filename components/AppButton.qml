@@ -11,7 +11,7 @@ Button {
     property string iconSource: "" 
     
     // Строгая высота по дизайн-системе
-    implicitHeight: 36 
+    implicitHeight: 40 // высота кнопки по Material Design 3
     
     // Ширина = ширина контента + системные отступы (минимум 100px)
     implicitWidth: Math.max(100, contentRow.implicitWidth + (AppTheme.spaceM * 2))
@@ -23,7 +23,7 @@ Button {
     // 1. АНИМАЦИЯ ВЖАТИЯ (Scale Physics)
     // ==========================================
     scale: control.pressed ? AppTheme.scaleActive : 1.0
-    Behavior on scale { NumberAnimation { duration: AppTheme.durFast; easing.type: AppTheme.easeStandard } }
+    Behavior on scale { NumberAnimation { duration: AppTheme.durFast; easing.type: AppTheme.easeStandard; easing.bezierCurve: AppTheme.curveStandard } }
     
     // Прозрачность для отключенной кнопки
     opacity: control.enabled ? 1.0 : AppTheme.alphaDisabled
@@ -69,7 +69,7 @@ Button {
             id: bgRect
             anchors.fill: parent
             color: control.getVariantBgColor()
-            radius: AppTheme.radiusMedium 
+            radius: AppTheme.radiusPill // «стадион» по Material Design 3
             
             border.color: control.getVariantBorderColor()
             border.width: 1
@@ -96,7 +96,7 @@ Button {
         Rectangle {
             anchors.fill: parent
             anchors.margins: -AppTheme.focusOffset - AppTheme.focusWidth
-            radius: AppTheme.radiusMedium + AppTheme.focusOffset
+            radius: AppTheme.radiusPill
             
             color: "transparent"
             border.color: AppTheme.borderFocus

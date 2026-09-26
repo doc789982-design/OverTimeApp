@@ -16,10 +16,10 @@ Popup {
 
     // АНИМАЦИИ ВЫЕЗДА СНИЗУ
     enter: Transition { 
-        NumberAnimation { property: "y"; from: parent.height; to: parent.height - root.height; duration: AppTheme.durStandard; easing.type: AppTheme.easeEnter } 
+        NumberAnimation { property: "y"; from: parent.height; to: parent.height - root.height; duration: AppTheme.durStandard; easing.type: AppTheme.easeEnter; easing.bezierCurve: AppTheme.curveEnter } 
     }
     exit: Transition { 
-        NumberAnimation { property: "y"; from: parent.height - root.height; to: parent.height; duration: AppTheme.durFast; easing.type: AppTheme.easeExit } 
+        NumberAnimation { property: "y"; from: parent.height - root.height; to: parent.height; duration: AppTheme.durFast; easing.type: AppTheme.easeExit; easing.bezierCurve: AppTheme.curveExit } 
     }
 
     // ФОН И ТЕНЬ (Level 4)

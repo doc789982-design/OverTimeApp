@@ -37,7 +37,7 @@ Item {
         onDrawColorChanged: requestPaint()
 
         Behavior on morphProgress { NumberAnimation { duration: 600; easing.type: Easing.InOutBack } }
-        Behavior on rayOffset { NumberAnimation { duration: AppTheme.durSlow; easing.type: AppTheme.easeEnter } }
+        Behavior on rayOffset { NumberAnimation { duration: AppTheme.durSlow; easing.type: AppTheme.easeEnter; easing.bezierCurve: AppTheme.curveEnter } }
 
         onPaint: {
             var ctx = getContext("2d"); ctx.clearRect(0, 0, width, height)

@@ -123,7 +123,7 @@ Popup {
                 from: root.y; 
                 to: root.y + AppTheme.slideOffset; 
                 duration: AppTheme.durFast; 
-                easing.type: AppTheme.easeExit 
+                easing.type: AppTheme.easeExit; easing.bezierCurve: AppTheme.curveExit 
             }
         }
     }

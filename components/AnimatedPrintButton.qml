@@ -54,11 +54,11 @@ Item {
         id: printAnim
         
         ParallelAnimation {
-            NumberAnimation { target: paperLayer; property: "y"; to: -2; duration: AppTheme.durStandard; easing.type: AppTheme.easeExit }
+            NumberAnimation { target: paperLayer; property: "y"; to: -2; duration: AppTheme.durStandard; easing.type: AppTheme.easeExit; easing.bezierCurve: AppTheme.curveExit }
             NumberAnimation { target: paperLayer; property: "opacity"; to: 0.0; duration: AppTheme.durStandard }
             
             SequentialAnimation {
-                NumberAnimation { target: bodyLayer; property: "scale"; to: 0.85; duration: AppTheme.durFast; easing.type: AppTheme.easeExit }
+                NumberAnimation { target: bodyLayer; property: "scale"; to: 0.85; duration: AppTheme.durFast; easing.type: AppTheme.easeExit; easing.bezierCurve: AppTheme.curveExit }
                 NumberAnimation { target: bodyLayer; property: "scale"; to: 1.0; duration: AppTheme.durFast; easing.type: Easing.OutBounce }
             }
         }

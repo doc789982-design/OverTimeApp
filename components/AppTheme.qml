@@ -10,7 +10,7 @@ QtObject {
     // подхватят автоматически.
     // ==========================================
     readonly property string appVersion: "2.0.0-ALPHA.20"
-    readonly property int appBuild: 181
+    readonly property int appBuild: 182
     readonly property string appVersionFull: appVersion + " · сборка " + appBuild
 
     // ==========================================
@@ -125,7 +125,7 @@ QtObject {
     // ==========================================
     // 6. ИНТЕРАКТИВ И ПРОЗРАЧНОСТЬ (States & Opacity)
     // ==========================================
-    property color stateHover:    isDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.04)
+    property color stateHover:    isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.08)
     property color statePress:    isDark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.08)
     property color stateSelected: isDark ? "#264B9AEE" : "#1A0875E1" // 15% и 10% opacity
 
@@ -225,10 +225,16 @@ QtObject {
     property int durSlow:     400 
 
     // Оставляем идеальные экспоненциальные кривые
-    property int easeColor:    Easing.Linear     
-    property int easeEnter:    Easing.OutExpo   
-    property int easeExit:     Easing.InExpo    
-    property int easeStandard: Easing.InOutExpo 
+    property int easeColor:    Easing.Linear
+
+    // Кривые Material Design 3 (emphasized), поданные через Easing.Bezier:
+    // у всех анимаций с этими токенами рядом ставится easing.bezierCurve.
+    property int easeEnter:    Easing.Bezier
+    property int easeExit:     Easing.Bezier
+    property int easeStandard: Easing.Bezier
+    property var curveEnter:    [0.05, 0.7, 0.1, 1]   // emphasized-decelerate
+    property var curveExit:     [0.3, 0.0, 0.8, 0.15] // emphasized-accelerate
+    property var curveStandard: [0.2, 0.0, 0.0, 1.0]  // emphasized
 
     property int slideOffset:  20 // Чуть уменьшили разбег, чтобы соответствовало новой скорости
 

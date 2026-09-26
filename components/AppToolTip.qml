@@ -43,7 +43,7 @@ Item {
         enter: Transition {
             ParallelAnimation {
                 NumberAnimation { property: "opacity"; from: 0.0; to: 1.0; duration: AppTheme.durFast }
-                NumberAnimation { property: "y"; from: root.dropDown ? -4 : 4; to: 0; duration: AppTheme.durFast; easing.type: AppTheme.easeEnter }
+                NumberAnimation { property: "y"; from: root.dropDown ? -4 : 4; to: 0; duration: AppTheme.durFast; easing.type: AppTheme.easeEnter; easing.bezierCurve: AppTheme.curveEnter }
             }
         }
         

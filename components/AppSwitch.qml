@@ -50,7 +50,7 @@ Switch {
             border.color: AppTheme.isDark ? AppTheme.borderInput : AppTheme.borderDisabled
 
             Behavior on x {
-                NumberAnimation { duration: AppTheme.durNormal; easing.type: AppTheme.easeStandard }
+                NumberAnimation { duration: AppTheme.durNormal; easing.type: AppTheme.easeStandard; easing.bezierCurve: AppTheme.curveStandard }
             }
             Behavior on border.width { NumberAnimation { duration: AppTheme.durFast } }
         }

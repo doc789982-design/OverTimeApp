@@ -281,7 +281,7 @@ TextField {
         
         ParallelAnimation { 
             NumberAnimation { target: gridContainer; property: "opacity"; to: 1.0; duration: AppTheme.durFast }
-            NumberAnimation { target: gridContainer; property: "scale"; to: 1.0; duration: AppTheme.durFast; easing.type: AppTheme.easeEnter } 
+            NumberAnimation { target: gridContainer; property: "scale"; to: 1.0; duration: AppTheme.durFast; easing.type: AppTheme.easeEnter; easing.bezierCurve: AppTheme.curveEnter } 
         }
     }
 
