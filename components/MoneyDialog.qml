@@ -59,13 +59,17 @@ AppDialog {
                 model: root.activeComps
                 AppPill {
                     removable: true
-                    text: modelData.label + ": " + modelData.amount
+                    text: modelData.label +
+                          (modelData.usePrevYear ? " (прошлый год)" : "") +
+                          ": " + modelData.amount
                     
                     // По клику на саму пилюлю (не на крестик) - открываем редактирование
                     onClicked: {
                         compEditDialog.isEditing = true
+                        compEditDialog.targetIndex = index
                         compEditDialog.targetUnit = modelData.unit
                         compEditDialog.targetLabel = modelData.label
+                        compEditDialog.targetPrevYear = !!modelData.usePrevYear
                         compEditDialog.amountText = modelData.amount.toString()
                         compEditDialog.showCentered()
                     }
@@ -84,7 +88,7 @@ AppDialog {
                 id: addCompBtn
                 isAction: true
                 text: "Добавить"
-                visible: root.activeComps.length < 3 && root.editCompId === 0
+                visible: root.editCompId === 0
                 onClicked: {
                     compEditDialog.isEditing = false
                     compEditDialog.amountText = ""
@@ -180,24 +184,23 @@ AppDialog {
         property bool isEditing: false
         property string targetUnit: ""
         property string targetLabel: ""
+        property int targetIndex: -1        // индекс пилюли (вид+год могут повторяться)
+        property bool targetPrevYear: false // год редактируемой записи
         property alias amountText: amtInput.text
 
-        // Вычисляем доступные типы (исключаем те, что уже добавлены)
-        property var availableTypes: {
-            let all = [
-                { text: "Ночные (ч)", value: "hours" },
-                { text: "Сверх нормы (ч)", value: "overtime" },
-                { text: "Дни", value: "days" }
-            ]
-            if (isEditing) return []
-            let used = root.activeComps.map(c => c.unit)
-            return all.filter(t => !used.includes(t.value))
-        }
+        // Все три вида доступны ВСЕГДА. Повторный вид того же года не
+        // блокируется, а складывается с уже добавленным; «прошлый год» —
+        // отдельная запись (у неё свой остаток).
+        property var availableTypes: [
+            { text: "Ночные (ч)", value: "hours" },
+            { text: "Сверх нормы (ч)", value: "overtime" },
+            { text: "Дни", value: "days" }
+        ]
 
         onOpened: {
             errorMsg.visible = false
             prevYearCheck.checked = false // Сбрасываем при открытии
-            if (!isEditing && availableTypes.length > 0) {
+            if (!isEditing) {
                 typeCombo.model = availableTypes
                 typeCombo.currentIndex = 0
             }
@@ -228,7 +231,8 @@ AppDialog {
             // При редактировании показываем просто текст
             Text {
                 visible: compEditDialog.isEditing
-                text: "Вид: " + compEditDialog.targetLabel
+                text: "Вид: " + compEditDialog.targetLabel +
+                      (compEditDialog.targetPrevYear ? " · прошлый год" : "")
                 color: AppTheme.textPrimary
                 font.family: AppTheme.fontFamily
                 font.pixelSize: AppTheme.sizeBodyLarge
@@ -263,9 +267,11 @@ AppDialog {
                 return
             }
 
-            // МАГИЯ: Берем год из даты приказа, но если стоит галка - отнимаем 1
+            // Год списания: при редактировании — год самой записи (галка в
+            // этот момент скрыта и не отражает её год), при добавлении — по галке
             let baseYear = parseInt(moneyDateInput.selectedDate.split('-')[0]) || new Date().getFullYear()
-            let targetYear = prevYearCheck.checked ? baseYear - 1 : baseYear
+            let usePrev = isEditing ? compEditDialog.targetPrevYear : prevYearCheck.checked
+            let targetYear = usePrev ? baseYear - 1 : baseYear
             
             // Спрашиваем бэкенд остатки именно за выбранный год
             let balances = backend.getAvailableBalances(targetYear)
@@ -275,23 +281,35 @@ AppDialog {
             
             let maxAllowed = balances[currentUnit] || 0
 
-            if (val > maxAllowed) {
+            let arr = root.activeComps.slice()
+            // Тот же вид И тот же год — при добавлении суммы складываются
+            let sameIdx = -1
+            for (let i = 0; i < arr.length; i++) {
+                if (arr[i].unit === currentUnit && (!!arr[i].usePrevYear) === usePrev) {
+                    sameIdx = i
+                    break
+                }
+            }
+            // При добавлении к уже введённому — остаток проверяем на СУММУ
+            let already = (!isEditing && sameIdx >= 0) ? arr[sameIdx].amount : 0
+
+            if (val + already > maxAllowed) {
                 compEditDialog.shake()
-                errorMsg.text = "Ошибка: Доступно максимум " + maxAllowed + " (в " + targetYear + " г.)"
+                errorMsg.text = "Ошибка: Доступно максимум " + maxAllowed + " (в " + targetYear + " г.)" +
+                                (already > 0 ? ", уже добавлено " + already : "")
                 errorMsg.visible = true
                 return
             }
 
-            let arr = root.activeComps.slice()
             if (isEditing) {
-                for (let i = 0; i < arr.length; i++) {
-                    if (arr[i].unit === targetUnit) {
-                        arr[i].amount = val
-                        break
-                    }
-                }
+                // Правим именно эту запись: вид+год могут встречаться дважды
+                let idx = (targetIndex >= 0 && targetIndex < arr.length &&
+                           arr[targetIndex].unit === targetUnit) ? targetIndex : sameIdx
+                if (idx >= 0) arr[idx].amount = val
+            } else if (sameIdx >= 0) {
+                arr[sameIdx].amount = arr[sameIdx].amount + val
             } else {
-                arr.push({ unit: currentUnit, label: currentLabel, amount: val, usePrevYear: prevYearCheck.checked })
+                arr.push({ unit: currentUnit, label: currentLabel, amount: val, usePrevYear: usePrev })
             }
             
             root.activeComps = arr
