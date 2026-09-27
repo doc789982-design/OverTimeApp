@@ -53,7 +53,9 @@ HIDDENIMPORTS = [
     "PySide6.QtNetwork",       # «не запускай программу дважды»
     "PySide6.QtSvg",           # иконки в папке icons/*.svg
     "PySide6.QtOpenGL",        # рисует современный интерфейс
+    "PySide6.QtPrintSupport",  # собственная печать бланка без Excel
     "openpyxl",                # выгрузка табеля в Excel
+    "print_engine",           # собственная печать бланка (ленивый импорт)
     "win32print",              # список принтеров
     "win32com",
     "win32com.client",         # печать через установленный Excel

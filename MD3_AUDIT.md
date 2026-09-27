@@ -360,6 +360,37 @@ Focus-кольцо 2px с 50% brand — свежие MD3-спеки тоже т�
 > (4) is_newer: при обоих известных сборках решает ТОЛЬКО
 > сборка (8 юнит-сценариев OK, вкл. отсутствие цикла
 > BETA.1↔тег); (5) updates/version.json: version
+> Батч 32 (сборка 214) — СВОЯ ПЕЧАТЬ БЕЗ EXCEL. Путь:
+> PrintWorkerQt → print_engine.print_report: продуктовый
+> экспорт (openpyxl, 0.8 с на 40 чел.) → SheetModel читает
+> геометрию ИЗ xlsx (колонки-ДИАПАЗОНЫ <col min max> —
+> column_dimensions.values(), не по буквам! MDW=7 Calibri
+> 11; высоты pt×4/3; мержи; print_area; поля; scale 45%)
+> → SheetRenderer на QPainter → QPrinter (копии/дублет/
+> FromTo/ориентация/бумага из диалога). Контент 288.3 мм
+> прижимается к 287 мм A4 (0.5%). Формулы шаблона (31 шт.
+> IFERROR(DAY)) имеют формат «;;;» — на печати НЕ видны,
+> не вычисляются; даты шапки — формат 'd' → номер дня.
+> Фолбэк: сбой движка → тост + прежний PrintWorker (Excel),
+> параметры сохранены в self._last_print_args.
+> Шрифты: PT Astra Serif → Times New Roman (FONT_CHAINS);
+> тесты песочницы: OVERTIMETAB_SANDBOX_FONTS=1 + DejaVu.
+> QA: qa/bench_print.py (синтетика 40 чел.), qa/
+> render_xlsx_proto.py (PIL-прототип), qa/engine_test.{pdf,
+> png}, e2e: print_report → QPrinter(PdfFormat): 5 стр A4
+> landscape за 1.19 с; превью страниц qa/engine_page{1,2}.
+> png (150 dpi). Проверки: 44/44 линии сетки на координатах
+> из xlsx, жёлтые выходные, полосы ОТПУСК, вертикальный
+> текст, MediaBox 842×595.
+> ИНФРА: песочница пересоздана — PySide6/pillow/matplotlib
+> ставить заново; qa/restore_minstub.py — восстановление
+> /tmp/minstub (gcc-стабы с version-узлами: V_0.5.0 xkb,
+> LIBDBUS_1_3 dbus; символы собираются nm из Qt-библиотек;
+> version-script: именованный узел + global:* — анонимный
+> узел НЕ смешивается с именованными; настоящая harfbuzz
+> из pillow.libs). Qt offscreen РАБОТАЕТ: addApplicationFont
+> + QPainter → QImage/PDF — полный рендер проверяем в
+> песочнице. Спека: + PySide6.QtPrintSupport, print_engine.
 > Батч 31 (сборка 213) — переделка окна настроек после
 > отклонения 212 (хоткеи «россыпью», выход за границы,
 > расположение полей подразделения, кнопки обновлений).

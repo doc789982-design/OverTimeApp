@@ -271,6 +271,49 @@ class PrintWorker(QThread):
                 pythoncom.CoUninitialize() # Обязательно закрываем за собой COM-интерфейс
             except:
                 pass
+class PrintWorkerQt(QThread):
+    """Печать собственным движком (print_engine): без Excel и COM.
+
+    Бланк формируется как раньше (заполненный шаблон), но рисуется
+    напрямую на принтер через QPainter. При сбое quickPrint уходит
+    в запасный путь — печать через Excel (PrintWorker).
+    """
+    finished_signal = Signal(bool, str)
+
+    def __init__(self, db_path, year, month, printer_name, copies, page_from, page_to, orientation, paper_size, collate):
+        super().__init__()
+        self.db_path = db_path
+        self.year = year
+        self.month = month
+        self.printer_name = printer_name
+        self.copies = copies
+        self.page_from = page_from
+        self.page_to = page_to
+        self.orientation = orientation
+        self.paper_size = paper_size
+        self.collate = collate
+
+    def run(self):
+        try:
+            from print_engine import print_report
+            pages = print_report(
+                db_path=self.db_path,
+                year=self.year,
+                month=self.month,
+                template_path=EXCEL_TEMPLATE_PATH,
+                printer_name=self.printer_name,
+                copies=self.copies,
+                page_from=self.page_from,
+                page_to=self.page_to,
+                orientation=self.orientation,
+                paper_size=self.paper_size,
+                collate=self.collate,
+            )
+            self.finished_signal.emit(True, f"Документ отправлен на принтер ({pages} стр.)!")
+        except Exception as e:
+            self.finished_signal.emit(False, f"{e}")
+
+
 # ====================================================
 
 class UpdateStageWorker(QThread):
@@ -2761,12 +2804,18 @@ class Backend(QObject):
             self.showToast.emit(f"Шаблон не найден: {Path(template_path).name}", "error")
             return
 
-        # Показываем уведомление, что процесс пошел
-        self.showToast.emit("Формирование документа... (Фоновый режим)", "success")
+        # Параметры печати — для запасного пути через Excel
+        self._last_print_args = dict(
+            printer_name=printer_name, copies=copies, page_from=page_from,
+            page_to=page_to, orientation=orientation, paper_size=paper_size,
+            collate=collate,
+        )
+
+        self.showToast.emit("Формирование документа...", "success")
 
         try:
-            # Запускаем Работягу
-            self.print_thread = PrintWorker(
+            # Основной путь: собственный движок печати (без Excel)
+            self.print_thread = PrintWorkerQt(
                 db_path=self.active_db.path,
                 year=self.current_year,
                 month=self.current_month,
@@ -2778,7 +2827,7 @@ class Backend(QObject):
                 paper_size=paper_size,
                 collate=collate
             )
-            self.print_thread.finished_signal.connect(self.on_print_finished)
+            self.print_thread.finished_signal.connect(self.on_qt_print_finished)
             self.print_thread.start()
         except Exception as e:
             self.showToast.emit(f"Не удалось запустить печать: {e}", "error")
@@ -2791,6 +2840,33 @@ class Backend(QObject):
         except Exception:
             pass
 
+    def on_qt_print_finished(self, success, message):
+        """Результат собственного движка печати; при сбое — печать через Excel"""
+        if success:
+            self.showToast.emit(message, "success")
+            return
+        # Запасной путь: старый добрый Excel
+        self.showToast.emit("Движок печати не смог — печатаем через Excel...", "warning")
+        a = getattr(self, "_last_print_args", {})
+        try:
+            self.print_thread = PrintWorker(
+                db_path=self.active_db.path,
+                year=self.current_year,
+                month=self.current_month,
+                printer_name=a.get("printer_name", ""),
+                copies=a.get("copies", 1),
+                page_from=a.get("page_from", ""),
+                page_to=a.get("page_to", ""),
+                orientation=a.get("orientation", "landscape"),
+                paper_size=a.get("paper_size", "A4"),
+                collate=a.get("collate", True)
+            )
+            self.print_thread.finished_signal.connect(self.on_print_finished)
+            self.print_thread.start()
+        except Exception as e:
+            self.showToast.emit(f"Не удалось запустить печать: {e}", "error")
+
+    @Slot(bool, str)
     def on_print_finished(self, success, message):
         """Срабатывает автоматически, когда фоновая печать завершена"""
         if success:
