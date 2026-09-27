@@ -158,10 +158,9 @@ class ExportWorker(QThread):
 class PrintWorker(QThread):
     finished_signal = Signal(bool, str)
 
-    def __init__(self, db_path, year, month, printer_name, copies, page_from, page_to, orientation, paper_size, collate, pdf_out=None):
+    def __init__(self, db_path, year, month, printer_name, copies, page_from, page_to, orientation, paper_size, collate):
         super().__init__()
         self.db_path = db_path
-        self.pdf_out = pdf_out
         self.year = year
         self.month = month
         self.printer_name = printer_name
@@ -281,8 +280,9 @@ class PrintWorkerQt(QThread):
     """
     finished_signal = Signal(bool, str)
 
-    def __init__(self, db_path, year, month, printer_name, copies, page_from, page_to, orientation, paper_size, collate):
+    def __init__(self, db_path, year, month, printer_name, copies, page_from, page_to, orientation, paper_size, collate, pdf_out=None):
         super().__init__()
+        self.pdf_out = pdf_out
         self.db_path = db_path
         self.year = year
         self.month = month
