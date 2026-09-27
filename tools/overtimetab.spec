@@ -62,6 +62,8 @@ HIDDENIMPORTS = [
     "app_update",
     "recovery",               # аварийный восстановитель (первый import Main.py)
     "webapp.server",          # экспериментальный веб-режим (--web)
+    "PySide6.QtWebEngineQuick",   # окно веб-версии внутри программы (этап 4)
+    "PySide6.QtWebEngineCore",
     "methodical_data",        # методички и производственные календари (окно справки)
 ]
 
@@ -83,10 +85,40 @@ _web_static = ROOT / "webapp" / "static"
 if _web_static.exists():
     _datas.append((str(_web_static), "webapp/static"))
 
+# Встроенный веб-интерфейс (этап 4): Chromium-движок из состава PySide6.
+# Кладём то, что хуки PyInstaller могут не найти сами: QML-плагин,
+# процесс рендера, ресурсы и переводы. Пути определяем по факту —
+# сборка идёт и на Windows (dll/exe), и локально на Linux (so).
+import PySide6 as _pyside  # noqa: E402
+_qt_dir = Path(_pyside.__file__).resolve().parent / "Qt"
+_qml_we = _qt_dir / "qml" / "QtWebEngine"
+if _qml_we.exists():
+    _datas.append((str(_qml_we), "PySide6/Qt/qml/QtWebEngine"))
+if (_qt_dir / "resources").exists():
+    _datas.append((str(_qt_dir / "resources"), "PySide6/Qt/resources"))
+if (_qt_dir / "translations").exists():
+    for _tr in (_qt_dir / "translations").glob("qtwebengine*"):
+        _datas.append((str(_tr), "PySide6/Qt/translations"))
+_bin_extra = []
+_le = _qt_dir / "libexec"
+if _le.exists():
+    for _f in _le.glob("QtWebEngineProcess*"):
+        _bin_extra.append((str(_f), "PySide6/Qt/libexec"))
+_qb = _qt_dir / "bin"
+if _qb.exists():
+    for _pat in ("Qt6WebEngine*", "Qt6WebChannel*"):
+        for _f in _qb.glob(_pat):
+            _bin_extra.append((str(_f), "PySide6/Qt/bin"))
+# на части раскладок (Windows-колёса) библиотеки лежат в корне PySide6
+_top = Path(_pyside.__file__).resolve().parent
+for _pat in ("Qt6WebEngine*.dll", "Qt6WebChannel*.dll", "QtWebEngineProcess*.exe"):
+    for _f in _top.glob(_pat):
+        _bin_extra.append((str(_f), "PySide6"))
+
 a = Analysis(
     [str(ROOT / "Main.py")],
     pathex=[str(ROOT)],
-    binaries=[],
+    binaries=_bin_extra,
     datas=_datas,
     hiddenimports=HIDDENIMPORTS,
     hookspath=[],

@@ -2959,6 +2959,12 @@ class Backend(QObject):
         в фоне проверяет, что сервер поднялся. Результат — тост с адресом
         (адрес также кладётся в буфер обмена); при сбое — путь к логу.
         """
+        # Этап 4: веб-интерфейс — окно ВНУТРИ программы, без браузера.
+        # Если встроенный движок доступен — открываем его; иначе прежний
+        # режим: второй процесс с --web + системный браузер.
+        if HAS_WEBENGINE:
+            self._open_web_window()
+            return
         import subprocess
         try:
             log_path = Path(self._data_dir) / "web.log"
@@ -2983,6 +2989,64 @@ class Backend(QObject):
             threading.Thread(target=self._poll_web, daemon=True).start()
         except Exception as e:
             self.showToast.emit(f"Не удалось открыть веб-версию: {e}", "error")
+
+    def _open_web_window(self):
+        """Веб-версия как настоящее окно программы (этап 4).
+
+        Движок программы поднимается в фоновом потоке на 127.0.0.1
+        (свободный порт), окно WebEngine показывает его как страницу.
+        База — та, что открыта в программе; браузер не используется.
+        """
+        try:
+            # сервер мог быть остановлен кнопкой прямо в интерфейсе — проверяем
+            port = getattr(self, "_web_port", None)
+            if port is not None:
+                import urllib.request
+                try:
+                    urllib.request.urlopen(
+                        f"http://127.0.0.1:{port}/api/bootstrap?year=2026",
+                        timeout=2)
+                except Exception:
+                    port = None
+            if port is None:
+                from webapp.server import serve_in_thread
+                db_path = str(self.active_db.path) if self.active_db else None
+                httpd, port = serve_in_thread(db_path)
+                self._web_httpd = httpd
+                self._web_port = port
+            url = f"http://127.0.0.1:{port}/"
+
+            # окно уже открыто — просто поднимаем его наверх
+            win = getattr(self, "_webwin", None)
+            if win is not None:
+                try:
+                    win.show()
+                    win.raise_()
+                    return
+                except RuntimeError:
+                    self._webwin = None
+
+            from PySide6.QtCore import QUrl
+            from PySide6.QtQml import QQmlComponent
+            engine = getattr(self, "_engine", None)
+            if engine is None:
+                raise RuntimeError("нет QML-движка")
+            comp = None
+            for u in (QUrl("qrc:/components/WebWindow.qml"),
+                      QUrl.fromLocalFile(str(Path(__file__).resolve().parent
+                                              / "components" / "WebWindow.qml"))):
+                c = QQmlComponent(engine, u)
+                if c.status() == QQmlComponent.Status.Ready:
+                    comp = c
+                    break
+            if comp is None:
+                raise RuntimeError("WebWindow.qml не загрузился")
+            self._webwin = comp.create()
+            self._webwin.setProperty("webUrl", url)
+            self._webwin.show()
+            self.showToast.emit("Веб-версия открыта в окне программы", "success")
+        except Exception as e:
+            self.showToast.emit(f"Окно веб-версии не открылось: {e}", "error")
 
     def _poll_web(self):
         """Фоновая проверка: ждём сервер потомка до ~8 секунд."""
@@ -4212,6 +4276,9 @@ def _handle_uncaught(exc_type, exc_value, exc_tb):
         except Exception:
             pass
 
+# Доступен ли встроенный веб-движок (решается в main(), до QApplication)
+HAS_WEBENGINE = False
+
 def main():
     try:
         myappid = 'mycompany.overtimetab.version2'
@@ -4223,6 +4290,18 @@ def main():
     
     # Любая непойманная ошибка — окно с логом и кнопкой «Скопировать».
     sys.excepthook = _handle_uncaught
+
+    # Встроенный веб-интерфейс (этап 4): Chromium-движок из состава
+    # PySide6. initialize() обязан случиться ДО создания QApplication,
+    # иначе WebEngineView в окнах не поднимется. Если движка нет —
+    # программа работает как обычно (веб-версия откроется в браузере).
+    global HAS_WEBENGINE
+    try:
+        from PySide6 import QtWebEngineQuick
+        QtWebEngineQuick.initialize()
+        HAS_WEBENGINE = True
+    except Exception:
+        HAS_WEBENGINE = False
 
     app = QApplication(sys.argv)
 
@@ -4273,6 +4352,7 @@ def main():
     my_backend = Backend()
     engine = QQmlApplicationEngine()
     engine.rootContext().setContextProperty("backend", my_backend)
+    my_backend._engine = engine   # для окна веб-версии (этап 4)
     
     def show_window():
         if engine.rootObjects():

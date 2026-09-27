@@ -778,6 +778,23 @@ class Handler(SimpleHTTPRequestHandler):
         })
 
 
+def serve_in_thread(db_path=None):
+    """Поднять веб-интерфейс в фоновом потоке ВНУТРИ программы.
+
+    Возвращает (httpd, port): движок работает на 127.0.0.1 и случайном
+    свободном порту — окно WebEngine в программе открывает его как
+    обычную страницу. База — та, что открыта в программе.
+    """
+    global REAL_DB, _DB
+    if db_path:
+        REAL_DB = db_path
+    _DB = open_db()
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=httpd.serve_forever, daemon=True,
+                     name="web-ui-server").start()
+    return httpd, httpd.server_address[1]
+
+
 def run_web(db_path=None, port=None, log_path=None):
     """Режим OVERTIMETAB.exe --web: поднять сервер и открыть браузер.
 

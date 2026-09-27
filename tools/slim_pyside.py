@@ -43,11 +43,9 @@ for _stream in (sys.stdout, sys.stderr):
 # Если сборщик увидит «import PySide6.QtWebEngine» — он потащит
 # за ним ещё ~150 МБ. Мы говорим: этого импорта в программе нет.
 # ---------------------------------------------------------------------------
+# ВНИМАНИЕ: модули QtWebEngine* НЕ исключать — с этапа 4 переезда
+# веб-интерфейс живёт ВНУТРИ программы (окно WebEngine, Main.py).
 UNUSED_PYSIDE_MODULES = (
-    "PySide6.QtWebEngine",
-    "PySide6.QtWebEngineCore",
-    "PySide6.QtWebEngineWidgets",
-    "PySide6.QtWebEngineQuick",
     "PySide6.Qt3DAnimation",
     "PySide6.Qt3DCore",
     "PySide6.Qt3DExtras",
@@ -128,11 +126,9 @@ UNUSED_STDLIB = (
 # Пишем достаточно длинные слова, чтобы случайно не задеть нужный файл.
 # ---------------------------------------------------------------------------
 _DROP_PATH_PARTS = (
-    # Браузер Qt (самый жирный кусок, часто 100–180 МБ один только он)
-    "/qtwebengine",
-    "qt6webengine",
-    "qtwebengineprocess",
-    "icudtl.dat",
+    # WebEngine (файлы вида /qtwebengine*, qt6webengine*, qtwebengineprocess,
+    # icudtl.dat) НЕ выкидывать: с этапа 4 это встроенный веб-интерфейс.
+    # QtWebChannel оставляем тоже: от него зависит ядро WebEngine.
     # 3D
     "qt63d",
     "qt6quick3d",
@@ -172,8 +168,6 @@ _DROP_PATH_PARTS = (
     "/qtstatemachine",
     "qt6texttospeech",
     "/qttexttospeech",
-    "qt6webchannel",
-    "/qtwebchannel",
     "qt6websockets",
     "/qtwebsockets",
     "qt6webview",
