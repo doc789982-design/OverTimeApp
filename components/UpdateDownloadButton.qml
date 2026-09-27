@@ -4,22 +4,21 @@ import QtQuick.Controls
 // ============================================================
 // КНОПКА ОБНОВЛЕНИЯ В ШАПКЕ (рядом со справкой)
 //
-// Стиль — как у иконок во всей программе: клетка 46px,
-// монохромная иконка refresh.svg, ховер затемняет фон.
+// ИКОНКА — «стрелка вниз на поднос» (download): смысл «скачать
+// новую версию», а не «перезагрузить». В покое — как у всех
+// иконок шапки: серая, темнеет при наведении.
 //
 // Состояния (переходы бесшовные, на пружинах):
-//   • нет обновления  — иконка как у всех (серая), клик —
-//     проверка: иконка делает оборот;
-//   • обновление есть — иконка зеленеет и «дышит» (масштаб),
+//   • нет обновления  — просто иконка; клик запускает проверку,
+//     иконка приседает и пружинисто возвращается;
+//   • обновление есть — иконка зеленеет и «дышит», в углу
+//     вспрыгивает зелёная точка-бейдж («есть что скачать»),
 //     вокруг искрят стрелочки;
-//   • идёт загрузка   — иконка крутится, вокруг неё дуга
-//       прогресса (заполняется плавно, без щелчков);
-//   • загружено       — дуга зеленеет и заполняется, иконка
+//   • идёт загрузка   — иконка мягко покачивается вниз-вверх,
+//     вокруг неё заполняется дуга прогресса (скачки процентов
+//     сглаживаются, дуга не щёлкает);
+//   • загружено       — дуга зеленеет и заполняется, стрелка
 //     пружинисто превращается в галочку.
-//
-// Прогресс от бэкенда приходит скачками — дуга сглаживает
-// его анимацией (Behavior 250 мс), поэтому состояние всегда
-// перетекает в следующее, без резких подмен.
 // ============================================================
 Item {
     id: root
@@ -51,11 +50,14 @@ Item {
     readonly property color availColor: AppTheme.accentSuccess
     readonly property color ringColor: AppTheme.accentBrand
 
-    // Цвет иконки: состояние + ховер (всякие переходы — цветовой анимацией)
+    // Цвет иконки: состояние + ховер (переходы — цветовой анимацией)
     property color iconColor: downloading ? ringColor
                        : (hasUpdate || ready) ? availColor
                        : (hover.containsMouse ? AppTheme.textPrimary : idleColor)
     Behavior on iconColor { ColorAnimation { duration: AppTheme.durFast; easing.type: Easing.InOutQuad } }
+
+    // Показывать бейдж-точку: есть обновление или уже скачано (не во время загрузки)
+    readonly property bool badgeShown: (root.hasUpdate || root.ready) && !root.downloading
 
     // ---- Искры-стрелочки вокруг кнопки (когда есть что скачать) ----
     UpdateSparkles {
@@ -71,42 +73,52 @@ Item {
         Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
     }
 
-    // ---- Иконка (refresh) + галочка (готово): крестятся фейдом, галочка пружинит ----
+    // ---- Иконка (скачать) + галочка (готово) ----
     Item {
         id: iconWrap
         objectName: "updIconWrap"
         anchors.centerIn: parent
-        width: refreshIcon.width
-        height: refreshIcon.height
+        width: downloadIcon.width
+        height: downloadIcon.height
 
-        IconImage {
-            id: refreshIcon
-            objectName: "updRefresh"
-            anchors.centerIn: parent
-            source: "../icons/refresh.svg"
-            width: AppTheme.iconMedium
-            height: AppTheme.iconMedium
-            color: root.iconColor
-            opacity: root.ready ? 0 : 1
-            Behavior on opacity { NumberAnimation { duration: AppTheme.durFast } }
+        // покачивание и приседания живут здесь, чтобы не мешать
+        // «дыханию» масштаба на iconWrap
+        Item {
+            id: arrowBob
+            objectName: "updArrowBob"
+            // НЕ anchors.fill: он заякоривает y и мешает покачиванию
+            width: parent.width
+            height: parent.height
+
+            IconImage {
+                id: downloadIcon
+                objectName: "updDownload"
+                anchors.centerIn: parent
+                source: "../icons/download.svg"
+                width: AppTheme.iconMedium + 2
+                height: AppTheme.iconMedium + 2
+                color: root.iconColor
+                opacity: root.ready ? 0 : 1
+                Behavior on opacity { NumberAnimation { duration: AppTheme.durFast } }
+            }
+
+            IconImage {
+                id: checkIcon
+                objectName: "updCheck"
+                anchors.centerIn: parent
+                source: "../icons/check.svg"
+                width: AppTheme.iconMedium
+                height: AppTheme.iconMedium
+                color: root.availColor
+                opacity: root.ready ? 1 : 0
+                scale: root.ready ? 1 : 0.4
+                Behavior on opacity { NumberAnimation { duration: AppTheme.durFast } }
+                // пружинистое появление с лёгким перелётом — «инерция»
+                Behavior on scale { SpringAnimation { spring: 5.0; damping: 0.35; mass: 1.1 } }
+            }
         }
 
-        IconImage {
-            id: checkIcon
-            objectName: "updCheck"
-            anchors.centerIn: parent
-            source: "../icons/check.svg"
-            width: AppTheme.iconMedium
-            height: AppTheme.iconMedium
-            color: root.availColor
-            opacity: root.ready ? 1 : 0
-            scale: root.ready ? 1 : 0.4
-            Behavior on opacity { NumberAnimation { duration: AppTheme.durFast } }
-            // пружинистое появление с лёгким перелётом — «инерция»
-            Behavior on scale { SpringAnimation { spring: 5.0; damping: 0.35; mass: 1.1 } }
-        }
-
-        // «Дыхание», когда обновление доступно: зеленая иконка мягко пульсирует
+        // «Дыхание», когда обновление доступно: иконка мягко пульсирует
         SequentialAnimation {
             running: root.hasUpdate && !root.downloading && !root.ready
             loops: Animation.Infinite
@@ -114,25 +126,49 @@ Item {
             NumberAnimation { target: iconWrap; property: "scale"; to: 1.0; duration: 550; easing.type: Easing.InCubic }
         }
 
-        // Кручение во время загрузки: иконка refresh «работает»
-        RotationAnimation {
-            id: downloadSpin
-            target: iconWrap
-            property: "rotation"
-            from: 0; to: 360
-            duration: 1400
-            loops: Animation.Infinite
+        // Покачивание во время загрузки: стрелка мягко «кланяется» вниз
+        SequentialAnimation {
             running: root.downloading
+            loops: Animation.Infinite
+            NumberAnimation { target: arrowBob; property: "y"; to: 1.6; duration: 380; easing.type: Easing.OutCubic }
+            NumberAnimation { target: arrowBob; property: "y"; to: 0; duration: 380; easing.type: Easing.InCubic }
         }
 
-        // Оборот-отклик на клик «проверить обновления»
-        RotationAnimation {
-            id: checkSpin
-            target: iconWrap
-            property: "rotation"
-            from: 0; to: 360
-            duration: 700
-            easing.type: Easing.OutCubic
+        // Приседание-отклик на клик «проверить обновления»:
+        // стрелка dip вниз и пружинисто возвращается
+        SequentialAnimation {
+            id: checkDip
+            NumberAnimation { target: arrowBob; property: "y"; to: 2.5; duration: 110; easing.type: Easing.OutCubic }
+            SpringAnimation { target: arrowBob; property: "y"; to: 0; spring: 5.0; damping: 0.35; mass: 1.1 }
+        }
+    }
+
+    // ---- Бейдж-точка: «есть новая версия» ----
+    Rectangle {
+        id: badge
+        objectName: "updBadge"
+        width: 9
+        height: 9
+        radius: width / 2
+        color: root.availColor
+        border.color: AppTheme.bgBase     // «вырез» из фона шапки
+        border.width: 2
+        anchors.right: iconWrap.right
+        anchors.top: iconWrap.top
+        anchors.rightMargin: -5
+        anchors.topMargin: -5
+        opacity: root.badgeShown ? 1 : 0
+        scale: root.badgeShown ? 1 : 0.2
+        Behavior on opacity { NumberAnimation { duration: AppTheme.durFast } }
+        // пружинистое появление с лёгким перелётом
+        Behavior on scale { SpringAnimation { spring: 5.0; damping: 0.35; mass: 1.1 } }
+
+        // тихий пульс, пока обновление ждёт клика
+        SequentialAnimation {
+            running: root.badgeShown && !root.ready
+            loops: Animation.Infinite
+            NumberAnimation { target: badge; property: "scale"; to: 1.18; duration: 480; easing.type: Easing.OutCubic }
+            NumberAnimation { target: badge; property: "scale"; to: 1.0; duration: 480; easing.type: Easing.InCubic }
         }
     }
 
@@ -218,9 +254,9 @@ Item {
                     backend.startRemoteDownload()
             }
             // Праздная кнопка — клик запускает полную проверку обновлений
-            // (локально → адрес из настроек → вшитый GitHub) с оборотом-откликом
+            // (локально → адрес из настроек → вшитый GitHub) с приседанием-откликом
             else if (root.idleCheck) {
-                checkSpin.restart()
+                checkDip.restart()
                 backend.checkAllUpdateSources()
             }
         }

@@ -174,6 +174,13 @@ Focus-кольцо 2px с 50% brand — свежие MD3-спеки тоже т�
 > AppInlineTip переписан декларативно (y 4px + фейд, parity
 > AppToolTip); кнопка обновления — refresh-иконка, дуга вокруг
 > иконки, пружины, сглаженный прогресс.
+> Батч 10 (сборка 192) — найден второй клип-виновник:
+> contentItem меню — ListView с clip:true (стиль Basic);
+> тултип меню перенесён в QQuickOverlay (attachToOverlay,
+> Overlay.overlay) — выше меню и вне его клипов; иконка
+> обновления — download (не refresh) + бейдж-точка, боб
+> вместо кручения (anchors.fill на y блокирует анимации —
+> развязано на width/height).
 
 1. **Тёмная тема, on-accent:** вместо белого текста на #4B9AEE — тёмный
    `#062E4F` (как MD3: на светлом primary тёмный on-primary). Решает 2.93:1

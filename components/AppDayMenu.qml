@@ -22,10 +22,17 @@ Menu {
     leftPadding: AppTheme.spaceXXS
     rightPadding: AppTheme.spaceXXS
 
-    // Меню — Item-попап в overlay главного окна, а не нативное окно:
-    // нативное окно обрезает своими краями тултипы-карточки кнопок
-    // (они живут внутри меню и вылезают за его пределы)
+    // Меню — Item-попап в overlay главного окна, а не нативное окно
     popupType: Popup.Item
+
+    // ЕДИНЫЙ тултип кнопок меню — живёт в overlay главного окна:
+    // содержимое меню клипуется его ListView (clip: true в стиле
+    // Basic), поэтому карточка внутри меню резалась бы его краями.
+    // В overlay она выше меню (zTooltip > zDropdown) и ничего ее
+    // не обрезает.
+    AppInlineTip {
+        id: menuTip
+    }
 
     // Фиксированная ширина меню (как у старых меню дня): пункты и шапка
     // выравниваются по ней, а не по авто-размеру содержимого.
@@ -37,6 +44,13 @@ Menu {
     property bool menuIsHoliday: false
     property bool menuHasDuties: false
     property bool menuHasComps: false
+
+    // при открытии меню переносим тултип в overlay главного окна
+    // (в момент построения попапа overlay ещё не доступен),
+    // при закрытии — гасим тултип, ведь MouseArea могла не успеть
+    // отправить onExited
+    onOpened: menuTip.attachToOverlay()
+    onAboutToHide: menuTip.hideTip()
 
     enter: Transition {
         ParallelAnimation {
@@ -157,17 +171,12 @@ Menu {
                             anchors.fill: parent
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
+                            onEntered: menuTip.showAt(st, modelData.tool)
+                            onExited: menuTip.hideTip()
                             onClicked: {
                                 backend.setDayStatus(root.targetDate, modelData.st)
                                 root.close()
                             }
-                        }
-                        AppInlineTip {
-                            anchors.horizontalCenter: parent.horizontalCenter
-                            anchors.bottom: parent.top
-                            anchors.bottomMargin: AppTheme.spaceXS
-                            text: modelData.tool
-                            isVisible: st.containsMouse
                         }
                     }
                 }
@@ -190,18 +199,13 @@ Menu {
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
+                        onEntered: menuTip.showAt(clearBtn, "Удалить статус")
+                        onExited: menuTip.hideTip()
                         onClicked: {
                             mainWindow.explodeAndDelete(root.targetDate, "status", null,
                                 function() { backend.setDayStatus(root.targetDate, "") })
                             root.close()
                         }
-                    }
-                    AppInlineTip {
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        anchors.bottom: parent.top
-                        anchors.bottomMargin: AppTheme.spaceXS
-                        text: "Удалить статус"
-                        isVisible: clearBtn.containsMouse
                     }
                 }
             }
