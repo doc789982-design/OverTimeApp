@@ -264,6 +264,23 @@ def _norm(path_like) -> str:
     """Путь к одному виду: маленькие буквы и прямые слэши."""
     return str(path_like or "").replace("\\", "/").lower()
 
+# Файлы встроенного веб-движка (этап 4): вырезались ДВАЖДЫ —
+# сначала как «ненужный Positioning» (от него зависит ядро Chromium),
+# потом фильтром переводов (локали движка — .pak, не _ru.qm).
+# Эти части проверяются ПЕРВЫМИ и гарантируют, что движок собирается.
+_KEEP_PATH_PARTS = (
+    "webengine",
+    "webchannel",
+    "positioning",
+    "icudtl",
+    "resources.pak",
+    "qt/resources",
+    "d3dcompiler",
+    "libegl",
+    "libgles",
+    "opengl32sw",
+)
+
 
 def is_unused_hiddenimport(name: str) -> bool:
     """Этот python-модуль табель не импортирует — в сборку не кладём."""
@@ -282,6 +299,11 @@ def should_keep(src, dest="") -> bool:
     dest — куда его хотели положить внутри папки программы
     """
     blob = _norm(src) + " | " + _norm(dest)
+
+    # Сначала — неприкосновенные файлы встроенного веб-движка
+    for part in _KEEP_PATH_PARTS:
+        if part in blob:
+            return True
 
     # Сначала режем явно лишнее (браузер, 3D, камера…).
     # Список специально длинный и конкретный, чтобы не задеть

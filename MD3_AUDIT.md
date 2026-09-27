@@ -258,6 +258,17 @@ Focus-кольцо 2px с 50% brand — свежие MD3-спеки тоже т�
 > добавлен hiddenimport; при сбое в журнал пишется список
 > наличия ключевых файлов (WebEngineCore/Positioning/
 > WebChannel/процесс/resources).
+> Батч 21 (сборка 203) — по журналу 202: DLL легли в
+> PySide6/ (не в корень — проба смотрела не туда), НО
+> qtwebengine_resources.pak отсутствовал. Причины: фильтр
+> переводов (/translations/ -> только *_ru.qm, режет .pak-
+> локали) + ресурсы не долетали. Лечение: _KEEP_PATH_PARTS
+> в should_keep (webengine/webchannel/positioning/icudtl/
+> resources.pak/qt/resources/d3dcompiler/libegl/libgles/
+> opengl32sw — проверяются ПЕРЕД вырезанием); в spec — прямой
+> докоп в dist/_internal/PySide6 мимо TOC (DLL+процесс+
+> ресурсы+локали+QML-плагин, все раскладки колёс) + манифест
+> в лог сборки; проба Main.py по PySide6/-путям (13 файлов).
 
 1. **Тёмная тема, on-accent:** вместо белого текста на #4B9AEE — тёмный
    `#062E4F` (как MD3: на светлом primary тёмный on-primary). Решает 2.93:1

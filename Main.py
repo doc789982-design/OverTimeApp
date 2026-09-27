@@ -4444,11 +4444,19 @@ def main():
         try:
             import sys as _sys2
             _b = Path(getattr(_sys2, "_MEIPASS", _sys2.executable))
-            _probe = ["Qt6WebEngineCore.dll", "Qt6Positioning.dll",
-                      "Qt6WebChannel.dll", "Qt6Network.dll",
-                      "PySide6/Qt6WebEngineCore.dll", "PySide6/Qt6Positioning.dll",
+            _probe = ["PySide6/Qt6WebEngineCore.dll",
+                      "PySide6/Qt6WebEngineWidgets.dll",
+                      "PySide6/Qt6WebEngineQuick.dll",
+                      "PySide6/Qt6WebChannel.dll",
+                      "PySide6/Qt6Positioning.dll",
+                      "PySide6/Qt6Network.dll",
+                      "PySide6/Qt6Qml.dll",
                       "PySide6/QtWebEngineProcess.exe",
-                      "PySide6/Qt/resources/qtwebengine_resources.pak"]
+                      "PySide6/Qt/resources/qtwebengine_resources.pak",
+                      "PySide6/Qt/translations/qtwebengine_locales",
+                      "PySide6/d3dcompiler_47.dll",
+                      "PySide6/libEGL.dll",
+                      "PySide6/libGLESv2.dll"]
             _have = [n for n in _probe if (_b / n).exists()]
             _miss = [n for n in _probe if not (_b / n).exists()]
             WEBENGINE_ERROR += ("\nесть: %s\nнет: %s" % (", ".join(_have) or "-",

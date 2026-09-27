@@ -189,3 +189,71 @@ coll = COLLECT(
 
 # На случай, если хуки PyInstaller всё-таки положили WebEngine в dist.
 slim_dist_tree(ROOT / "dist" / "OVERTIMETAB")
+
+
+# ═══════════════════════════════════════════════════════════════════
+# ВСТРОЕННЫЙ ВЕБ-ДВИЖОК: прямой докоп в dist (мимо всех фильтров TOC).
+# Фильтры уже дважды отрывали движку зависимости (Positioning, локали);
+# здесь мы гарантированно кладём полный набор прямо из PySide6 сборщика.
+# ═══════════════════════════════════════════════════════════════════
+import shutil as _shutil
+
+_psd = Path(_pyside.__file__).resolve().parent          # PySide6 сборщика
+_app = ROOT / "dist" / "OVERTIMETAB"
+_internal = _app / "_internal"                          # PyInstaller 6: onedir
+_base = _internal if _internal.is_dir() else _app
+_dest_ps = _base / "PySide6"
+
+def _copy_file(srcf: Path, dstdir: Path):
+    if srcf.is_file():
+        dstdir.mkdir(parents=True, exist_ok=True)
+        _shutil.copy2(srcf, dstdir / srcf.name)
+        return 1
+    return 0
+
+def _copy_dir(srcd: Path, dstdir: Path):
+    if not srcd.is_dir():
+        return 0
+    n = 0
+    for f in srcd.rglob("*"):
+        if f.is_file():
+            dstdir.mkdir(parents=True, exist_ok=True)
+            _shutil.copy2(f, dstdir / f.relative_to(srcd))
+            n += 1
+    return n
+
+_web_n = 0
+# 1) DLL и процесс рендера — верхний уровень PySide6 (раскладка Windows)
+for _pat in ("Qt6WebEngine*.dll", "Qt6WebChannel*.dll", "Qt6Positioning*.dll",
+             "QtWebEngineProcess.exe", "d3dcompiler_47.dll",
+             "libEGL.dll", "libGLESv2.dll", "opengl32sw.dll", "icudtl.dat"):
+    for _f in _psd.glob(_pat):
+        _web_n += _copy_file(_f, _dest_ps)
+# то же — в раскладке Qt/bin и Qt/libexec (Linux-колёса)
+for _d in (_qt_dir / "bin", _qt_dir / "libexec"):
+    if _d.is_dir():
+        for _pat in ("Qt6WebEngine*.dll", "Qt6WebChannel*.dll", "Qt6Positioning*.dll",
+                     "Qt6WebEngine*.so*", "Qt6WebChannel*.so*", "Qt6Positioning*.so*",
+                     "QtWebEngineProcess*"):
+            for _f in _d.glob(_pat):
+                _web_n += _copy_file(_f, _dest_ps / "Qt" / "bin")
+# 2) ресурсы Chromium (.pak) — все возможные места
+for _cand in (_psd / "Qt" / "resources", _psd / "resources"):
+    _web_n += _copy_dir(_cand, _dest_ps / "Qt" / "resources")
+# 3) локали движка (переводы интерфейса Chromium)
+for _cand in (_psd / "Qt" / "translations" / "qtwebengine_locales",
+              _psd / "translations" / "qtwebengine_locales"):
+    _web_n += _copy_dir(_cand, _dest_ps / "Qt" / "translations" / "qtwebengine_locales")
+# 4) QML-плагин WebEngine
+_web_n += _copy_dir(_psd / "Qt" / "qml" / "QtWebEngine",
+                    _dest_ps / "Qt" / "qml" / "QtWebEngine")
+
+# 5) манифест: что реально лежит в dist (видно в логе сборки)
+_req = ["PySide6/Qt6WebEngineCore.dll", "PySide6/Qt6WebEngineWidgets.dll",
+        "PySide6/Qt6WebEngineQuick.dll", "PySide6/Qt6WebChannel.dll",
+        "PySide6/Qt6Positioning.dll", "PySide6/QtWebEngineProcess.exe",
+        "PySide6/Qt/resources/qtwebengine_resources.pak"]
+print("[webengine] докопано напрямую: %d файлов" % _web_n)
+for _r in _req:
+    _ok = (_base / _r).exists()
+    print("[webengine] %-52s %s" % (_r, "ЕСТЬ" if _ok else "НЕТ !!!"))
