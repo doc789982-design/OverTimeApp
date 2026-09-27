@@ -1403,8 +1403,25 @@ def changelog_for_version(text: str, version: str) -> list[dict]:
     return [merged]
 
 
+def _md_inline(text: str) -> str:
+    """**жирный** из журнала -> <b>жирный</b>, остальное экранируется.
+
+    Окно «Что нового» показывает текст как форматированный (RichText);
+    без этой замены звёздочки markdown оставались бы в тексте как есть.
+    """
+    import html as _html
+    parts = str(text or "").split("**")
+    out = []
+    for i, chunk in enumerate(parts):
+        if i % 2 == 0:
+            out.append(_html.escape(chunk))
+        else:
+            out.append("<b>" + _html.escape(chunk) + "</b>")
+    return "".join(out)
+
+
 def _bullets(items: list[str]) -> str:
-    return "\n".join("• " + x for x in items if x)
+    return "<br>".join("• " + _md_inline(x) for x in items if x)
 
 
 def changelog_for_qml(blocks: list[dict]) -> list[dict]:

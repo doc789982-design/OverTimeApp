@@ -63,6 +63,7 @@ AppDialog {
                     color: AppTheme.textPrimary
                     font.family: AppTheme.fontFamily
                     font.pixelSize: AppTheme.sizeBody
+                    textFormat: Text.RichText
                     wrapMode: Text.WordWrap
                     lineHeight: 1.25
                 }
@@ -86,6 +87,7 @@ AppDialog {
                     color: AppTheme.textPrimary
                     font.family: AppTheme.fontFamily
                     font.pixelSize: AppTheme.sizeBody
+                    textFormat: Text.RichText
                     wrapMode: Text.WordWrap
                     lineHeight: 1.25
                 }
@@ -109,6 +111,7 @@ AppDialog {
                     color: AppTheme.textPrimary
                     font.family: AppTheme.fontFamily
                     font.pixelSize: AppTheme.sizeBody
+                    textFormat: Text.RichText
                     wrapMode: Text.WordWrap
                     lineHeight: 1.25
                 }
@@ -132,6 +135,7 @@ AppDialog {
                     color: AppTheme.textPrimary
                     font.family: AppTheme.fontFamily
                     font.pixelSize: AppTheme.sizeBody
+                    textFormat: Text.RichText
                     wrapMode: Text.WordWrap
                     lineHeight: 1.25
                 }
