@@ -130,8 +130,8 @@ Menu {
 
                 Repeater {
                     model: [
-                        { "t": "К", "tool": "Служебная командировка", "c": AppTheme.accentPurple, "st": "К" },
-                        { "t": "Б", "tool": "Временная нетрудоспособность",     "c": AppTheme.accentDanger, "st": "Б" },
+                        { "t": "К", "tool": "Командировка", "c": AppTheme.accentPurple, "st": "К" },
+                        { "t": "Б", "tool": "Больничный",     "c": AppTheme.accentDanger, "st": "Б" },
                         { "t": "О", "tool": "Отпуск",         "c": AppTheme.accentWarning, "st": "О" }
                     ]
                     Rectangle {
@@ -157,7 +157,7 @@ Menu {
                                 root.close()
                             }
                         }
-                        AppToolTip {
+                        AppInlineTip {
                             anchors.horizontalCenter: parent.horizontalCenter
                             anchors.bottom: parent.top
                             anchors.bottomMargin: AppTheme.spaceXS
@@ -191,7 +191,7 @@ Menu {
                             root.close()
                         }
                     }
-                    AppToolTip {
+                    AppInlineTip {
                         anchors.horizontalCenter: parent.horizontalCenter
                         anchors.bottom: parent.top
                         anchors.bottomMargin: AppTheme.spaceXS
@@ -270,7 +270,7 @@ Menu {
     AppMenuItem {
         visible: root.menuIsWeekend || root.menuIsHoliday
         iconSource: "../icons/calendar.svg"
-        text: "Сделать служебным"
+        text: "Сделать рабочим"
         customColor: AppTheme.accentTeal
         onClicked: {
             backend.setDayType(root.targetDate, "work")

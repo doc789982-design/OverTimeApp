@@ -46,9 +46,8 @@ CheckBox {
             }
 
             AppRipple {
-                // круг из центра зоны: ровно вокруг квадратика (MD3);
+                // круг из центра зоны, расходится по всей зоне отклика;
                 // драйвер — состояние pressed самого чекбокса
-                waveDiameter: 40
                 pressed: control.pressed
                 rippleColor: AppTheme.isDark ? Qt.rgba(77/255, 154/255, 238/255, 0.20)
                                              : Qt.rgba(3/255, 116/255, 181/255, 0.16)

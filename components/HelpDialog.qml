@@ -44,7 +44,7 @@ AppSidePanel {
             return res
         }
         if (hk.type === "status") {
-            let sNames = {"Б": "Временная нетрудоспособность", "О": "Отпуск", "К": "Служебная командировка"}
+            let sNames = {"Б": "Больничный", "О": "Отпуск", "К": "Командировка"}
             return sNames[hk.status_val] || hk.status_val
         }
         return ""
@@ -272,7 +272,7 @@ AppSidePanel {
                         }
                         Text {
                             width: parent.width
-                            text: "Сетки месяцев с праздниками, переносами и предпраздничными днями. Нормы служебного времени на 40-, 36- и 24-часовые недели — сверены с официальной таблицей норм."
+                            text: "Сетки месяцев с праздниками, переносами и предпраздничными днями. Нормы рабочих дней и часов на 40-, 36- и 24-часовые недели — сверены с официальной таблицей норм."
                             color: AppTheme.textSecondary
                             font.family: AppTheme.fontFamily
                             font.pixelSize: AppTheme.sizeBody

@@ -38,7 +38,7 @@ AppDialog {
         }
         Text {
             width: parent.width
-            text: "Суббота — служебный день, понедельник — выходной. Воскресенье как обычно. Праздники и дни, которые вы меняете вручную, общие для всех групп."
+            text: "Суббота рабочая, понедельник выходной. Воскресенье как обычно. Праздники и дни, которые вы меняете вручную, общие для всех групп."
             color: AppTheme.textTertiary
             font.family: AppTheme.fontFamily
             font.pixelSize: AppTheme.sizeSmall

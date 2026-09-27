@@ -66,7 +66,7 @@ AppDialog {
         Rectangle { width: parent.width; height: 1; color: AppTheme.borderDivider }
 
         Text {
-            text: "Перерывы для отдыха и питания (опционально):"
+            text: "Перерывы (опционально):"
             color: AppTheme.textSecondary
             font.family: AppTheme.fontFamily
             font.pixelSize: AppTheme.sizeSmall

@@ -225,7 +225,7 @@ Item {
                             
                             ColumnLayout {
                                 spacing: AppTheme.spaceXS; Layout.fillWidth: true
-                                Text { text: "Перерывы для отдыха и питания (опционально):"; color: AppTheme.textSecondary; font.family: AppTheme.fontFamily; font.pixelSize: AppTheme.sizeSmall }
+                                Text { text: "Перерывы (опционально):"; color: AppTheme.textSecondary; font.family: AppTheme.fontFamily; font.pixelSize: AppTheme.sizeSmall }
                                 
                                 Flow {
                                     Layout.fillWidth: true
@@ -283,7 +283,7 @@ Item {
                             AppComboBox {
                                 id: hkStatusUnit; Layout.preferredWidth: 250; label: "Какой статус поставить?"
                                 cutoutColor: AppTheme.bgSurface
-                                model: [{text: "Временная нетрудоспособность (Б)", value: "Б"}, {text: "Отпуск (О)", value: "О"}, {text: "Служебная командировка (К)", value: "К"}]
+                                model: [{text: "Больничный (Б)", value: "Б"}, {text: "Отпуск (О)", value: "О"}, {text: "Командировка (К)", value: "К"}]
                                 textRole: "text"; valueRole: "value"
                             }
                             Item { Layout.fillWidth: true }

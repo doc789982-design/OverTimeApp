@@ -47,10 +47,9 @@ Switch {
                    : (control.hovered ? AppTheme.stateHover : "transparent")
         }
 
-        // Волна от нажатия — пилюля по форме трека, из центра;
+        // Волна от нажатия — круг из центра, срезается формой трека;
         // драйвер — состояние pressed самого переключателя
         AppRipple {
-            rippleShape: 1
             pressed: control.pressed
             rippleColor: control.checked
                           ? (AppTheme.isDark ? Qt.rgba(11/255, 31/255, 51/255, 0.16)
