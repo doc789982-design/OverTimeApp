@@ -80,14 +80,15 @@ UNUSED_PYSIDE_MODULES = (
     "PySide6.QtHelp",
     "PySide6.QtTest",
     "PySide6.QtSql",           # база у нас через обычный sqlite3, не через Qt
-    "PySide6.QtPrintSupport",  # печать идёт через Excel, не через Qt
+    # PySide6.QtPrintSupport НЕ исключать: на нём держится
+    # QtWebEngineWidgets (встроенное окно веб-версии, этап 4)
     "PySide6.QtUiTools",
     "PySide6.QtXml",
     "PySide6.QtDBus",
     "PySide6.QtExampleIcons",
     "PySide6.QtSvgWidgets",
     "PySide6.QtOpenGLWidgets",
-    "PySide6.QtQuickWidgets",
+    # PySide6.QtQuickWidgets НЕ исключать: зависимость Qt6WebEngineWidgets
     "PySide6.QtQuickTest",
     "PySide6.QtQuickTimeline",
     "PySide6.QtQuickParticles",
@@ -240,7 +241,7 @@ _DROP_PATH_PARTS = (
     "qt6quickvectorimage",
     "qt6svgwidgets",
     "qt6openglwidgets",
-    "qt6quickwidgets",
+    # qt6quickwidgets НЕ вырезать: зависимость Qt6WebEngineWidgets (веб-окно)
     "qt6qmlcompiler",
     "/qtquick/vectorimage",
     "/qml/qt/labs/",

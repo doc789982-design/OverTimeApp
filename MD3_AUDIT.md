@@ -250,6 +250,17 @@ Focus-кольцо 2px с 50% brand — свежие MD3-спеки тоже т�
 > на PySide6/Qt/bin и libexec; браузерная ветка журналируется
 > (Popen/результат опроса). Размер сборки 179 МБ = движок
 > в zip ЕСТЬ, сбой на уровне загрузки DLL/initialize.
+> Батч 22 (сборка 204) — истина из PE-таблиц импорта колёс
+> PySide6 6.11.2 win64 (скачаны с PyPI, pefile): Qt6WebEngine
+> Widgets.dll требует Qt6QuickWidgets.dll (slim вырезал!)+
+> Qt6PrintSupport.dll; Qt6WebEngineQuick.dll — Qt6WebChannelQuick;
+> libEGL/libGLESv2/d3dcompiler в Qt 6.11 НЕ нужны (в колёсах
+> их нет — rglob-поиск был зряшный, убран). Un-exclude Quick
+> Widgets+PrintSupport; прямой докоп трёх DLL; Widgets-окно
+> теперь ОСНОВНОЙ вкус (зависимости известны на 100%), Quick —
+> запасной; проба включает .pyd-обёртки. Ресурсы движка лежат
+> в колесе как PySide6/resources (не Qt/resources) — мой докоп
+> в PySide6/Qt/resources совпадает с QLibraryInfo путями.
 > Батч 20 (сборка 202) — точная причина из журнала юзера:
 > «DLL load failed: Не найден указанный модуль» при import
 > QtWebEngineQuick/Widgets = у Qt6WebEngineCore.dll нет

@@ -4424,22 +4424,22 @@ def main():
                     _os.add_dll_directory(str(_d))
     except Exception:
         pass
+    # ОСНОВНОЙ вкус — Widgets-окно (QWebEngineView): его зависимости
+    # полностью известны и собраны. QML-окно (Quick) — запасной.
     try:
-        from PySide6 import QtWebEngineQuick
-        QtWebEngineQuick.initialize()
+        from PySide6.QtWebEngineWidgets import QWebEngineView  # noqa: F401
         HAS_WEBENGINE = True
-        HAS_WEBENGINE_QUICK = True
+        HAS_WEBENGINE_QUICK = False
     except Exception as e:
-        WEBENGINE_ERROR = "Quick: %s: %s" % (type(e).__name__, e)
-        # запасной вкус: окно на QWebEngineView (без QML-плагина);
-        # для Widgets-варианта initialize() не требуется
+        WEBENGINE_ERROR = "Widgets: %s: %s" % (type(e).__name__, e)
         try:
-            from PySide6.QtWebEngineWidgets import QWebEngineView  # noqa: F401
+            from PySide6 import QtWebEngineQuick
+            QtWebEngineQuick.initialize()
             HAS_WEBENGINE = True
-            HAS_WEBENGINE_QUICK = False
-            WEBENGINE_ERROR += " (используем Widgets-окно)"
+            HAS_WEBENGINE_QUICK = True
+            WEBENGINE_ERROR += " (используем QML-окно)"
         except Exception as e2:
-            WEBENGINE_ERROR += " | Widgets: %s: %s" % (type(e2).__name__, e2)
+            WEBENGINE_ERROR += " | Quick: %s: %s" % (type(e2).__name__, e2)
         # что реально лежит рядом с exe — чтобы видеть недостающее
         try:
             import sys as _sys2
@@ -4451,12 +4451,18 @@ def main():
                       "PySide6/Qt6Positioning.dll",
                       "PySide6/Qt6Network.dll",
                       "PySide6/Qt6Qml.dll",
+                      "PySide6/Qt6Quick.dll",
+                      "PySide6/Qt6OpenGL.dll",
+                      "PySide6/Qt6PrintSupport.dll",
                       "PySide6/QtWebEngineProcess.exe",
+                      "PySide6/Qt/bin/libEGL.dll",
                       "PySide6/Qt/resources/qtwebengine_resources.pak",
                       "PySide6/Qt/translations/qtwebengine_locales",
-                      "PySide6/d3dcompiler_47.dll",
-                      "PySide6/libEGL.dll",
-                      "PySide6/libGLESv2.dll"]
+                      "PySide6/Qt6QuickWidgets.dll",
+                      "PySide6/Qt6WebChannelQuick.dll",
+                      "PySide6/QtWebEngineCore.pyd",
+                      "PySide6/QtWebEngineWidgets.pyd",
+                      "PySide6/QtWebEngineQuick.pyd"]
             _have = [n for n in _probe if (_b / n).exists()]
             _miss = [n for n in _probe if not (_b / n).exists()]
             WEBENGINE_ERROR += ("\nесть: %s\nнет: %s" % (", ".join(_have) or "-",
