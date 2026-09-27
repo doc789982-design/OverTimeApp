@@ -236,6 +236,12 @@ Focus-кольцо 2px с 50% brand — свежие MD3-спеки тоже т�
 > WebEngine (hiddenimports + datas qml/resources/libexec/
 > translations + glob Qt/bin и корня PySide6; WebChannel
 > оставлен — зависимость ядра).
+> Батч 18 (сборка 200) — «тишина» при кнопке: каждое
+> действие в web.log (шаги, ветка HAS_WEBENGINE), ошибки —
+> нативный QMessageBox (не только тост; исключение в слоте
+> QML умирает молча в windowed-exe — stderr нет), предпроверка
+> файлов Chromium в сборке, окно show+raise+requestActivate,
+> повторное открытие поднимает окно.
 
 1. **Тёмная тема, on-accent:** вместо белого текста на #4B9AEE — тёмный
    `#062E4F` (как MD3: на светлом primary тёмный on-primary). Решает 2.93:1

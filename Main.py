@@ -2962,6 +2962,7 @@ class Backend(QObject):
         # Этап 4: веб-интерфейс — окно ВНУТРИ программы, без браузера.
         # Если встроенный движок доступен — открываем его; иначе прежний
         # режим: второй процесс с --web + системный браузер.
+        self._web_log("кнопка нажата: HAS_WEBENGINE=%s" % HAS_WEBENGINE)
         if HAS_WEBENGINE:
             self._open_web_window()
             return
@@ -2990,48 +2991,104 @@ class Backend(QObject):
         except Exception as e:
             self.showToast.emit(f"Не удалось открыть веб-версию: {e}", "error")
 
+    def _web_log(self, msg):
+        """Журнал веб-окна: каждый шаг с меткой времени (web.log)."""
+        try:
+            from datetime import datetime
+            log_path = Path(self._data_dir) / "web.log"
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write("[%s] %s\n" % (datetime.now().strftime("%H:%M:%S"), msg))
+        except Exception:
+            pass
+
+    def _web_fatal(self, msg):
+        """Ошибка, которую невозможно не заметить: нативный диалог + журнал."""
+        self._web_log("ОШИБКА: " + msg)
+        try:
+            from PySide6.QtWidgets import QMessageBox
+            box = QMessageBox()
+            box.setIcon(QMessageBox.Icon.Critical)
+            box.setWindowTitle("Веб-версия")
+            box.setText("Не удалось открыть веб-версию в окне программы.")
+            box.setInformativeText(msg + "\n\nПодробности: " + str(
+                Path(self._data_dir) / "web.log"))
+            box.exec()
+        except Exception:
+            pass
+        try:
+            self.showToast.emit("Веб-версия не открылась: " + msg[:120], "error")
+        except Exception:
+            pass
+
     def _open_web_window(self):
         """Веб-версия как настоящее окно программы (этап 4).
 
-        Движок программы поднимается в фоновом потоке на 127.0.0.1
-        (свободный порт), окно WebEngine показывает его как страницу.
-        База — та, что открыта в программе; браузер не используется.
+        Движок программы поднимается в фоновом потоке на 127.0.0.1,
+        окно WebEngine показывает его как страницу. Каждый шаг пишется
+        в web.log, любая ошибка — нативным диалогом (не только тостом).
         """
+        self._web_log("── запуск окна веб-версии ──")
         try:
-            # сервер мог быть остановлен кнопкой прямо в интерфейсе — проверяем
+            # 1) сервер: уже живой — переиспользуем, иначе поднимаем
             port = getattr(self, "_web_port", None)
             if port is not None:
                 import urllib.request
                 try:
                     urllib.request.urlopen(
-                        f"http://127.0.0.1:{port}/api/bootstrap?year=2026",
+                        "http://127.0.0.1:%d/api/bootstrap?year=2026" % port,
                         timeout=2)
+                    self._web_log("сервер уже жив: порт %d" % port)
                 except Exception:
+                    self._web_log("сервер на порту %d не отвечает — поднимаем заново" % port)
                     port = None
             if port is None:
                 from webapp.server import serve_in_thread
                 db_path = str(self.active_db.path) if self.active_db else None
+                self._web_log("поднимаем сервер в потоке, база: %s" % (db_path or "демо"))
                 httpd, port = serve_in_thread(db_path)
                 self._web_httpd = httpd
                 self._web_port = port
-            url = f"http://127.0.0.1:{port}/"
+                self._web_log("сервер поднят: порт %d" % port)
+            url = "http://127.0.0.1:%d/" % port
 
-            # окно уже открыто — просто поднимаем его наверх
+            # 2) окно уже открыто — просто поднимаем наверх
             win = getattr(self, "_webwin", None)
             if win is not None:
                 try:
                     win.show()
                     win.raise_()
+                    win.requestActivate()
+                    self._web_log("окно уже было открыто — подняли наверх")
                     return
                 except RuntimeError:
                     self._webwin = None
 
+            # 3) в сборке проверяем файлы Chromium: если их нет, лучше
+            #    внятное сообщение, чем тишина
+            import sys as _sys
+            if getattr(_sys, "frozen", False):
+                base = Path(getattr(_sys, "_MEIPASS", Path(_sys.executable).parent))
+                miss = []
+                for rel in ("PySide6/Qt/libexec", "PySide6/Qt/resources"):
+                    if not (base / rel).exists():
+                        miss.append(rel)
+                we_proc = list((base / "PySide6/Qt/libexec").glob("QtWebEngineProcess*")) \
+                    if (base / "PySide6/Qt/libexec").exists() else []
+                if miss or not we_proc:
+                    self._web_fatal("в сборке нет файлов встроенного браузера "
+                                    "(Chromium): %s" % (", ".join(miss) or "QtWebEngineProcess"))
+                    return
+                self._web_log("файлы Chromium на месте")
+
+            # 4) создаём окно из QML
             from PySide6.QtCore import QUrl
             from PySide6.QtQml import QQmlComponent
             engine = getattr(self, "_engine", None)
             if engine is None:
                 raise RuntimeError("нет QML-движка")
             comp = None
+            errors = []
             for u in (QUrl("qrc:/components/WebWindow.qml"),
                       QUrl.fromLocalFile(str(Path(__file__).resolve().parent
                                               / "components" / "WebWindow.qml"))):
@@ -3039,14 +3096,27 @@ class Backend(QObject):
                 if c.status() == QQmlComponent.Status.Ready:
                     comp = c
                     break
+                errors.append("%s: %s" % (u.toString(), [
+                    e.toString() for e in c.errors()][:2]))
             if comp is None:
-                raise RuntimeError("WebWindow.qml не загрузился")
+                raise RuntimeError("WebWindow.qml не загрузился: " + "; ".join(errors))
             self._webwin = comp.create()
+            if self._webwin is None:
+                raise RuntimeError("окно не создалось: " + "; ".join(
+                    e.toString() for e in comp.errors()))
             self._webwin.setProperty("webUrl", url)
             self._webwin.show()
+            self._webwin.raise_()
+            try:
+                self._webwin.requestActivate()
+            except Exception:
+                pass
+            self._web_log("окно создано и показано: %s" % url)
             self.showToast.emit("Веб-версия открыта в окне программы", "success")
         except Exception as e:
-            self.showToast.emit(f"Окно веб-версии не открылось: {e}", "error")
+            import traceback
+            self._web_fatal("%s: %s\n%s" % (type(e).__name__, e,
+                                             traceback.format_exc()[-600:]))
 
     def _poll_web(self):
         """Фоновая проверка: ждём сервер потомка до ~8 секунд."""
