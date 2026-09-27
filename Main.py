@@ -1,3 +1,9 @@
+# PySide6 6.11 включает ленивую загрузку модулей (shiboken6.abi3.dll):
+# она МАСКИРУЕТ ошибки импорта («could not import module» без причины)
+# и капризничает в заморозке PyInstaller. Выключаем ДО первого импорта.
+import os as _os_pre
+_os_pre.environ["PYSIDE6_OPTION_LAZY"] = "0"
+
 # --- АВАРИЙНЫЙ ВОССТАНОВИТЕЛЬ ----------------------------------------------
 # Самый первый код программы (подробности — recovery.py): если прошлая
 # копия упала, предложит обновиться или откатиться, не дав намертво
@@ -4426,12 +4432,46 @@ def main():
         pass
     # ОСНОВНОЙ вкус — Widgets-окно (QWebEngineView): его зависимости
     # полностью известны и собраны. QML-окно (Quick) — запасной.
+    # importlib идёт мимо ленивой обёртки PySide6 и выдаёт исходную
+    # ошибку (DLL load failed и т.п.), а не маскирующую обёртку
+    import importlib as _importlib
     try:
-        from PySide6.QtWebEngineWidgets import QWebEngineView  # noqa: F401
+        _importlib.import_module("PySide6.QtWebEngineWidgets")
         HAS_WEBENGINE = True
         HAS_WEBENGINE_QUICK = False
     except Exception as e:
         WEBENGINE_ERROR = "Widgets: %s: %s" % (type(e).__name__, e)
+        _c = e.__cause__ if e.__cause__ is not None else e.__context__
+        if _c is not None:
+            WEBENGINE_ERROR += " << причина: %s: %s" % (type(_c).__name__, _c)
+        # поштучная загрузка цепочки зависимостей: кто не грузится,
+        # тот и виновник — будет назван по имени
+        try:
+            import ctypes as _ctypes
+            import sys as _sys3
+            _ps_dir = Path(getattr(_sys3, "_MEIPASS", _sys3.executable)) / "PySide6"
+            _chain = ["shiboken6.abi3.dll", "pyside6.abi3.dll", "MSVCP140.dll",
+                      "VCRUNTIME140.dll", "VCRUNTIME140_1.dll", "Qt6Core.dll",
+                      "Qt6Gui.dll", "Qt6Widgets.dll", "Qt6Network.dll", "Qt6Qml.dll",
+                      "Qt6Quick.dll", "Qt6QuickWidgets.dll", "Qt6PrintSupport.dll",
+                      "Qt6WebChannel.dll", "Qt6WebChannelQuick.dll",
+                      "Qt6Positioning.dll", "Qt6WebEngineCore.dll",
+                      "Qt6WebEngineWidgets.dll"]
+            _bad = []
+            for _d in _chain:
+                _f = _ps_dir / _d
+                if not _f.exists():
+                    _bad.append(_d + " — ФАЙЛА НЕТ")
+                    continue
+                try:
+                    _ctypes.WinDLL(str(_f))
+                except OSError as _oe:
+                    _bad.append("%s — %s" % (_d, _oe))
+            WEBENGINE_ERROR += ("\nпоштучно: " +
+                                ("; ".join(_bad) if _bad
+                                 else "все грузятся по отдельности (!?)"))
+        except Exception:
+            pass
         try:
             from PySide6 import QtWebEngineQuick
             QtWebEngineQuick.initialize()
