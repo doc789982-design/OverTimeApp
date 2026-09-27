@@ -27,7 +27,7 @@ import openpyxl
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.cell_range import CellRange
 
-from PySide6.QtCore import QMarginsF, QRectF
+from PySide6.QtCore import QMarginsF, QPointF, QRectF
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QImage, QPainter, QPen, QTransform
 from PySide6.QtPrintSupport import QPrinter
 
@@ -171,6 +171,65 @@ class SheetModel:
         self.height = self.y[self.r1]
 
 
+    # ---------- строки данных и колонки компенсаций ----------
+
+    def _data_rows(self):
+        """Строки сотрудников: в первой колонке области печати стоит номер."""
+        rows = []
+        for r in range(self.r0, self.r1 + 1):
+            v = self.ws.cell(r, self.c0).value
+            if isinstance(v, int) or (isinstance(v, str) and v.strip().isdigit()):
+                rows.append(r)
+        return rows
+
+    def first_data_row(self):
+        rows = self._data_rows()
+        return rows[0] if rows else 0
+
+    def last_data_row(self):
+        rows = self._data_rows()
+        return rows[-1] if rows else 0
+
+    def compensation_trios(self):
+        """Колонки (сверх / ночные / дни) групп «на начало» и «на конец».
+
+        Ищутся в шапке (выше первой строки сотрудника) по ключевым словам
+        заголовков; широкие мержи-титулы пропускаются. Тройка с меньшими
+        номерами колонок — «на начало месяца», с большими — «на конец».
+        """
+        first = self.first_data_row()
+        if not first:
+            return {}
+        found = []  # (row, {key: col})
+        for r in range(self.r0, first):
+            hits = {}
+            for c in range(self.c0, self.c1 + 1):
+                if c in self.hidden_cols:
+                    continue
+                a = self.merge_of.get((r, c))
+                if a and a != (r, c):
+                    continue
+                if a:
+                    _r1, _r2, c1, c2 = self.merges[a]
+                    if c2 - c1 + 1 > 2:
+                        continue  # широкий титул группы — не подзаголовок
+                v = self.ws.cell(r, c).value
+                if not isinstance(v, str):
+                    continue
+                low = v.lower()
+                for kw, key in (("сверх", "ot"), ("ночн", "hours"), ("нерабоч", "days")):
+                    if kw in low:
+                        # вертикальный титул (напр. AQ) тоже содержит «сверх» —
+                        # берём самую левую колонку слова в этой строке
+                        if key not in hits or c < hits[key]:
+                            hits[key] = c
+            if len(hits) == 3:
+                found.append(hits)
+        if not found:
+            return {}
+        found.sort(key=lambda h: h["ot"])
+        return {"start": found[0], "end": found[-1]} if len(found) >= 2 else {"start": found[0]}
+
     # ---------- содержимое ----------
 
     def cell_rect(self, r, c):
@@ -239,6 +298,9 @@ class SheetRenderer:
         self.m = model
         self.font_hook = font_hook or (lambda name: name)   # для тестов: подмена шрифта
         self._fnt = {}
+        # {(row, col): "N дн."} — ячейки, разделённые диагональю:
+        # сверху значение, снизу — те же часы, переведённые в дни
+        self.days_overlay = {}
 
     def qfont(self, cell):
         f = cell.font
@@ -278,6 +340,17 @@ class SheetRenderer:
             cur_h += h
         if cur:
             pages.append(cur)
+
+        # Подписант не должен оставаться один на последнем листе: если туда
+        # не попало ни одной строки сотрудника, последний сотрудник (и всё,
+        # что шло за ним на предыдущем листе) переезжает вместе с ним.
+        last_emp = self.m.last_data_row()
+        if last_emp and len(pages) >= 2 and pages[-1][0] > last_emp:
+            prev = pages[-2]
+            if last_emp in prev:
+                i = prev.index(last_emp)
+                pages[-2] = prev[:i]
+                pages[-1] = prev[i:] + pages[-1]
         return pages
 
     # ---------- отрисовка ----------
@@ -346,6 +419,37 @@ class SheetRenderer:
             if right > rect.right():
                 rect = QRectF(rect.left(), rect.top(), right - rect.left(), rect.height())
         return rect
+
+    def _text_split(self, painter, rect, cell, text, days, fm):
+        """Ячейка, разделённая наклонной линией (~10°): сверху — значения,
+        снизу — количество дней (часы, переведённые по 8-часовому дню)."""
+        al = cell.alignment
+        mid = rect.top() + rect.height() * 0.5
+        dy = math.tan(math.radians(10.0)) * rect.width() / 2.0
+        painter.setPen(QPen(QColor("#808080"), 0.75))
+        painter.drawLine(QPointF(rect.left(), mid + dy), QPointF(rect.right(), mid - dy))
+
+        # верхняя половина (до самой высокой точки линии)
+        top_h = (mid - dy) - rect.top() - 2
+        lines = (self._wrap_lines(text, fm, rect.width() - 4)
+                 if al.wrap_text else text.split("\n"))
+        total = len(lines) * fm.height()
+        y = rect.top() + 2 + max(0.0, (top_h - total) / 2)
+        for ln in lines:
+            tw = fm.horizontalAdvance(ln)
+            x = rect.left() + 2 + (rect.width() - 4 - tw) / 2
+            painter.setPen(QColor("#111111"))
+            painter.drawText(int(x), int(y + fm.ascent()), ln)
+            y += fm.height()
+
+        # нижняя половина (от самой низкой точки линии)
+        bot_top = mid + dy + 2
+        bot_h = rect.bottom() - bot_top - 2
+        tw = fm.horizontalAdvance(days)
+        x = rect.left() + 2 + (rect.width() - 4 - tw) / 2
+        y = bot_top + max(0.0, (bot_h - fm.height()) / 2)
+        painter.setPen(QColor("#111111"))
+        painter.drawText(int(x), int(y + fm.ascent()), days)
 
     @staticmethod
     def _char_split(word, fm, maxw):
@@ -435,6 +539,12 @@ class SheetRenderer:
         # Всё, что не влезло, обрезается границей ячейки — как в Excel
         painter.setClipRect(rect)
 
+        days = (self.days_overlay or {}).get((r, c))
+        if days is not None:
+            self._text_split(painter, rect, cell, text, days, fm)
+            painter.restore()
+            return
+
         rot = al.textRotation or 0
         if rot == 90:
             # Вертикальный текст переносится по ВЫСОТЕ ячейки
@@ -497,9 +607,10 @@ def _apply_pages(pdevice, model, orientation, paper_size):
     pdevice.setPageMargins(QMarginsF(ml, mt, mr, mb), QPageLayout.Millimeter)
 
 
-def render_to_device(model, pdevice, page_from=None, page_to=None):
+def render_to_device(model, pdevice, page_from=None, page_to=None, days_overlay=None):
     """Рисует лист на QPrinter/QPdfWriter. Возвращает число напечатанных страниц."""
     renderer = SheetRenderer(model)
+    renderer.days_overlay = days_overlay or {}
     painter = QPainter(pdevice)
     try:
         # печатная область в листовых px с учётом масштаба шаблона
@@ -524,13 +635,13 @@ def render_to_device(model, pdevice, page_from=None, page_to=None):
         painter.end()
 
 
-def sheet_to_pdf(ws, out_path, orientation="landscape", paper_size="A4"):
+def sheet_to_pdf(ws, out_path, orientation="landscape", paper_size="A4", days_overlay=None):
     from PySide6.QtGui import QPdfWriter
     model = SheetModel(ws)
     pdf = QPdfWriter(out_path)
     pdf.setResolution(96)
     _apply_pages(pdf, model, orientation, paper_size)
-    return render_to_device(model, pdf)
+    return render_to_device(model, pdf, days_overlay=days_overlay)
 
 
 def sheet_to_image(ws, out_path, dpi=96):
@@ -585,7 +696,7 @@ _HOOK = _sandbox_hook if os.environ.get("OVERTIMETAB_SANDBOX_FONTS") else None
 
 
 def print_sheet_to_printer(ws, printer_name, copies, page_from, page_to,
-                           orientation, paper_size, collate):
+                           orientation, paper_size, collate, days_overlay=None):
     printer = QPrinter(QPrinter.HighResolution)
     if printer_name:
         printer.setPrinterName(printer_name)
@@ -602,12 +713,62 @@ def print_sheet_to_printer(ws, printer_name, copies, page_from, page_to,
         pass
     if not printer.isValid():
         raise RuntimeError("Принтер «%s» недоступен" % (printer_name or "по умолчанию"))
-    return render_to_device(model, printer, pf, pt)
+    return render_to_device(model, printer, pf, pt, days_overlay)
 
 
 # ──────────────────────────────────────────────────────────────────
 # Высокий уровень: база → заполненный бланк → печать
 # ──────────────────────────────────────────────────────────────────
+
+def _compute_days_overlay(db_path, year, month, model):
+    """Ячейки с переводом часов в дни для строк сотрудников.
+
+    Для каждой строки сотрудника считает дни по каждой из трёх колонок
+    группы («сверх», «ночные», «дни») — по той же формуле, что «Всего дней»
+    в панели итогов (logic.total_overtime_days): ночные + сверх (сверх
+    зажата в ноль) делятся на 8-часовой день с округлением вниз, плюс дни.
+    Чтобы три числа в сумме давали ровно «Всего дней» программы, остаток
+    от округления относят к колонке ночных (ДВО).
+    """
+    trios = model.compensation_trios()
+    emp_rows = model._data_rows()
+    if not trios or not emp_rows:
+        return {}
+    from database import DB
+    from logic import compute_month_summary, total_overtime_days
+
+    db = DB(db_path)
+    try:
+        emps = db.list_employees_for_month(year, month, active_only=True, search="")
+    except Exception:
+        db.close()
+        return {}
+    try:
+        overlay = {}
+        for i, row in enumerate(emp_rows):
+            if i >= len(emps):
+                break
+            summ = compute_month_summary(db, int(emps[i]["id"]), year, month)
+            for group, sfx in (("start", ("start_overtime", "prev_o_start", "start_hours", "prev_h_start", "start_days", "prev_d_start")),
+                               ("end", ("end_overtime", "prev_o_end", "end_hours", "prev_h_end", "end_days", "prev_d_end"))):
+                trio = trios.get(group)
+                if not trio:
+                    continue
+                ot, ot_p, h, h_p, d, d_p = (int(summ[k] or 0) for k in sfx)
+                night = h + h_p
+                extra = max(0, ot + ot_p)
+                days_d = d + d_p
+                total = total_overtime_days(h, h_p, ot, ot_p, d, d_p)
+                d_h = night // (8 * 60)
+                d_o = extra // (8 * 60)
+                d_h += total - (d_h + d_o + days_d)   # остаток округления — к ДВО
+                overlay[(row, trio["ot"])] = "%d дн." % d_o
+                overlay[(row, trio["hours"])] = "%d дн." % d_h
+                overlay[(row, trio["days"])] = "%d дн." % days_d
+        return overlay
+    finally:
+        db.close()
+
 
 def _build_sheet(db_path, year, month, template_path, sheet_name="Лист1"):
     """Формирует заполненный бланк во временный xlsx; возвращает (лист, путь)."""
@@ -642,8 +803,10 @@ def print_report(db_path, year, month, template_path, printer_name, copies,
     """Формирует бланк и печатает его без Excel. Возвращает число страниц."""
     ws, temp_xlsx = _build_sheet(db_path, year, month, template_path, sheet_name)
     try:
+        model = SheetModel(ws)
+        overlay = _compute_days_overlay(db_path, year, month, model)
         n = print_sheet_to_printer(ws, printer_name, copies, page_from, page_to,
-                                   orientation, paper_size, collate)
+                                   orientation, paper_size, collate, overlay)
         return n
     finally:
         _cleanup_sheet(temp_xlsx)
@@ -659,6 +822,8 @@ def print_report_pdf(db_path, year, month, template_path, out_path,
     """
     ws, temp_xlsx = _build_sheet(db_path, year, month, template_path, sheet_name)
     try:
-        return sheet_to_pdf(ws, out_path, orientation, paper_size)
+        model = SheetModel(ws)
+        overlay = _compute_days_overlay(db_path, year, month, model)
+        return sheet_to_pdf(ws, out_path, orientation, paper_size, overlay)
     finally:
         _cleanup_sheet(temp_xlsx)

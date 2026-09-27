@@ -29,7 +29,7 @@ from PySide6.QtCore import QObject, Slot, Signal, Property, QUrl, QThread, QTime
 
 from database import DB
 from utils import fmt_date_iso, fmt_dt_iso, d_iso, d_parse, dt_parse, dt_iso, parse_hhmm, subtract_intervals, intersect, merge_intervals, fmt_minutes_ru_words
-from logic import compute_month_summary, is_employee_shift, is_employee_shifted_weekends, validate_non_negative_over_year, default_is_working, build_shifted_weekend_checker, resolve_is_working, _row_flag, summary_cache_scope
+from logic import compute_month_summary, is_employee_shift, is_employee_shifted_weekends, validate_non_negative_over_year, default_is_working, build_shifted_weekend_checker, resolve_is_working, _row_flag, summary_cache_scope, total_overtime_days
 import app_update
 
 # ====================================================
@@ -98,19 +98,6 @@ def fmt_comp(real_val, prev_val, is_days=False):
         return "—"
     return fmt_dual(real_val, prev_val, is_days)
 
-
-def total_overtime_days(end_hours, prev_h_end, end_overtime, prev_o_end, end_days, prev_d_end):
-    """«Всего дней» — переработка сотрудника в днях (остаток на конец периода).
-
-    Ночные (ДВО) и сверх нормы считаются в минутах за этот год и за предыдущий;
-    сверх нормы с минусом не учитываем (зажимаем в 0). Сумму делим на 8-часовой
-    рабочий день и округляем вниз, затем прибавляем ДДО (дни).
-    """
-    night_min = int(end_hours) + int(prev_h_end)
-    extra_min = int(end_overtime) + int(prev_o_end)
-    if extra_min < 0:
-        extra_min = 0
-    return (night_min + extra_min) // (8 * 60) + int(end_days) + int(prev_d_end)
 
 # ====================================================
 # ФОНОВЫЙ ПОТОК ДЛЯ ЭКСПОРТА (ЧТОБЫ НЕ ВИС ИНТЕРФЕЙС)
