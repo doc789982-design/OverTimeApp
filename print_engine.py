@@ -235,6 +235,31 @@ class SheetModel:
                 res[label] = t
         return res
 
+    STATUS_LETTERS = ("К", "Б", "О", "В")
+    STATUS_WORDS = {"ОТПУСК": "О", "БОЛЬНИЧНЫЙ": "Б", "КОМАНДИРОВКА": "К"}
+
+    def letters_in_rows(self, rows):
+        """Буквы статусов (К/Б/О/В), встречающиеся в данных строках.
+
+        Учитываются и одиночные буквы в ячейках дней, и слова полос
+        («ОТПУСК» и т.д. — та же буква).
+        """
+        found = set()
+        for r in rows:
+            for c in range(self.c0, self.c1 + 1):
+                if c in self.hidden_cols:
+                    continue
+                v = self.value_for_print(self.ws.cell(r, c))
+                if not isinstance(v, str) or not v:
+                    continue
+                for ln in v.split("\n"):
+                    if ln.strip() in self.STATUS_LETTERS:
+                        found.add(ln.strip())
+                for word, letter in self.STATUS_WORDS.items():
+                    if word in v:
+                        found.add(letter)
+        return found
+
     # ---------- содержимое ----------
 
     def cell_rect(self, r, c):
@@ -437,6 +462,34 @@ class SheetRenderer:
             if right > rect.right():
                 rect = QRectF(rect.left(), rect.top(), right - rect.left(), rect.height())
         return rect
+
+    FOOTNOTE_LABELS = {"К": "К - командировка", "Б": "Б - больничный",
+                       "О": "О - отпуск", "В": "В - выходной"}
+
+    def footnote_font(self, dpi=96):
+        """Шрифт сносок: семейство из ячеек данных, чуть мельче.
+        dpi — разрешение устройства (шрифт масштабируется под него)."""
+        f = self.m.first_data_row()
+        cell = self.m.ws.cell(f, self.m.c0) if f else None
+        base = self.qfont(cell) if cell is not None else QFont("Calibri")
+        font = QFont(base)
+        font.setPixelSize(max(6, int(base.pixelSize() * 0.8 * dpi / 96.0)))
+        font.setBold(False)
+        return font
+
+    def paint_footnote(self, painter, font, baseline_y, letters):
+        """Сноска о статусах одной строкой внизу листа."""
+        text = self.footnote_text(letters)
+        painter.setFont(font)
+        painter.setPen(QColor("#333333"))
+        painter.drawText(0, int(round(baseline_y)), text)
+
+    def footnote_text(self, letters):
+        """«К - командировка   Б - больничный …» в фиксированном порядке."""
+        parts = [self.FOOTNOTE_LABELS[l] for l in self.STATUS_LETTERS_ORDER if l in letters]
+        return "    ".join(parts)
+
+    STATUS_LETTERS_ORDER = ("К", "Б", "О", "В")
 
     def _trio_groups(self):
         if self._trios is None:
@@ -721,6 +774,9 @@ def render_to_device(model, pdevice, page_from=None, page_to=None, days_overlay=
         page_h_px = pr.height() / k_base
         pages = renderer.page_rows(page_h_px)
         pages = pages[int(page_from) - 1: int(page_to)] if (page_from and page_to) else pages
+        cm_px = pdevice.resolution() / 2.54          # пикселей устройства в сантиметре
+        bottom_margin_px = model.margins_mm[3] / 10.0 * cm_px
+        fn_font = renderer.footnote_font(pdevice.resolution())
         for i, rows in enumerate(pages):
             if i:
                 pdevice.newPage()
@@ -729,6 +785,13 @@ def render_to_device(model, pdevice, page_from=None, page_to=None, days_overlay=
             painter.scale(k_base, k_base)
             renderer.paint(painter, rows)
             painter.restore()
+
+            # Сноски о статусах — в самом низу листа (0,5 см от края),
+            # только если на этой странице есть эти буквы
+            letters = model.letters_in_rows(rows)
+            if letters:
+                baseline_y = pr.bottom() + bottom_margin_px - 0.5 * cm_px
+                renderer.paint_footnote(painter, fn_font, baseline_y, letters)
         return len(pages)
     finally:
         painter.end()

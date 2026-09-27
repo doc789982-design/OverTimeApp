@@ -258,6 +258,18 @@ class PrintWorker(QThread):
                 pythoncom.CoUninitialize() # Обязательно закрываем за собой COM-интерфейс
             except:
                 pass
+MONTHS_RU = ["январь", "февраль", "март", "апрель", "май", "июнь",
+             "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь"]
+
+
+def pdf_suggested_filename(dept_name, year, month):
+    """Имя PDF-файла — в том же формате, что у Excel-экспорта:
+    «Табель <подразделение> за <месяц> <год>.pdf»"""
+    dept = (dept_name or "").strip() or "подразделение"
+    mn = MONTHS_RU[int(month) - 1] if 1 <= int(month) <= 12 else str(month)
+    return f"Табель {dept} за {mn} {int(year)}.pdf"
+
+
 class PrintWorkerQt(QThread):
     """Печать собственным движком (print_engine): без Excel и COM.
 
@@ -2815,7 +2827,7 @@ class Backend(QObject):
             from PySide6.QtWidgets import QFileDialog
             from PySide6.QtCore import QStandardPaths
             docs = QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation)
-            suggested = os.path.join(docs, f"Табель_{self.current_year}_{self.current_month:02d}.pdf")
+            suggested = os.path.join(docs, pdf_suggested_filename(self.activeDepartmentName, self.current_year, self.current_month))
             pdf_out, _ = QFileDialog.getSaveFileName(
                 None, "Сохранить табель в PDF", suggested, "PDF (*.pdf)")
             if not pdf_out:
