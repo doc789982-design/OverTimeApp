@@ -17,7 +17,10 @@ import sys
 import threading
 import calendar as cal_lib
 from datetime import date, datetime, timedelta
-from http.server import HTTPServer, SimpleHTTPRequestHandler
+# ThreadingHTTPServer: браузеры и прокси открывают соединения с запасом
+# (preconnect) и с keep-alive; однопоточный сервер намертво зависал
+# на молчаливом соединении — страница «вечно запускалась»
+from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 
 # ── пути ──────────────────────────────────────────────────────────
@@ -493,6 +496,9 @@ def open_db():
 
 
 class Handler(SimpleHTTPRequestHandler):
+    # молчаливое соединение (preconnect) не должно висеть вечно
+    timeout = 60
+
     db: DB = None
 
     def __init__(self, *a, **kw):
@@ -779,7 +785,7 @@ def run_web(db_path=None, port=None, log_path=None):
     httpd = None
     for attempt in range(10):
         try:
-            httpd = HTTPServer(("127.0.0.1", p), Handler)
+            httpd = ThreadingHTTPServer(("127.0.0.1", p), Handler)
             break
         except OSError as e:
             _wlog(f"порт {p} занят ({e}), пробуем {p + 1}")
@@ -842,10 +848,10 @@ def main():
         sys.exit(1)
     global _HTTPD
     Handler.db = open_db()
-    httpd = HTTPServer(("0.0.0.0", PORT), Handler)
+    httpd = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     _HTTPD = httpd
     mode = f"РЕАЛЬНАЯ база: {REAL_DB}" if REAL_DB else "демо-база"
-    print(f"Веб-версия OVERTIMETAB: http://0.0.0.0:{PORT}  ({mode})")
+    print(f"Веб-версия OVERTIMETAB: http://0.0.0.0:{PORT}  ({mode})", flush=True)
     httpd.serve_forever()
 
 

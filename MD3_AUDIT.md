@@ -213,6 +213,11 @@ Focus-кольцо 2px с 50% brand — свежие MD3-спеки тоже т�
 > кадр download); AppScrollBar удалён, дефолтные Qt-скроллбары
 >(Flickable: ScrollBar.vertical: ScrollBar{}, НЕ .policy —
 > на Flickable attached-policy null).
+> Батч 15 (сборка 197) — веб: HTTPServer однопоточный,
+> браузерный preconnect клинил сервер намертво («вечный
+> запуск») — ThreadingHTTPServer + Handler.timeout 60с +
+> flush-логи; проверено: 2 молчаливых сокета + 8 параллельных
+> запросов + Host прокси.
 
 1. **Тёмная тема, on-accent:** вместо белого текста на #4B9AEE — тёмный
    `#062E4F` (как MD3: на светлом primary тёмный on-primary). Решает 2.93:1
