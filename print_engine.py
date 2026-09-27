@@ -191,44 +191,49 @@ class SheetModel:
         return rows[-1] if rows else 0
 
     def compensation_trios(self):
-        """Колонки (сверх / ночные / дни) групп «на начало» и «на конец».
+        """Тройки колонок (сверх / ночные / дни) групп «на начало» и «на конец».
 
-        Ищутся в шапке (выше первой строки сотрудника) по ключевым словам
-        заголовков; широкие мержи-титулы пропускаются. Тройка с меньшими
-        номерами колонок — «на начало месяца», с большими — «на конец».
+        Группы находятся по широким титулам «Количество подлежащих
+        компенсации часов (дней)…» (мерж на 3 колонки выше строк данных):
+        левая группа — «на начало месяца», правая — «на конец месяца».
+        Подколонки определяются по ключевым словам подзаголовков
+        (вертикальные заголовки «на конец» — такие же ячейки).
         """
         first = self.first_data_row()
         if not first:
             return {}
-        found = []  # (row, {key: col})
-        for r in range(self.r0, first):
-            hits = {}
-            for c in range(self.c0, self.c1 + 1):
-                if c in self.hidden_cols:
-                    continue
-                a = self.merge_of.get((r, c))
-                if a and a != (r, c):
-                    continue
-                if a:
-                    _r1, _r2, c1, c2 = self.merges[a]
-                    if c2 - c1 + 1 > 2:
-                        continue  # широкий титул группы — не подзаголовок
-                v = self.ws.cell(r, c).value
-                if not isinstance(v, str):
-                    continue
-                low = v.lower()
-                for kw, key in (("сверх", "ot"), ("ночн", "hours"), ("нерабоч", "days")):
-                    if kw in low:
-                        # вертикальный титул (напр. AQ) тоже содержит «сверх» —
-                        # берём самую левую колонку слова в этой строке
-                        if key not in hits or c < hits[key]:
-                            hits[key] = c
-            if len(hits) == 3:
-                found.append(hits)
-        if not found:
+        groups = []
+        for a, (r1, r2, c1, c2) in self.merges.items():
+            if r2 >= first or c2 - c1 + 1 != 3:
+                continue
+            v = self.ws.cell(r1, c1).value
+            if isinstance(v, str) and "подлежащих компенсации" in v:
+                groups.append((c1, c2, r2))
+        if not groups:
             return {}
-        found.sort(key=lambda h: h["ot"])
-        return {"start": found[0], "end": found[-1]} if len(found) >= 2 else {"start": found[0]}
+        groups.sort()
+
+        def trio_for(c1, c2, title_bottom):
+            trio = {}
+            for r in range(title_bottom + 1, first):
+                for c in range(c1, c2 + 1):
+                    if c in self.hidden_cols:
+                        continue
+                    v = self.ws.cell(r, c).value
+                    if not isinstance(v, str):
+                        continue
+                    low = v.lower()
+                    for kw, key in (("сверх", "ot"), ("ночн", "hours"), ("нерабоч", "days")):
+                        if kw in low and key not in trio:
+                            trio[key] = c
+            return trio if len(trio) == 3 else None
+
+        res = {}
+        for label, g in zip(("start", "end"), (groups[0], groups[-1])):
+            t = trio_for(*g)
+            if t:
+                res[label] = t
+        return res
 
     # ---------- содержимое ----------
 
@@ -298,9 +303,11 @@ class SheetRenderer:
         self.m = model
         self.font_hook = font_hook or (lambda name: name)   # для тестов: подмена шрифта
         self._fnt = {}
-        # {(row, col): "N дн."} — ячейки, разделённые диагональю:
-        # сверху значение, снизу — те же часы, переведённые в дни
+        # {(row, "start"/"end"): "N дн."} — тройка колонок группы разделена
+        # ОДНОЙ наклонной линией: сверху — текущие значения трёх граф,
+        # снизу — одно число: часы и дни, переведённые в дни (как «Всего дней»)
         self.days_overlay = {}
+        self._trios = None
 
     def qfont(self, cell):
         f = cell.font
@@ -388,6 +395,17 @@ class SheetRenderer:
                 if text is None or text == "":
                     continue
                 self._text(painter, r, c, cell, str(text))
+
+        # тройки «на начало»/«на конец»: одна линия на тройку + дни под ней
+        if self.days_overlay:
+            rows_set = set(rows)
+            trios = self._trio_groups()
+            for (row, group), days in self.days_overlay.items():
+                if row not in rows_set:
+                    continue
+                trio = trios.get(group)
+                if trio:
+                    self._paint_trio_days(painter, row, group, trio, days)
         painter.restore()
 
     def _draw_rect(self, r, c):
@@ -420,35 +438,78 @@ class SheetRenderer:
                 rect = QRectF(rect.left(), rect.top(), right - rect.left(), rect.height())
         return rect
 
-    def _text_split(self, painter, rect, cell, text, days, fm):
-        """Ячейка, разделённая наклонной линией (~10°): сверху — значения,
-        снизу — количество дней (часы, переведённые по 8-часовому дню)."""
+    def _trio_groups(self):
+        if self._trios is None:
+            try:
+                self._trios = self.m.compensation_trios()
+            except Exception:
+                self._trios = {}
+        return self._trios
+
+    def _trio_of_cell(self, r, c):
+        """(группа, тройка), если ячейка входит в тройку с оверлеем этой строки."""
+        for group, trio in self._trio_groups().items():
+            if c in (trio["ot"], trio["hours"], trio["days"]):
+                if (r, group) in (self.days_overlay or {}):
+                    return group, trio
+        return None, None
+
+    def _trio_rect(self, r, trio):
+        """Общий прямоугольник трёх колонок тройки в строке r."""
+        m = self.m
+        cols = sorted((trio["ot"], trio["hours"], trio["days"]))
+        return QRectF(m.x[cols[0] - 1], m.y[r - 1],
+                      m.x[cols[-1]] - m.x[cols[0] - 1], m.row_h[r])
+
+    @staticmethod
+    def _trio_line_y(rect, x):
+        """Y наклонной линии (~10°, слева ниже — справа выше) в точке x."""
+        mid = (rect.top() + rect.bottom()) / 2
+        dy = math.tan(math.radians(10.0)) * rect.width() / 2.0
+        t = (x - rect.left()) / rect.width()
+        return mid + dy - t * 2 * dy
+
+    def _text_top_half(self, painter, r, c, cell, text, fm, trio):
+        """Значение ячейки тройки — в верхней половине (над линией)."""
+        rect = self.m.cell_rect(r, c)
         al = cell.alignment
-        mid = rect.top() + rect.height() * 0.5
+        line_y = self._trio_line_y(self._trio_rect(r, trio), rect.center().x())
+        box = QRectF(rect.left(), rect.top() + 1,
+                     rect.width(), max(8.0, line_y - rect.top() - 4))
+        lines = (self._wrap_lines(text, fm, box.width() - 3)
+                 if al.wrap_text else text.split("\n"))
+        total = len(lines) * fm.height()
+        y = box.top() + max(0.0, (box.height() - total) / 2)
+        painter.setPen(QColor("#111111"))
+        for ln in lines:
+            tw = fm.horizontalAdvance(ln)
+            if al.horizontal == "center":
+                x = box.left() + (box.width() - tw) / 2
+            elif al.horizontal == "right":
+                x = box.right() - tw
+            else:
+                x = box.left()
+            painter.drawText(int(x), int(y + fm.ascent()), ln)
+            y += fm.height()
+
+    def _paint_trio_days(self, painter, row, group, trio, days):
+        """Одна наклонная линия через все три колонки + одно число дней под ней."""
+        rect = self._trio_rect(row, trio)
+        mid = (rect.top() + rect.bottom()) / 2
         dy = math.tan(math.radians(10.0)) * rect.width() / 2.0
         painter.setPen(QPen(QColor("#808080"), 0.75))
         painter.drawLine(QPointF(rect.left(), mid + dy), QPointF(rect.right(), mid - dy))
 
-        # верхняя половина (до самой высокой точки линии)
-        top_h = (mid - dy) - rect.top() - 2
-        lines = (self._wrap_lines(text, fm, rect.width() - 4)
-                 if al.wrap_text else text.split("\n"))
-        total = len(lines) * fm.height()
-        y = rect.top() + 2 + max(0.0, (top_h - total) / 2)
-        for ln in lines:
-            tw = fm.horizontalAdvance(ln)
-            x = rect.left() + 2 + (rect.width() - 4 - tw) / 2
-            painter.setPen(QColor("#111111"))
-            painter.drawText(int(x), int(y + fm.ascent()), ln)
-            y += fm.height()
-
-        # нижняя половина (от самой низкой точки линии)
+        cell = self.m.ws.cell(row, trio["ot"])
+        font = self.qfont(cell)
+        fm = QFontMetrics(font)
+        painter.setFont(font)
+        painter.setPen(QColor("#111111"))
         bot_top = mid + dy + 2
         bot_h = rect.bottom() - bot_top - 2
         tw = fm.horizontalAdvance(days)
-        x = rect.left() + 2 + (rect.width() - 4 - tw) / 2
+        x = rect.left() + (rect.width() - tw) / 2
         y = bot_top + max(0.0, (bot_h - fm.height()) / 2)
-        painter.setPen(QColor("#111111"))
         painter.drawText(int(x), int(y + fm.ascent()), days)
 
     @staticmethod
@@ -539,9 +600,11 @@ class SheetRenderer:
         # Всё, что не влезло, обрезается границей ячейки — как в Excel
         painter.setClipRect(rect)
 
-        days = (self.days_overlay or {}).get((r, c))
-        if days is not None:
-            self._text_split(painter, rect, cell, text, days, fm)
+        group, trio = self._trio_of_cell(r, c)
+        if group is not None:
+            # ячейка тройки с оверлеем: значение — в верхней половине,
+            # линию и дни под ней рисует paint() один раз на тройку
+            self._text_top_half(painter, r, c, cell, text, fm, trio)
             painter.restore()
             return
 
@@ -721,14 +784,12 @@ def print_sheet_to_printer(ws, printer_name, copies, page_from, page_to,
 # ──────────────────────────────────────────────────────────────────
 
 def _compute_days_overlay(db_path, year, month, model):
-    """Ячейки с переводом часов в дни для строк сотрудников.
+    """Число дней для троек «на начало» и «на конец» месяца.
 
-    Для каждой строки сотрудника считает дни по каждой из трёх колонок
-    группы («сверх», «ночные», «дни») — по той же формуле, что «Всего дней»
-    в панели итогов (logic.total_overtime_days): ночные + сверх (сверх
-    зажата в ноль) делятся на 8-часовой день с округлением вниз, плюс дни.
-    Чтобы три числа в сумме давали ровно «Всего дней» программы, остаток
-    от округления относят к колонке ночных (ДВО).
+    Для каждой строки сотрудника считает одно число на группу — по той же
+    формуле, что «Всего дней» в панели итогов (logic.total_overtime_days):
+    ночные + сверх (сверх зажата в ноль) делятся на 8-часовой день
+    с округлением вниз, плюс дни; учитываются остатки прошлого года.
     """
     trios = model.compensation_trios()
     emp_rows = model._data_rows()
@@ -737,6 +798,10 @@ def _compute_days_overlay(db_path, year, month, model):
     from database import DB
     from logic import compute_month_summary, total_overtime_days
 
+    keys = {
+        "start": ("start_overtime", "prev_o_start", "start_hours", "prev_h_start", "start_days", "prev_d_start"),
+        "end": ("end_overtime", "prev_o_end", "end_hours", "prev_h_end", "end_days", "prev_d_end"),
+    }
     db = DB(db_path)
     try:
         emps = db.list_employees_for_month(year, month, active_only=True, search="")
@@ -749,22 +814,11 @@ def _compute_days_overlay(db_path, year, month, model):
             if i >= len(emps):
                 break
             summ = compute_month_summary(db, int(emps[i]["id"]), year, month)
-            for group, sfx in (("start", ("start_overtime", "prev_o_start", "start_hours", "prev_h_start", "start_days", "prev_d_start")),
-                               ("end", ("end_overtime", "prev_o_end", "end_hours", "prev_h_end", "end_days", "prev_d_end"))):
-                trio = trios.get(group)
-                if not trio:
+            for group in ("start", "end"):
+                if group not in trios:
                     continue
-                ot, ot_p, h, h_p, d, d_p = (int(summ[k] or 0) for k in sfx)
-                night = h + h_p
-                extra = max(0, ot + ot_p)
-                days_d = d + d_p
-                total = total_overtime_days(h, h_p, ot, ot_p, d, d_p)
-                d_h = night // (8 * 60)
-                d_o = extra // (8 * 60)
-                d_h += total - (d_h + d_o + days_d)   # остаток округления — к ДВО
-                overlay[(row, trio["ot"])] = "%d дн." % d_o
-                overlay[(row, trio["hours"])] = "%d дн." % d_h
-                overlay[(row, trio["days"])] = "%d дн." % days_d
+                ot, ot_p, h, h_p, d, d_p = (int(summ[k] or 0) for k in keys[group])
+                overlay[(row, group)] = "%d дн." % total_overtime_days(h, h_p, ot, ot_p, d, d_p)
         return overlay
     finally:
         db.close()
