@@ -13,36 +13,19 @@ Item {
     property int currentActionTab: 0 // 0: Дежурство, 1: Компенсация, 2: Статус
     property var activeBreaks: []
 
-    ScrollView {
-        id: hkScroll
+    SettingsPage {
         anchors.fill: parent
-        clip: true
-        ScrollBar.vertical.policy: ScrollBar.AsNeeded
-        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+        title: "Горячие клавиши"
+        description: "Назначьте действия на клавиатуру для быстрого заполнения табеля."
 
-        ColumnLayout {
-            x: AppTheme.spaceXL
-            width: Math.max(0, hkScroll.availableWidth - AppTheme.spaceXL * 2)
-            spacing: AppTheme.spaceL
-
-            // =========================================================
-            // 1. ЗАГОЛОВОК
-            // =========================================================
-            ColumnLayout {
-                spacing: AppTheme.spaceXS
-                Layout.fillWidth: true
-                Text { text: "Горячие клавиши"; color: AppTheme.textPrimary; font.family: AppTheme.fontFamily; font.pixelSize: AppTheme.sizeH2; font.weight: AppTheme.weightBold }
-                Text { text: "Назначьте действия на клавиатуру для быстрого заполнения табеля."; color: AppTheme.textSecondary; font.family: AppTheme.fontFamily; font.pixelSize: AppTheme.sizeBody; Layout.fillWidth: true; wrapMode: Text.WordWrap }
-            }
-
-            // =========================================================
-            // 2. ЕДИНАЯ ПАНЕЛЬ: разделы с едва заметными разделителями
-            // =========================================================
+        // =========================================================
+        // ЕДИНАЯ ПАНЕЛЬ: разделы с едва заметными разделителями
+        // =========================================================
             Rectangle {
-                Layout.fillWidth: true
+                width: parent.width
                 // Высота панели = высота содержимого + поля, чтобы
                 // разделы не накладывались и список клавиш был виден.
-                Layout.preferredHeight: hkPanelContent.implicitHeight + AppTheme.spaceXL * 2
+                height: hkPanelContent.implicitHeight + AppTheme.spaceL * 2
                 color: AppTheme.bgSurface
                 radius: AppTheme.radiusLarge
                 border.color: AppTheme.borderDivider
@@ -53,7 +36,7 @@ Item {
                     anchors.left: parent.left
                     anchors.right: parent.right
                     anchors.top: parent.top
-                    anchors.margins: AppTheme.spaceXL
+                    anchors.margins: AppTheme.spaceL
                     spacing: AppTheme.spaceL
 
                     // ── Раздел: Добавить клавишу ──
@@ -67,7 +50,7 @@ Item {
                     }
 
                     // ВЕРХНЯЯ СТРОКА: клавиша → название → действие → кнопка.
-                    // Ровная сетка одинаковой высоты, пропорции фиксированы.
+                    // затем действие и параметры, в конце кнопка.
                     RowLayout {
                         Layout.fillWidth: true
                         spacing: AppTheme.spaceM
@@ -127,87 +110,40 @@ Item {
                             placeholderText: "Напр: Ночная смена"
                             cutoutColor: AppTheme.bgSurface
                         }
+                    }
 
-                        // ВЫБОР ДЕЙСТВИЯ
-                        AppComboBox {
-                            id: actionTypeCombo
-                            Layout.fillWidth: true
-                            Layout.minimumWidth: 200
-                            label: "Что сделать?"
-                            cutoutColor: AppTheme.bgSurface
-                            model: [{text: "Добавить дежурство", value: 0}, {text: "Добавить компенсацию", value: 1}, {text: "Установить статус (Б/О/К)", value: 2}]
-                            textRole: "text"; valueRole: "value"
-                            onActivated: hotkeyPageRoot.currentActionTab = currentValue
-                        }
-                        
-                        // КНОПКА СОХРАНИТЬ
+                    // ВЫБОР ДЕЙСТВИЯ
+                    AppComboBox {
+                        id: actionTypeCombo
+                        Layout.fillWidth: true
+                        Layout.maximumWidth: 420
+                        label: "Что сделать?"
+                        cutoutColor: AppTheme.bgSurface
+                        model: [{text: "Добавить дежурство", value: 0}, {text: "Добавить компенсацию", value: 1}, {text: "Установить статус (Б/О/К)", value: 2}]
+                        textRole: "text"; valueRole: "value"
+                        onActivated: hotkeyPageRoot.currentActionTab = currentValue
+                    }
+
+                    // КНОПКА ДОБАВИТЬ + сообщение об ошибке
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: AppTheme.spaceM
+
                         AppButton {
-                            Layout.preferredHeight: 44
                             Layout.preferredWidth: 150
                             text: "Добавить"
                             variant: "primary"
-                            onClicked: {
-                                if (hotkeyPageRoot.capturedKey === "") {
-                                    hkErrorMsg.text = "Сначала нажмите клавишу или сочетание в поле «Нажмите клавишу...»"
-                                    hkErrorMsg.visible = true
-                                    return;
-                                }
-                                hkErrorMsg.visible = false;
-                                
-                                let newAction = { 
-                                    "key": hotkeyPageRoot.capturedKey,
-                                    "name": hkNameInput.text.trim()
-                                };
-                                
-                                if (hotkeyPageRoot.currentActionTab === 0) {
-                                    newAction["type"] = "duty";
-                                    let sH = Math.floor(hkTimeInput.startMinutes / 60); let sM = Math.floor(hkTimeInput.startMinutes % 60);
-                                    let eH = Math.floor(hkTimeInput.endMinutes / 60); let eM = Math.floor(hkTimeInput.endMinutes % 60);
-                                    newAction["duty_start"] = ("0" + sH).slice(-2) + ":" + ("0" + sM).slice(-2);
-                                    newAction["duty_end"] = ("0" + eH).slice(-2) + ":" + ("0" + eM).slice(-2);
-                                    newAction["duty_shift"] = hkShiftCheck.checked;
-                                    
-                                    let breaksArray = [];
-                                    for (let i = 0; i < hotkeyPageRoot.activeBreaks.length; i++) {
-                                        let b = hotkeyPageRoot.activeBreaks[i];
-                                        let bsH = Math.floor(b.start / 60); let bsM = Math.floor(b.start % 60);
-                                        let beH = Math.floor(b.end / 60); let beM = Math.floor(b.end % 60);
-                                        breaksArray.push({ "start": ("0" + bsH).slice(-2) + ":" + ("0" + bsM).slice(-2), "end": ("0" + beH).slice(-2) + ":" + ("0" + beM).slice(-2) });
-                                    }
-                                    newAction["duty_breaks"] = breaksArray;
-                                    
-                                } else if (hotkeyPageRoot.currentActionTab === 1) {
-                                    newAction["type"] = "comp";
-                                    newAction["comp_unit"] = hkCompUnit.currentValue;
-                                    newAction["comp_amount"] = hkCompUnit.currentValue === "days" ? 1 : parseInt(hkCompAmt.text);
-                                    newAction["comp_prev_year"] = hkCompPrevYear.checked;
-                                    
-                                } else if (hotkeyPageRoot.currentActionTab === 2) {
-                                    newAction["type"] = "status";
-                                    newAction["status_val"] = hkStatusUnit.currentValue;
-                                }
-                                
-                                let arr = [];
-                                for(let i=0; i<backend.hotkeysList.length; i++) arr.push(backend.hotkeysList[i]);
-                                arr.push(newAction);
-                                backend.saveHotkeys(JSON.stringify(arr));
-                                
-                                hotkeyPageRoot.capturedKey = "";
-                                hkNameInput.text = "";
-                                hotkeyPageRoot.activeBreaks = [];
-                            }
+                            onClicked: hkAdd()
                         }
-                    }
-
-                    // Ошибка в окне (а не тост): не нажата клавиша
-                    Text {
-                        id: hkErrorMsg
-                        visible: false
-                        Layout.fillWidth: true
-                        color: AppTheme.accentDanger
-                        font.family: AppTheme.fontFamily
-                        font.pixelSize: AppTheme.sizeSmall
-                        wrapMode: Text.WordWrap
+                        Text {
+                            id: hkErrorMsg
+                            visible: false
+                            Layout.fillWidth: true
+                            color: AppTheme.accentDanger
+                            font.family: AppTheme.fontFamily
+                            font.pixelSize: AppTheme.sizeSmall
+                            wrapMode: Text.WordWrap
+                        }
                     }
 
                     // НИЖНЯЯ СТРОКА: ДИНАМИЧЕСКИЕ НАСТРОЙКИ
@@ -406,7 +342,58 @@ Item {
                     }
                 }
             }
+    }
+
+    // Сборка и сохранение новой горячей клавиши
+    function hkAdd() {
+        if (hotkeyPageRoot.capturedKey === "") {
+            hkErrorMsg.text = "Сначала нажмите клавишу или сочетание в поле слева"
+            hkErrorMsg.visible = true
+            return;
         }
+        hkErrorMsg.visible = false;
+
+        let newAction = {
+            "key": hotkeyPageRoot.capturedKey,
+            "name": hkNameInput.text.trim()
+        };
+
+        if (hotkeyPageRoot.currentActionTab === 0) {
+            newAction["type"] = "duty";
+            let sH = Math.floor(hkTimeInput.startMinutes / 60); let sM = Math.floor(hkTimeInput.startMinutes % 60);
+            let eH = Math.floor(hkTimeInput.endMinutes / 60); let eM = Math.floor(hkTimeInput.endMinutes % 60);
+            newAction["duty_start"] = ("0" + sH).slice(-2) + ":" + ("0" + sM).slice(-2);
+            newAction["duty_end"] = ("0" + eH).slice(-2) + ":" + ("0" + eM).slice(-2);
+            newAction["duty_shift"] = hkShiftCheck.checked;
+
+            let breaksArray = [];
+            for (let i = 0; i < hotkeyPageRoot.activeBreaks.length; i++) {
+                let b = hotkeyPageRoot.activeBreaks[i];
+                let bsH = Math.floor(b.start / 60); let bsM = Math.floor(b.start % 60);
+                let beH = Math.floor(b.end / 60); let beM = Math.floor(b.end % 60);
+                breaksArray.push({ "start": ("0" + bsH).slice(-2) + ":" + ("0" + bsM).slice(-2), "end": ("0" + beH).slice(-2) + ":" + ("0" + beM).slice(-2) });
+            }
+            newAction["duty_breaks"] = breaksArray;
+
+        } else if (hotkeyPageRoot.currentActionTab === 1) {
+            newAction["type"] = "comp";
+            newAction["comp_unit"] = hkCompUnit.currentValue;
+            newAction["comp_amount"] = hkCompUnit.currentValue === "days" ? 1 : parseInt(hkCompAmt.text);
+            newAction["comp_prev_year"] = hkCompPrevYear.checked;
+
+        } else if (hotkeyPageRoot.currentActionTab === 2) {
+            newAction["type"] = "status";
+            newAction["status_val"] = hkStatusUnit.currentValue;
+        }
+
+        let arr = [];
+        for(let i=0; i<backend.hotkeysList.length; i++) arr.push(backend.hotkeysList[i]);
+        arr.push(newAction);
+        backend.saveHotkeys(JSON.stringify(arr));
+
+        hotkeyPageRoot.capturedKey = "";
+        hkNameInput.text = "";
+        hotkeyPageRoot.activeBreaks = [];
     }
 
     // Всплывающее окошко для добавления перерыва

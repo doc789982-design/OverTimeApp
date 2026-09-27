@@ -1,6 +1,5 @@
 import QtQuick
 import QtQuick.Controls
-import QtQuick.Layouts
 
 Item {
     id: root
@@ -9,46 +8,47 @@ Item {
     property string description: ""
     default property alias content: contentColumn.data
 
-    // Страница прокручивается, чтобы при маленьком окне настроек
-    // (которое масштабируется вместе с главным окном) контент не обрезался.
-    ScrollView {
+    // Вертикальная прокрутка страницы. Горизонтальной не бывает:
+    // ширина колонки жёстко привязана к видимой области.
+    Flickable {
         id: pageScroll
         anchors.fill: parent
         clip: true
-        ScrollBar.vertical.policy: ScrollBar.AsNeeded
-        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+        contentWidth: width
+        contentHeight: pageColumn.y + pageColumn.implicitHeight + AppTheme.spaceXL
+        boundsBehavior: Flickable.StopAtBounds
 
-        ColumnLayout {
-            // Единые отступы слева/справа, как в остальных окнах
+        ScrollBar.vertical: ScrollBar {
+            policy: ScrollBar.AsNeeded
+        }
+
+        Column {
+            id: pageColumn
             x: AppTheme.spaceXL
-            width: Math.max(0, pageScroll.availableWidth - AppTheme.spaceXL * 2)
+            y: AppTheme.spaceXL
+            width: pageScroll.width - AppTheme.spaceXL * 2
             spacing: AppTheme.spaceL
 
-            Column {
-                spacing: AppTheme.spaceXS
-                Layout.fillWidth: true
-
-                Text {
-                    text: root.title
-                    color: AppTheme.textPrimary
-                    font.family: AppTheme.fontFamily
-                    font.pixelSize: AppTheme.sizeH2
-                    font.weight: AppTheme.weightBold
-                }
-                Text {
-                    text: root.description
-                    color: AppTheme.textSecondary
-                    font.family: AppTheme.fontFamily
-                    font.pixelSize: AppTheme.sizeBody
-                    wrapMode: Text.WordWrap
-                    width: parent.width
-                }
+            Text {
+                text: root.title
+                color: AppTheme.textPrimary
+                font.family: AppTheme.fontFamily
+                font.pixelSize: AppTheme.sizeH2
+                font.weight: AppTheme.weightBold
+            }
+            Text {
+                text: root.description
+                width: parent.width
+                color: AppTheme.textSecondary
+                font.family: AppTheme.fontFamily
+                font.pixelSize: AppTheme.sizeBody
+                wrapMode: Text.WordWrap
             }
 
             Column {
                 id: contentColumn
-                Layout.fillWidth: true
-                spacing: AppTheme.spaceM
+                width: parent.width
+                spacing: AppTheme.spaceL
             }
         }
     }

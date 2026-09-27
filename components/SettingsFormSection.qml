@@ -7,7 +7,9 @@ Item {
     property string title: ""
     default property alias content: innerColumn.data
 
-    width: parent ? parent.width : 0
+    // Секции живут только внутри ColumnLayout панелей —
+    // растягиваются на всю ширину панели
+    Layout.fillWidth: true
     implicitHeight: innerColumn.implicitHeight
     height: implicitHeight
 

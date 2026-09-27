@@ -229,7 +229,7 @@ AppLargeModal {
                 }
 
                 // ── 3. Управление базами ──────────────────
-                Item {
+                SettingsPage {
                     FileDialog {
                         id: importFileDialog
                         title: "Выберите базу для импорта"
@@ -257,59 +257,28 @@ AppLargeModal {
                         property string pathToExport: ""
                         onAccepted: backend.exportDatabaseCopy(pathToExport, exportFolderDialog.selectedFolder)
                     }
+                    title: "Управление базами"
+                    description: "Переключайтесь между подразделениями, создавайте новые и управляйте существующими базами."
 
-                    ScrollView {
-                        id: dbScroll
-                        anchors.fill: parent
-                        clip: true
-                        ScrollBar.vertical.policy: ScrollBar.AsNeeded
-                        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
-
-                        ColumnLayout {
-                            x: AppTheme.spaceXL
-                            width: Math.max(0, dbScroll.availableWidth - AppTheme.spaceXL * 2)
-                            spacing: AppTheme.spaceL
-
-                            Column {
-                                spacing: AppTheme.spaceXS
-                                Layout.fillWidth: true
-
-                                Text {
-                                    text: "Управление базами данных"
-                                    color: AppTheme.textPrimary
-                                    font.family: AppTheme.fontFamily
-                                    font.pixelSize: AppTheme.sizeH2
-                                    font.weight: AppTheme.weightBold
-                                }
-                                Text {
-                                    text: "Переключайтесь между подразделениями, создавайте новые и управляйте существующими базами."
-                                    color: AppTheme.textSecondary
-                                    font.family: AppTheme.fontFamily
-                                    font.pixelSize: AppTheme.sizeBody
-                                    wrapMode: Text.WordWrap
-                                    width: parent.width
-                                }
-                            }
-
-                            // Единая панель вместо отдельных карточек:
-                            // один фон, внутри разделы с едва заметными разделителями.
-                            Rectangle {
-                                Layout.fillWidth: true
-                                // Высота панели = высота содержимого + поля, чтобы поля
-                                // не накладывались друг на друга.
-                                Layout.preferredHeight: dbPanelContent.implicitHeight + AppTheme.spaceXL * 2
-                                color: AppTheme.bgSurface
-                                radius: AppTheme.radiusLarge
-                                border.color: AppTheme.borderDivider
-                                border.width: 1
+                    // Единая панель вместо отдельных карточек:
+                    // один фон, внутри разделы с едва заметными разделителями.
+                    Rectangle {
+                        width: parent.width
+                        // Высота панели = высота содержимого + поля, чтобы поля
+                        // не накладывались друг на друга.
+                        height: dbPanelContent.implicitHeight + AppTheme.spaceL * 2
+                        color: AppTheme.bgSurface
+                        radius: AppTheme.radiusLarge
+                        border.color: AppTheme.borderDivider
+                        border.width: 1
 
                                 ColumnLayout {
                                     id: dbPanelContent
                                     anchors.left: parent.left
                                     anchors.right: parent.right
                                     anchors.top: parent.top
-                                    anchors.margins: AppTheme.spaceXL
-                                    spacing: AppTheme.spaceM
+                                    anchors.margins: AppTheme.spaceL
+                                    spacing: AppTheme.spaceL
 
                                     Text {
                                         text: "Подключённые базы"
@@ -564,62 +533,30 @@ AppLargeModal {
                                     }
                                 }
                             }
-                        }
-                    }
                 }
 
                 // ── 4. Данные подразделения ───────────────
-                Item {
-                    ScrollView {
-                        id: deptScroll
-                        anchors.fill: parent
-                        clip: true
-                        ScrollBar.vertical.policy: ScrollBar.AsNeeded
-                        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                SettingsPage {
+                    title: "Данные подразделения"
+                    description: "Эти данные используются в шапке и подписях при экспорте документов."
 
-                        ColumnLayout {
-                            x: AppTheme.spaceXL
-                            width: Math.max(0, deptScroll.availableWidth - AppTheme.spaceXL * 2)
-                            spacing: AppTheme.spaceL
-
-                            Column {
-                                spacing: AppTheme.spaceXS
-                                Layout.fillWidth: true
-
-                                Text {
-                                    text: "Данные подразделения"
-                                    color: AppTheme.textPrimary
-                                    font.family: AppTheme.fontFamily
-                                    font.pixelSize: AppTheme.sizeH2
-                                    font.weight: AppTheme.weightBold
-                                }
-                                Text {
-                                    text: "Эти данные используются в шапке и подписях при экспорте документов."
-                                    color: AppTheme.textSecondary
-                                    font.family: AppTheme.fontFamily
-                                    font.pixelSize: AppTheme.sizeBody
-                                    wrapMode: Text.WordWrap
-                                    width: parent.width
-                                }
-                            }
-
-                            // Единая панель с разделами и разделителями
-                            Rectangle {
-                                Layout.fillWidth: true
-                                // Высота панели = высота содержимого + поля, чтобы поля
-                                // не накладывались друг на друга.
-                                Layout.preferredHeight: deptPanelContent.implicitHeight + AppTheme.spaceXL * 2
-                                color: AppTheme.bgSurface
-                                radius: AppTheme.radiusLarge
-                                border.color: AppTheme.borderDivider
-                                border.width: 1
+                    // Единая панель с разделами и разделителями
+                    Rectangle {
+                        width: parent.width
+                        // Высота панели = высота содержимого + поля, чтобы поля
+                        // не накладывались друг на друга.
+                        height: deptPanelContent.implicitHeight + AppTheme.spaceL * 2
+                        color: AppTheme.bgSurface
+                        radius: AppTheme.radiusLarge
+                        border.color: AppTheme.borderDivider
+                        border.width: 1
 
                                 ColumnLayout {
                                     id: deptPanelContent
                                     anchors.left: parent.left
                                     anchors.right: parent.right
                                     anchors.top: parent.top
-                                    anchors.margins: AppTheme.spaceXL
+                                    anchors.margins: AppTheme.spaceL
                                     spacing: AppTheme.spaceL
 
                                     SettingsFormSection {
@@ -706,7 +643,7 @@ AppLargeModal {
                             }
 
                             RowLayout {
-                                Layout.fillWidth: true
+                                width: parent.width
 
                                 Item { Layout.fillWidth: true }
 
@@ -725,8 +662,6 @@ AppLargeModal {
                                     )
                                 }
                             }
-                        }
-                    }
                 }
 
                 // ── 5. Уведомления ────────────────────────
@@ -759,7 +694,7 @@ AppLargeModal {
                 }
 
                 // ── 6. Обновление ─────────────────────────
-                Item {
+                SettingsPage {
                     FileDialog {
                         id: updateZipDialog
                         title: "Выберите архив новой версии"
@@ -772,10 +707,8 @@ AppLargeModal {
                         onAccepted: backend.prepareUpdateFromPath(updateFolderDialog.selectedFolder)
                     }
 
-                    SettingsPage {
-                        anchors.fill: parent
-                        title: "Обновление"
-                        description: "Базы, горячие клавиши и тема остаются на месте. Меняется только сама программа."
+                    title: "Обновление"
+                    description: "Базы, горячие клавиши и тема остаются на месте. Меняется только сама программа."
 
                         Text {
                             width: parent.width
@@ -808,28 +741,29 @@ AppLargeModal {
                             wrapMode: Text.WordWrap
                         }
 
-                        RowLayout {
+                        // Кнопки переносятся строками — не вылезают за края
+                        Flow {
                             width: parent.width
                             spacing: AppTheme.spaceS
 
                             AppButton {
                                 text: "Проверить обновления"
                                 variant: "secondary"
-                                Layout.preferredWidth: 190
+                                width: 190
                                 enabled: !backend.updateBusy
                                 onClicked: backend.checkAllUpdateSources()
                             }
                             AppButton {
                                 text: "Указать архив .zip"
                                 variant: "secondary"
-                                Layout.preferredWidth: 190
+                                width: 190
                                 enabled: !backend.updateBusy
                                 onClicked: updateZipDialog.open()
                             }
                             AppButton {
                                 text: "Указать папку"
                                 variant: "secondary"
-                                Layout.preferredWidth: 190
+                                width: 190
                                 enabled: !backend.updateBusy
                                 onClicked: updateFolderDialog.open()
                             }
@@ -854,7 +788,6 @@ AppLargeModal {
                             font.pixelSize: AppTheme.sizeBody
                         }
                     }
-                }
             }
         }
     }
