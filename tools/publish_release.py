@@ -123,10 +123,13 @@ def main() -> int:
     parser.add_argument("--dry-run", action="store_true", help="только показать текст, не публиковать")
     parser.add_argument("--prerelease", action="store_true",
                         help="пометить релиз как пререлиз (по умолчанию — обычный релиз)")
+    parser.add_argument("--tag", default="",
+                        help="тег существующего релиза (например v2.0.0-ALPHA.20), "
+                             "если имя версии сменилось, а обновляться должны старые клиенты")
     args = parser.parse_args()
 
     version, build = read_identity()
-    tag = f"v{version}"
+    tag = args.tag.strip() or f"v{version}"
     title = f"OVERTIMETAB {version}" + (f" · сборка {build}" if build else "")
     notes = changelog_section(version)
     branch = current_branch()

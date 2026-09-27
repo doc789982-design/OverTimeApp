@@ -264,14 +264,14 @@ Item {
 
                 IconImage {
                     Layout.alignment: Qt.AlignVCenter
-                    source: "../icons/export_box.svg"
+                    source: "../icons/overtime.svg"
                     width: 18; height: 18
                     color: AppTheme.textTertiary
                 }
                 ColumnLayout {
                     spacing: 0
                     Text {
-                        text: "Компенсации"
+                        text: "Итоги"
                         color: AppTheme.textPrimary
                         font.family: AppTheme.fontFamily
                         font.pixelSize: AppTheme.sizeBodyLarge
@@ -347,7 +347,7 @@ Item {
                     spacing: AppTheme.spaceXS
 
                     Text {
-                        text: "Всего ДДО"
+                        text: "Всего"
                         color: AppTheme.textTertiary
                         font.family: AppTheme.fontFamily
                         font.pixelSize: AppTheme.sizeSmall

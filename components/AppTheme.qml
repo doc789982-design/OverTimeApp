@@ -9,8 +9,8 @@ QtObject {
     // Меняем здесь: заголовок окна, шапка и логотип
     // подхватят автоматически.
     // ==========================================
-    readonly property string appVersion: "2.0.0-ALPHA.20"
-    readonly property int appBuild: 210
+    readonly property string appVersion: "BETA.1"
+    readonly property int appBuild: 211
     readonly property string appVersionFull: appVersion + " · сборка " + appBuild
 
     // ==========================================

@@ -70,13 +70,38 @@ EXCLUDES = list(UNUSED_STDLIB) + list(UNUSED_PYSIDE_MODULES)
 # выше хватает, чтобы подтянуть QML и плагины окон. Лишнее режем ниже.
 
 
-_version_json = ROOT / "version.json"
 _changelog = ROOT / "CHANGELOG.md"
 _datas = []
-if _version_json.exists():
-    _datas.append((str(_version_json), "."))
 if _changelog.exists():
     _datas.append((str(_changelog), "."))
+
+# version.json внутрь сборки. В AppTheme лежит имя для человека (например
+# «BETA.1»), а обновлятор старых сборок понимает только «X.Y.Z-ИМЯ.N».
+# Поэтому в пакет кладётся машинная строка 2.0.0-ALPHA.<сборка> (сборки
+# нумеруются сквозняком и старым клиентам сравниваются по номеру сборки)
+# плюс поле display с настоящим именем — его показывают окна и тосты.
+_theme_src = (ROOT / "components" / "AppTheme.qml").read_text(encoding="utf-8")
+import json as _json
+import re as _re
+_m_ver = _re.search(r'appVersion:\s*"([^"]+)"', _theme_src)
+_m_bld = _re.search(r"appBuild:\s*(\d+)", _theme_src)
+_app_name = _m_ver.group(1) if _m_ver else ""
+_app_build = int(_m_bld.group(1)) if _m_bld else 0
+_meta_dir = ROOT / "build"
+_meta_dir.mkdir(exist_ok=True)
+_meta_file = _meta_dir / "version.json"
+_meta_file.write_text(
+    _json.dumps({
+        "name": "OVERTIMETAB",
+        "version": "2.0.0-ALPHA.%d" % _app_build,
+        "build": _app_build,
+        "display": _app_name,
+    }, ensure_ascii=False, indent=2) + "\n",
+    encoding="utf-8",
+)
+_datas.append((str(_meta_file), "."))
+print("[версия] имя=%s сборка=%d машинная=2.0.0-ALPHA.%d"
+      % (_app_name, _app_build, _app_build))
 
 a = Analysis(
     [str(ROOT / "Main.py")],

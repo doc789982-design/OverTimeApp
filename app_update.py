@@ -128,11 +128,20 @@ def scan_version(version: str, build: int = 0) -> str:
 
 
 def is_newer(candidate: str, current: str, candidate_build: int = 0, current_build: int = 0) -> bool:
-    """candidate новее current? Если есть номер сборки — сравниваем его, а не хвост ALPHA.N."""
+    """candidate новее current?
+
+    Номер сборки — главный аргумент: сборки нумеруются сквозняком по всей
+    истории программы, поэтому когда обе известны, решает сборка (имена
+    версий вроде «BETA.1» формату «2.0.0-ALPHA.N» не подчиняются).
+    Без сборок сравниваются строки версии по разрядам.
+    """
     if not candidate:
         return False
     if not current:
         return True
+    cb, vb = int(candidate_build or 0), int(current_build or 0)
+    if cb > 0 and vb > 0:
+        return cb > vb
     c, v = parse_version(candidate), parse_version(current)
     if c[0] != v[0]:
         return c[0] > v[0]
@@ -142,7 +151,6 @@ def is_newer(candidate: str, current: str, candidate_build: int = 0, current_bui
         return False
     if c[1] != v[1]:
         return c[1] > v[1]
-    cb, vb = int(candidate_build or 0), int(current_build or 0)
     if cb > 0 or vb > 0:
         return cb > vb
     return c[2] > v[2]
