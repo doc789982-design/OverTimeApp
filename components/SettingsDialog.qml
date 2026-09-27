@@ -313,7 +313,7 @@ AppLargeModal {
 
                                     Text {
                                         text: "Подключённые базы"
-                                        color: AppTheme.textSecondary
+                                        color: AppTheme.textTertiary
                                         font.family: AppTheme.fontFamily
                                         font.pixelSize: AppTheme.sizeSmall
                                         font.weight: AppTheme.weightBold
@@ -356,74 +356,76 @@ AppLargeModal {
 
                                             delegate: Rectangle {
                                                 width: ListView.view.width
-                                                height: 60
-                                                radius: AppTheme.radiusMedium
-                                                color: dbHoverArea.containsMouse ? AppTheme.stateHover : AppTheme.bgBase
+                                                height: 64
+                                                color: dbHoverArea.containsMouse ? AppTheme.stateHover : "transparent"
                                                 Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
 
                                                 property bool isActive: backend.activeDepartmentName === modelData.name
+
+                                                // Тонкий разделитель между строками (не карточка)
+                                                Rectangle {
+                                                    visible: index < dbSettingsList.count - 1
+                                                    anchors.left: parent.left
+                                                    anchors.right: parent.right
+                                                    anchors.bottom: parent.bottom
+                                                    height: 1
+                                                    color: AppTheme.borderDivider
+                                                }
 
                                                 Rectangle {
                                                     visible: isActive
                                                     anchors.left: parent.left
                                                     anchors.top: parent.top
                                                     anchors.bottom: parent.bottom
-                                                    width: 4
+                                                    width: 3
                                                     color: AppTheme.accentBrand
-                                                    radius: 2
                                                 }
 
-                                                Row {
-                                                    anchors.left: parent.left
-                                                    anchors.leftMargin: isActive ? AppTheme.spaceM + 4 : AppTheme.spaceM
-                                                    anchors.verticalCenter: parent.verticalCenter
-                                                    spacing: AppTheme.spaceS
-                                                    z: 1
+                                                RowLayout {
+                                                    anchors.fill: parent
+                                                    anchors.leftMargin: AppTheme.spaceM + (isActive ? 6 : 0)
+                                                    anchors.rightMargin: AppTheme.spaceM
+                                                    spacing: AppTheme.spaceM
 
-                                                    Rectangle {
-                                                        width: 36
-                                                        height: 36
-                                                        radius: AppTheme.radiusSmall
-                                                        color: isActive ? AppTheme.accentBrand : AppTheme.bgSurface
-                                                        anchors.verticalCenter: parent.verticalCenter
-
-                                                        IconImage {
-                                                            anchors.centerIn: parent
-                                                            source: "../icons/database.svg"
-                                                            width: AppTheme.iconMedium
-                                                            height: AppTheme.iconMedium
-                                                            color: isActive ? AppTheme.textOnAccent : AppTheme.textSecondary
-                                                        }
+                                                    IconImage {
+                                                        source: "../icons/database.svg"
+                                                        Layout.preferredWidth: 20
+                                                        Layout.preferredHeight: 20
+                                                        color: isActive ? AppTheme.accentBrand : AppTheme.textTertiary
+                                                        Layout.alignment: Qt.AlignVCenter
                                                     }
 
-                                                    Column {
-                                                        anchors.verticalCenter: parent.verticalCenter
+                                                    ColumnLayout {
+                                                        Layout.fillWidth: true
                                                         spacing: 2
 
-                                                        Row {
+                                                        RowLayout {
+                                                            Layout.fillWidth: true
                                                             spacing: AppTheme.spaceXS
 
                                                             Text {
+                                                                Layout.fillWidth: true
                                                                 text: modelData.name
                                                                 color: AppTheme.textPrimary
                                                                 font.family: AppTheme.fontFamily
                                                                 font.pixelSize: AppTheme.sizeBody
                                                                 font.weight: AppTheme.weightBold
+                                                                elide: Text.ElideRight
                                                             }
 
                                                             Rectangle {
                                                                 visible: isActive
-                                                                height: 18
-                                                                width: activeLabel.implicitWidth + 12
+                                                                Layout.preferredHeight: 18
+                                                                Layout.preferredWidth: activeLabel.implicitWidth + 12
                                                                 radius: 9
-                                                                color: AppTheme.accentBrand
-                                                                anchors.verticalCenter: parent.verticalCenter
+                                                                color: AppTheme.bgBrandSoft
+                                                                Layout.alignment: Qt.AlignVCenter
 
                                                                 Text {
                                                                     id: activeLabel
                                                                     anchors.centerIn: parent
                                                                     text: "Активна"
-                                                                    color: AppTheme.textOnAccent
+                                                                    color: AppTheme.accentBrand
                                                                     font.family: AppTheme.fontFamily
                                                                     font.pixelSize: AppTheme.sizeMicro
                                                                     font.weight: AppTheme.weightBold
@@ -432,32 +434,24 @@ AppLargeModal {
                                                         }
 
                                                         Text {
+                                                            Layout.fillWidth: true
                                                             text: modelData.path
                                                             color: AppTheme.textTertiary
                                                             font.family: AppTheme.fontFamily
                                                             font.pixelSize: AppTheme.sizeMicro
-                                                            width: 280
                                                             elide: Text.ElideMiddle
                                                         }
                                                     }
-                                                }
-
-                                                Row {
-                                                    anchors.right: parent.right
-                                                    anchors.rightMargin: AppTheme.spaceM
-                                                    anchors.verticalCenter: parent.verticalCenter
-                                                    spacing: AppTheme.spaceXS
-                                                    z: 2
 
                                                     AppButton {
                                                         text: "Папка"
-                                                        width: 80
+                                                        Layout.preferredWidth: 88
                                                         variant: "secondary"
                                                         onClicked: backend.openDbFolder(modelData.path)
                                                     }
                                                     AppButton {
                                                         text: "Экспорт"
-                                                        width: 80
+                                                        Layout.preferredWidth: 92
                                                         variant: "secondary"
                                                         onClicked: {
                                                             exportFolderDialog.pathToExport = modelData.path
@@ -466,7 +460,7 @@ AppLargeModal {
                                                     }
                                                     AppButton {
                                                         text: "Открыть"
-                                                        width: 80
+                                                        Layout.preferredWidth: 96
                                                         variant: "primary"
                                                         onClicked: {
                                                             backend.openDatabase(modelData.path)
@@ -475,8 +469,8 @@ AppLargeModal {
                                                     }
                                                     AppButton {
                                                         text: "Убрать"
-                                                        width: 80
-                                                        variant: "danger"
+                                                        Layout.preferredWidth: 84
+                                                        variant: "ghost"
                                                         onClicked: {
                                                             let dbPath = modelData.path
                                                             mainWindow.askConfirm(
@@ -503,14 +497,14 @@ AppLargeModal {
                                     // Разделитель разделов
                                     Rectangle {
                                         Layout.fillWidth: true
-                                        height: 1
+                                        Layout.preferredHeight: 1
                                         color: AppTheme.borderDivider
                                         opacity: 0.6
                                     }
 
                                     Text {
                                         text: "Создать или подключить"
-                                        color: AppTheme.textSecondary
+                                        color: AppTheme.textTertiary
                                         font.family: AppTheme.fontFamily
                                         font.pixelSize: AppTheme.sizeSmall
                                         font.weight: AppTheme.weightBold
@@ -536,8 +530,7 @@ AppLargeModal {
 
                                         AppButton {
                                             text: "Создать базу"
-                                            iconSource: "../icons/database.svg"
-                                            Layout.preferredWidth: 140
+                                            Layout.preferredWidth: 150
                                             variant: "primary"
                                             onClicked: {
                                                 backend.createNewDatabase(newDbNameInput.text)
@@ -552,21 +545,18 @@ AppLargeModal {
 
                                         AppButton {
                                             text: "Подключить файл..."
-                                            iconSource: "../icons/folder.svg"
-                                            Layout.preferredWidth: 170
+                                            Layout.preferredWidth: 160
                                             variant: "secondary"
                                             onClicked: root.requestFileAttach()
                                         }
                                         AppButton {
                                             text: "Импорт копии..."
-                                            iconSource: "../icons/folder.svg"
-                                            Layout.preferredWidth: 160
+                                            Layout.preferredWidth: 150
                                             variant: "secondary"
                                             onClicked: importFileDialog.open()
                                         }
                                         AppButton {
                                             text: "Изменить путь хранения..."
-                                            iconSource: "../icons/settings.svg"
                                             Layout.fillWidth: true
                                             variant: "secondary"
                                             onClicked: changeStorageDialog.open()
@@ -638,7 +628,7 @@ AppLargeModal {
 
                                         AppTextField {
                                             id: deptNameInput
-                                            width: parent.width * 0.65
+                                            width: parent.width
                                             label: "Название отдела:"
                                             text: backend.departmentData.department_name || ""
                                             cutoutColor: AppTheme.bgSurface
@@ -647,7 +637,7 @@ AppLargeModal {
 
                                     Rectangle {
                                         Layout.fillWidth: true
-                                        height: 1
+                                        Layout.preferredHeight: 1
                                         color: AppTheme.borderDivider
                                         opacity: 0.6
                                     }
@@ -656,20 +646,26 @@ AppLargeModal {
                                         title: "Ответственное лицо"
                                         Layout.fillWidth: true
 
+                                        // Должность — самое широкое поле (≈62% строки);
+                                        // размеры фиксированы пропорциями, от текста не зависят
                                         RowLayout {
                                             width: parent.width
                                             spacing: AppTheme.spaceM
 
                                             AppTextField {
                                                 id: deptPosInput
+                                                Layout.preferredWidth: parent.width * 0.62
                                                 Layout.fillWidth: true
+                                                Layout.minimumWidth: 240
                                                 label: "Должность:"
                                                 text: backend.departmentData.resp_position || ""
                                                 cutoutColor: AppTheme.bgSurface
                                             }
                                             AppTextField {
                                                 id: deptRankInput
-                                                Layout.preferredWidth: 180
+                                                Layout.preferredWidth: parent.width * 0.38
+                                                Layout.fillWidth: true
+                                                Layout.minimumWidth: 140
                                                 label: "Звание:"
                                                 text: backend.departmentData.resp_rank || ""
                                                 cutoutColor: AppTheme.bgSurface
@@ -682,6 +678,7 @@ AppLargeModal {
 
                                             AppTextField {
                                                 id: deptLastInput
+                                                Layout.preferredWidth: parent.width / 3
                                                 Layout.fillWidth: true
                                                 label: "Фамилия:"
                                                 text: backend.departmentData.resp_last_name || ""
@@ -689,6 +686,7 @@ AppLargeModal {
                                             }
                                             AppTextField {
                                                 id: deptFirstInput
+                                                Layout.preferredWidth: parent.width / 3
                                                 Layout.fillWidth: true
                                                 label: "Имя:"
                                                 text: backend.departmentData.resp_first_name || ""
@@ -696,6 +694,7 @@ AppLargeModal {
                                             }
                                             AppTextField {
                                                 id: deptMidInput
+                                                Layout.preferredWidth: parent.width / 3
                                                 Layout.fillWidth: true
                                                 label: "Отчество:"
                                                 text: backend.departmentData.resp_middle_name || ""
@@ -802,16 +801,7 @@ AppLargeModal {
                         }
                         Text {
                             width: parent.width
-                            text: "Положите zip рядом с OVERTIMETAB.exe или на флешку — программа сама её заметит (имя файла не важно, смотрим содержимое) и покажет кнопку внизу слева. Либо укажите файл вручную."
-                            color: AppTheme.textSecondary
-                            font.family: AppTheme.fontFamily
-                            font.pixelSize: AppTheme.sizeBody
-                            wrapMode: Text.WordWrap
-                        }
-
-                        Text {
-                            width: parent.width
-                            text: "Можно обновляться и через интернет: укажите адрес хранилища, на котором лежат version.json и архив с новой версией. Для GitHub достаточно вставить ссылку на релиз — программу сама получит данные о версии. Можно вставить и прямую ссылку на сам архив (.zip). Если оставить поле пустым, программа проверит вшитые источники: сначала GitHub, затем сервер post.mvd.ru."
+                            text: "Обновиться можно и без интернета: положите zip-архив новой версии рядом с программой или на флешку — программа заметит его сама и покажет кнопку обновления. Можно указать архив или папку вручную."
                             color: AppTheme.textSecondary
                             font.family: AppTheme.fontFamily
                             font.pixelSize: AppTheme.sizeBody
@@ -821,47 +811,25 @@ AppLargeModal {
                         RowLayout {
                             width: parent.width
                             spacing: AppTheme.spaceS
-
-                            AppTextField {
-                                id: updateUrlField
-                                Layout.fillWidth: true
-                                label: "Адрес хранилища обновлений"
-                                text: backend.updateUrl
-                                placeholderText: "https://example.ru/updates"
-                                onAccepted: backend.setUpdateUrl(text.trim())
-                                onEditingFinished: {
-                                    // сохраняем адрес при уходе из поля, не трогая остальное
-                                    backend.setUpdateUrl(text.trim())
-                                }
-                            }
 
                             AppButton {
-                                text: "Проверить"
+                                text: "Проверить обновления"
                                 variant: "secondary"
-                                Layout.preferredWidth: 130
+                                Layout.preferredWidth: 190
                                 enabled: !backend.updateBusy
-                                onClicked: {
-                                    backend.setUpdateUrl(updateUrlField.text.trim())
-                                    backend.checkAllUpdateSources()
-                                }
+                                onClicked: backend.checkAllUpdateSources()
                             }
-                        }
-
-                        RowLayout {
-                            width: parent.width
-                            spacing: AppTheme.spaceS
-
                             AppButton {
                                 text: "Указать архив .zip"
                                 variant: "secondary"
-                                Layout.preferredWidth: 200
+                                Layout.preferredWidth: 190
                                 enabled: !backend.updateBusy
                                 onClicked: updateZipDialog.open()
                             }
                             AppButton {
                                 text: "Указать папку"
                                 variant: "secondary"
-                                Layout.preferredWidth: 170
+                                Layout.preferredWidth: 190
                                 enabled: !backend.updateBusy
                                 onClicked: updateFolderDialog.open()
                             }

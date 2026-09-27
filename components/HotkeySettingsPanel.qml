@@ -59,30 +59,23 @@ Item {
                     // ── Раздел: Добавить клавишу ──
                     Text {
                         text: "Добавить новую клавишу"
-                        color: AppTheme.textSecondary
+                        color: AppTheme.textTertiary
                         font.family: AppTheme.fontFamily
                         font.pixelSize: AppTheme.sizeSmall
                         font.weight: AppTheme.weightBold
                         font.letterSpacing: 0.8
                     }
 
-                    // ВЕРХНЯЯ СТРОКА: Название + Инпут + Выбор + Кнопка
+                    // ВЕРХНЯЯ СТРОКА: клавиша → название → действие → кнопка.
+                    // Ровная сетка одинаковой высоты, пропорции фиксированы.
                     RowLayout {
                         Layout.fillWidth: true
                         spacing: AppTheme.spaceM
 
-                        // ПОЛЕ НАЗВАНИЯ
-                        AppTextField {
-                            id: hkNameInput
-                            Layout.preferredWidth: 200
-                            label: "Название (для справки):"
-                            placeholderText: "Напр: Ночная смена"
-                            cutoutColor: AppTheme.bgSurface
-                        }
-
                         // ПОЛЕ ЗАХВАТА КЛАВИШИ
                         Rectangle {
-                            Layout.preferredWidth: 200
+                            id: keyCatcherBox
+                            Layout.preferredWidth: 170
                             Layout.preferredHeight: 44
                             radius: AppTheme.radiusMedium
                             color: keyCatcher.activeFocus ? AppTheme.bgInput : AppTheme.bgBase
@@ -125,10 +118,21 @@ Item {
                             MouseArea { anchors.fill: parent; cursorShape: Qt.IBeamCursor; onClicked: keyCatcher.forceActiveFocus() }
                         }
 
+                        // ПОЛЕ НАЗВАНИЯ
+                        AppTextField {
+                            id: hkNameInput
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 160
+                            label: "Название (для справки):"
+                            placeholderText: "Напр: Ночная смена"
+                            cutoutColor: AppTheme.bgSurface
+                        }
+
                         // ВЫБОР ДЕЙСТВИЯ
                         AppComboBox {
                             id: actionTypeCombo
                             Layout.fillWidth: true
+                            Layout.minimumWidth: 200
                             label: "Что сделать?"
                             cutoutColor: AppTheme.bgSurface
                             model: [{text: "Добавить дежурство", value: 0}, {text: "Добавить компенсацию", value: 1}, {text: "Установить статус (Б/О/К)", value: 2}]
@@ -139,7 +143,7 @@ Item {
                         // КНОПКА СОХРАНИТЬ
                         AppButton {
                             Layout.preferredHeight: 44
-                            Layout.preferredWidth: 120
+                            Layout.preferredWidth: 150
                             text: "Добавить"
                             variant: "primary"
                             onClicked: {
@@ -251,7 +255,7 @@ Item {
                         RowLayout {
                             spacing: AppTheme.spaceM; Layout.fillWidth: true
                             AppComboBox {
-                                id: hkCompUnit; Layout.preferredWidth: 250; label: "Вид компенсации:"
+                                id: hkCompUnit; Layout.preferredWidth: 280; label: "Вид компенсации:"
                                 cutoutColor: AppTheme.bgSurface
                                 model: [{text: "В ночное время (часы)", value: "hours"}, {text: "Сверхурочно (часы)", value: "overtime"}, {text: "Дни отдыха", value: "days"}]
                                 textRole: "text"; valueRole: "value"
@@ -281,7 +285,7 @@ Item {
                         RowLayout {
                             spacing: AppTheme.spaceM; Layout.fillWidth: true
                             AppComboBox {
-                                id: hkStatusUnit; Layout.preferredWidth: 250; label: "Какой статус поставить?"
+                                id: hkStatusUnit; Layout.preferredWidth: 280; label: "Какой статус поставить?"
                                 cutoutColor: AppTheme.bgSurface
                                 model: [{text: "Больничный (Б)", value: "Б"}, {text: "Отпуск (О)", value: "О"}, {text: "Командировка (К)", value: "К"}]
                                 textRole: "text"; valueRole: "value"
@@ -293,7 +297,7 @@ Item {
                     // Разделитель между разделами
                     Rectangle {
                         Layout.fillWidth: true
-                        height: 1
+                        Layout.preferredHeight: 1
                         color: AppTheme.borderDivider
                         opacity: 0.6
                     }
@@ -301,7 +305,7 @@ Item {
                     // ── Раздел: Добавленные клавиши ──
                     Text {
                         text: "Добавленные клавиши"
-                        color: AppTheme.textSecondary
+                        color: AppTheme.textTertiary
                         font.family: AppTheme.fontFamily
                         font.pixelSize: AppTheme.sizeSmall
                         font.weight: AppTheme.weightBold
@@ -318,17 +322,33 @@ Item {
                             id: hkList
                             anchors.fill: parent; spacing: AppTheme.spaceXS; clip: true; model: backend.hotkeysList
                             delegate: Rectangle {
-                                width: ListView.view.width; height: 56; radius: AppTheme.radiusMedium
-                                color: delKeyHover.containsMouse ? AppTheme.stateHover : AppTheme.bgBase
+                                width: ListView.view.width; height: 56
+                                color: delKeyHover.containsMouse ? AppTheme.stateHover : "transparent"
                                 Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
-                                
+
+                                // Тонкий разделитель между строками (не карточки)
+                                Rectangle {
+                                    visible: index < hkList.count - 1
+                                    anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom
+                                    height: 1; color: AppTheme.borderDivider
+                                }
+
                                 RowLayout {
-                                    anchors.fill: parent; anchors.margins: AppTheme.spaceM; anchors.rightMargin: 60; spacing: AppTheme.spaceL
-                                    
-                                    Row {
-                                        spacing: AppTheme.spaceS; Layout.preferredWidth: 120
-                                        IconImage { source: "../icons/command.svg"; width: AppTheme.iconMedium; height: AppTheme.iconMedium; color: AppTheme.accentBrand; anchors.verticalCenter: parent.verticalCenter }
-                                        Text { text: modelData.key; color: AppTheme.accentBrand; font.family: AppTheme.fontFamily; font.pixelSize: AppTheme.sizeBodyLarge; font.weight: AppTheme.weightBold; anchors.verticalCenter: parent.verticalCenter }
+                                    anchors.fill: parent
+                                    anchors.leftMargin: AppTheme.spaceS
+                                    anchors.rightMargin: 32 + AppTheme.spaceS + AppTheme.spaceS
+                                    anchors.topMargin: 0; anchors.bottomMargin: 0
+                                    spacing: AppTheme.spaceL
+
+                                    Text {
+                                        text: modelData.key
+                                        color: AppTheme.accentBrand
+                                        font.family: AppTheme.fontFamily
+                                        font.pixelSize: AppTheme.sizeBodyLarge
+                                        font.weight: AppTheme.weightBold
+                                        Layout.preferredWidth: 150
+                                        elide: Text.ElideRight
+                                        Layout.alignment: Qt.AlignVCenter
                                     }
                                     
                                     Column {
