@@ -775,7 +775,11 @@ def render_to_device(model, pdevice, page_from=None, page_to=None, days_overlay=
         pages = renderer.page_rows(page_h_px)
         pages = pages[int(page_from) - 1: int(page_to)] if (page_from and page_to) else pages
         cm_px = pdevice.resolution() / 2.54          # пикселей устройства в сантиметре
-        bottom_margin_px = model.margins_mm[3] / 10.0 * cm_px
+        # ВАЖНО: у QPainter на устройствах печати начало координат — угол
+        # ОБЛАСТИ КОНТЕНТА (после полей), а не угол листа. Считаем базовую
+        # линию сноски от края листа и переводим в координаты художника.
+        fr = pdevice.pageLayout().fullRectPixels(pdevice.resolution())
+        fn_baseline = fr.bottom() - 0.5 * cm_px - pr.y()
         fn_font = renderer.footnote_font(pdevice.resolution())
         for i, rows in enumerate(pages):
             if i:
@@ -790,8 +794,7 @@ def render_to_device(model, pdevice, page_from=None, page_to=None, days_overlay=
             # только если на этой странице есть эти буквы
             letters = model.letters_in_rows(rows)
             if letters:
-                baseline_y = pr.bottom() + bottom_margin_px - 0.5 * cm_px
-                renderer.paint_footnote(painter, fn_font, baseline_y, letters)
+                renderer.paint_footnote(painter, fn_font, fn_baseline, letters)
         return len(pages)
     finally:
         painter.end()
