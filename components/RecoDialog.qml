@@ -186,7 +186,7 @@ Popup {
                         model: root.tocModel
 
                         delegate: Rectangle {
-                            width: tocView.width
+                            width: tocView.width - AppTheme.scrollGutter
                             height: tocLabel.implicitHeight + 8
                             radius: AppTheme.radiusSmall
                             color: modelData.atom === root.currentAtom
@@ -258,7 +258,7 @@ Popup {
                     }
 
                     header: Item {
-                        width: contentView.width
+                        width: contentView.width - AppTheme.scrollGutter
                         height: recoTitleText.implicitHeight + AppTheme.spaceM
 
                         Text {
@@ -279,7 +279,7 @@ Popup {
                     // поэтому обычные дети с visible.)
                     delegate: Item {
                         id: atomDel
-                        width: contentView.width
+                        width: contentView.width - AppTheme.scrollGutter
                         readonly property var d: modelData
                         height: d.k === "sec" ? secCol.height
                               : d.k === "sub" ? subCol.height

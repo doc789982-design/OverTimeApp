@@ -194,6 +194,16 @@ Focus-кольцо 2px с 50% brand — свежие MD3-спеки тоже т�
 > поля диалога (findField по children, isFormField-маркер;
 > childItems из QML не виден); AppDialog модален (MD3/HIG);
 > AppScrollBar — дефолтные серые скроллбары заменены.
+> Батч 13 (сборка 195) — ребёнок в теле Menu = ПУНКТ меню
+>(тултип рисовал пустую строку сверху; перенос в background);
+> AppDialog/AppConfirmDialog — popupType Item + страховочный
+> Timer 600ms (нативное окно с модальностью оставляло мёртвые
+> зоны кликов); AppScrollBar v2 — желоб scrollGutter=14 на всех
+> сайтах (бегунок рядом с контентом), бегунок 6px→10px hover;
+> кнопка обновления — UpdateIcon (Canvas-морфинг точек форм:
+> refresh/download/ring/install, единые штрихи shaft/head/extra,
+> вырожденные штрихи пропускаются; в software Canvas мёртв —
+> проверка свойствами + численный контроль геометрии).
 
 1. **Тёмная тема, on-accent:** вместо белого текста на #4B9AEE — тёмный
    `#062E4F` (как MD3: на светлом primary тёмный on-primary). Решает 2.93:1

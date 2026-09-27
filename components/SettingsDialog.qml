@@ -589,7 +589,7 @@ AppLargeModal {
 
                         ColumnLayout {
                             x: AppTheme.spaceXL
-                            width: Math.max(0, deptScroll.availableWidth - AppTheme.spaceXL * 2)
+                            width: Math.max(0, deptScroll.availableWidth - AppTheme.spaceXL * 2 - AppTheme.scrollGutter)
                             spacing: AppTheme.spaceL
 
                             Column {

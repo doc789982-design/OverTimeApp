@@ -32,6 +32,21 @@ Popup {
 
     z: AppTheme.zModal
 
+    // Попап — Item в overlay главного окна, а не нативное ОС-окно:
+    // нативное окно с модальностью и анимациями закрывается нестабильно
+    // (может оставить невидимую зону, блокирующую клики)
+    popupType: Popup.Item
+
+    // Страховка: если выходная анимация по какой-то причине не завершилась,
+    // принудительно докрываем попап — иначе его невидимый прямоугольник
+    // блокирует клики в зоне, где окно было
+    Timer {
+        id: closeSafety
+        interval: 600
+        onTriggered: if (!root.opened) root.visible = false
+    }
+    onAboutToHide: closeSafety.restart()
+
     // Затемнение фона — как у больших модальных окон программы
     Overlay.modal: Rectangle {
         color: AppTheme.bgOverlay

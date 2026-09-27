@@ -144,7 +144,8 @@ Popup {
 
             Column {
                 id: contentArea
-                width: parent.width
+                // минус желоб скроллбара — бегунок рядом, не поверх контента
+                width: parent.width - AppTheme.scrollGutter
                 spacing: AppTheme.spaceL
             }
         }

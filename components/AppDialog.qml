@@ -38,6 +38,21 @@ Popup {
     height: effectiveHeight
     
     z: AppTheme.zModal
+
+    // Попап — Item в overlay главного окна, а не нативное ОС-окно:
+    // нативное окно с модальностью и анимациями закрывается нестабильно
+    // (может оставить невидимую зону, блокирующую клики)
+    popupType: Popup.Item
+
+    // Страховка: если выходная анимация по какой-то причине не завершилась,
+    // принудительно докрываем попап — иначе его невидимый прямоугольник
+    // блокирует клики в зоне, где окно было
+    Timer {
+        id: closeSafety
+        interval: 600
+        onTriggered: if (!root.opened) root.visible = false
+    }
+    onAboutToHide: closeSafety.restart()
     modal: true   // MD3/HIG: форма блокирует остальной интерфейс до решения 
     dim: true  
     focus: true
@@ -158,7 +173,7 @@ Popup {
 
             Column {
                 id: contentArea
-                width: scrollArea.width - (AppTheme.spaceL * 2)
+                width: scrollArea.width - (AppTheme.spaceL * 2) - AppTheme.scrollGutter
                 x: AppTheme.spaceL
                 spacing: AppTheme.spaceM
                 topPadding: AppTheme.spaceM
