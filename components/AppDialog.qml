@@ -86,6 +86,15 @@ Popup {
     }
 
     contentItem: ColumnLayout {
+        // Фокус сюда: активным его делает popап (обёртка QQuickPopupItem
+        // держит фокус-скоуп), иначе Keys не увидят клавиши.
+        // Enter — «Сохранить» (когда фокус не в поле ввода: там Enter
+        // завершает ввод поля, как принято), Esc — «Отмена».
+        // Раньше Esc закрывал окно молча, не сообщая «отмены».
+        focus: true
+        Keys.onReturnPressed: if (root.showAccept) root.accepted()
+        Keys.onEnterPressed: if (root.showAccept) root.accepted()
+        Keys.onEscapePressed: { root.rejected(); root.close() }
         id: mainLayout
         spacing: 0
 

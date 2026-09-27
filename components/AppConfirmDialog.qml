@@ -63,6 +63,13 @@ Popup {
     }
 
     contentItem: Item {
+        // Enter — подтвердить (backup, если фокус не на кнопке),
+        // Esc — отменить. Раньше Esc закрывал окно молча, не сообщая
+        // «отмены» — теперь поведение единое с кнопкой «Отмена».
+        Keys.onReturnPressed: confirmBtn.click()
+        Keys.onEnterPressed: confirmBtn.click()
+        Keys.onEscapePressed: { root.rejected(); root.close() }
+
         Column {
             id: contentColumn
             x: AppTheme.spaceL
@@ -128,6 +135,10 @@ Popup {
             }
 
             AppButton {
+                id: confirmBtn
+                // фокус сразу на подтверждении: Enter/Space работают
+                // нативно, кольцо фокуса подсвечивает кнопку по умолчанию
+                focus: true
                 text: root.confirmLabel
                 variant: root.dangerMode ? "danger" : "primary"
                 onClicked: { root.accepted(); root.close() }

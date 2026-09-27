@@ -42,6 +42,11 @@ TextField {
     focusPolicy: Qt.StrongFocus
     cursorDelegate: AppCursorDelegate {}
 
+    // Выделение в фирменном цвете (не системный синий)
+    selectByMouse: true
+    selectionColor: AppTheme.accentBrand
+    selectedTextColor: AppTheme.textOnAccent
+
     onActiveFocusChanged: { if (activeFocus) Qt.callLater(function() { root.selectAll() }) }
 
     onTextEdited: {

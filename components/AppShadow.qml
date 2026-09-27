@@ -33,8 +33,10 @@ BorderImage {
     // Стандартные вертикальные сдвиги (те же, что были у DropShadow)
     readonly property var _offsets: [0,  1,  3,  4,  8, 12]
 
-    // Та же прозрачность, что была у AppTheme.shadowColor
-    opacity: AppTheme.isDark ? 0.40 : 0.12
+    // В ТЁМНОЙ теме тени отключены (как в Workday Canvas и других
+    // взрослых системах): глубину даёт более светлая поверхность,
+    // а чёрные тени на тёмном фоне дают только «грязь».
+    opacity: AppTheme.isDark ? 0 : 0.12
 
     z: -1  // рисуемся ПОД родителем
     anchors.fill: parent

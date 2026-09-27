@@ -92,8 +92,11 @@ Button {
                     width: parent.width + index * 2
                     height: parent.height + index * 2
                     color: "#000000"
-                    opacity: (AppTheme.isDark ? 0.16 : 0.05) * (1.0 - index * 0.22)
-                    visible: control.variant !== "ghost" && control.variant !== "secondary"
+                    objectName: "btnShadowPill"
+                    // в тёмной теме тени не используются (Workday Canvas):
+                    // глубину даёт более светлая заливка, а не чёрный ореол
+                    opacity: (AppTheme.isDark ? 0.0 : 0.05) * (1.0 - index * 0.22)
+                    visible: !AppTheme.isDark && control.variant !== "ghost" && control.variant !== "secondary"
                 }
             }
 

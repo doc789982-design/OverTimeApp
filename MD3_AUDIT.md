@@ -181,6 +181,12 @@ Focus-кольцо 2px с 50% brand — свежие MD3-спеки тоже т�
 > обновления — download (не refresh) + бейдж-точка, боб
 > вместо кручения (anchors.fill на y блокирует анимации —
 > развязано на width/height).
+> Батч 11 (сборка 193) — тени только в светлой теме (Workday
+> Canvas: в тёмной глубину даёт светлая поверхность); Enter/Esc
+> в AppConfirmDialog (кнопка по умолчанию в фокусе) и AppDialog
+> (contentItem focus:true — обёртка QQuickPopupItem держит фокус
+> и Keys на детях молчат); Esc теперь шлёт rejected; выделение
+> в полях — accentBrand/textOnAccent + selectByMouse.
 
 1. **Тёмная тема, on-accent:** вместо белого текста на #4B9AEE — тёмный
    `#062E4F` (как MD3: на светлом primary тёмный on-primary). Решает 2.93:1

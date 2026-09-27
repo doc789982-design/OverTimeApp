@@ -51,6 +51,13 @@ TextField {
     focusPolicy: Qt.StrongFocus
     cursorDelegate: AppCursorDelegate {}
 
+    // Выделение как в зрелых приложениях: брендовый цвет (не системный
+    // синий) и явная работа мышью; в числовых полях двойной клик и так
+    // выделяет всё число (текст без разделителей — одно слово)
+    selectByMouse: true
+    selectionColor: AppTheme.accentBrand
+    selectedTextColor: AppTheme.textOnAccent
+
     // ==========================================
     // 1. РАМКА
     // ==========================================
