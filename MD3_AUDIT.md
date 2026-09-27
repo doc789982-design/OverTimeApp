@@ -281,6 +281,21 @@ Focus-кольцо 2px с 50% brand — свежие MD3-спеки тоже т�
 > Веб-путь закрыт; этап 2 (дежурства, компенсации, карточка
 > сотрудника, группы, произв. календарь) — только нативно в QML.
 > Сборка возвращается к ~60 МБ.
+> Батч 25 (сборка 207) — кнопка обновления по КОДУ ЮЗЕРА
+> (UpdateButton.qml, Canvas-морфинг, 5 состояний). Адаптация:
+> property rotation затирал Item.rotation → spinAngle+
+> NumberAnimation; масштаб fit=width/32 (дизайн 32×32) для
+> шапки 46×36 и 64×64; цвета AppTheme (ВНИМАНИЕ: светлая
+> тема = #0374B5, тёмная = #4B9AEE — НЕ наоборот); симуляторы
+> (Math.random/таймеры) заменены на backend.remote*/updateReady
+> /updateBusy + checkAllUpdateSources/startRemoteDownload/
+> applyReadyUpdate; debounce 80мс; морфинг только по цепочке;
+> тултип AppToolTip. UpdateDownloadButton.qml+UpdateSparkles
+> удалены. QA-стенд пересобран: /home/user/qa/build_stubs.py
+> (заглушки libGL/libdbus/… с version-script из readelf-разбора
+> NEEDED-цепочки PySide6+plugins) + render_upd.py (offscreen+
+> software, QTest-клики, FakeBackend) — пиксельная проверка:
+> 6 состояний × 2 темы, Δ цвета = 0, полный цикл 0→1→2→3→4→0.
 > Батч 20 (сборка 202) — точная причина из журнала юзера:
 > «DLL load failed: Не найден указанный модуль» при import
 > QtWebEngineQuick/Widgets = у Qt6WebEngineCore.dll нет
