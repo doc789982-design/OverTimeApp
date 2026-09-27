@@ -133,7 +133,7 @@ ApplicationWindow {
                     anchors.top: parent.top
                     anchors.bottom: parent.bottom
 
-                    AppUI.UpdateButton {
+                    AppUI.UpdateMorphButton {
                         width: 46
                         height: parent.height
                     }
