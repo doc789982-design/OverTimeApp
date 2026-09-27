@@ -228,6 +228,14 @@ Focus-кольцо 2px с 50% brand — свежие MD3-спеки тоже т�
 > GitHub Pages: tools/build_web_demo.py снимает 7941 ответ
 > движка в docs/ (3.3 МБ, gzip ~326 КБ), app.js — демо-ветки
 > api()/post() (записи отключены, снимок).
+> Батч 17 (сборка 199) — этап 4: окно веб-версии ВНУТРИ
+> программы: QtWebEngineQuick.initialize() до QApplication;
+> serve_in_thread (127.0.0.1:0, daemon-поток, _DB общий);
+> WebWindow.qml (Window+WebEngineView) создаётся из Python
+> по кнопке (qrc или файл); spec/slim перестали вырезать
+> WebEngine (hiddenimports + datas qml/resources/libexec/
+> translations + glob Qt/bin и корня PySide6; WebChannel
+> оставлен — зависимость ядра).
 
 1. **Тёмная тема, on-accent:** вместо белого текста на #4B9AEE — тёмный
    `#062E4F` (как MD3: на светлом primary тёмный on-primary). Решает 2.93:1
