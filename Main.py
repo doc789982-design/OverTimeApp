@@ -2962,10 +2962,14 @@ class Backend(QObject):
         # Этап 4: веб-интерфейс — окно ВНУТРИ программы, без браузера.
         # Если встроенный движок доступен — открываем его; иначе прежний
         # режим: второй процесс с --web + системный браузер.
-        self._web_log("кнопка нажата: HAS_WEBENGINE=%s" % HAS_WEBENGINE)
+        self._web_log("кнопка нажата: HAS_WEBENGINE=%s, Quick=%s; причина: %s"
+                      % (HAS_WEBENGINE, HAS_WEBENGINE_QUICK,
+                         WEBENGINE_ERROR or "нет (успех)"))
         if HAS_WEBENGINE:
             self._open_web_window()
             return
+        self._web_fatal("встроенный браузер недоступен.\n\n%s\n\n"
+                        "Открою в системном браузере, как раньше." % WEBENGINE_ERROR)
         import subprocess
         try:
             log_path = Path(self._data_dir) / "web.log"
@@ -2984,7 +2988,9 @@ class Backend(QObject):
                 lf = open(log_path, "ab")
                 subprocess.Popen(argv, stdout=lf, stderr=lf, close_fds=True)
                 lf.close()
-            except Exception:
+                self._web_log("запущен процесс --web (ветка браузера)")
+            except Exception as pe:
+                self._web_log("Popen не удался: %s" % pe)
                 subprocess.Popen(argv, close_fds=True)
             self.showToast.emit("Запускаем веб-версию…", "success")
             threading.Thread(target=self._poll_web, daemon=True).start()
@@ -3081,7 +3087,10 @@ class Backend(QObject):
                     return
                 self._web_log("файлы Chromium на месте")
 
-            # 4) создаём окно из QML
+            # 4) создаём окно: QML-вариант или Widgets-запасной
+            if not HAS_WEBENGINE_QUICK:
+                self._open_web_window_widgets(url)
+                return
             from PySide6.QtCore import QUrl
             from PySide6.QtQml import QQmlComponent
             engine = getattr(self, "_engine", None)
@@ -3117,6 +3126,39 @@ class Backend(QObject):
             import traceback
             self._web_fatal("%s: %s\n%s" % (type(e).__name__, e,
                                              traceback.format_exc()[-600:]))
+
+    def _open_web_window_widgets(self, url):
+        """Запасной вкус окна веб-версии: QWebEngineView в QMainWindow.
+
+        Используется, когда QML-плагин WebEngine недоступен, а ядро
+        (QtWebEngineWidgets) — доступно. Внешне то же окно программы.
+        """
+        from PySide6.QtCore import QUrl
+        from PySide6.QtWidgets import QMainWindow
+        from PySide6.QtWebEngineWidgets import QWebEngineView
+        win = getattr(self, "_webwin", None)
+        if win is not None:
+            try:
+                win.show()
+                win.raise_()
+                win.activateWindow()
+                self._web_log("widgets-окно уже было открыто — подняли наверх")
+                return
+            except RuntimeError:
+                self._webwin = None
+        w = QMainWindow()
+        w.setWindowTitle("OVERTIMETAB — веб-версия")
+        w.resize(1320, 900)
+        view = QWebEngineView(w)
+        view.load(QUrl(url))
+        w.setCentralWidget(view)
+        w.show()
+        w.raise_()
+        w.activateWindow()
+        self._webwin = w
+        self._webview = view
+        self._web_log("widgets-окно создано и показано: %s" % url)
+        self.showToast.emit("Веб-версия открыта в окне программы", "success")
 
     def _poll_web(self):
         """Фоновая проверка: ждём сервер потомка до ~8 секунд."""
@@ -4346,8 +4388,12 @@ def _handle_uncaught(exc_type, exc_value, exc_tb):
         except Exception:
             pass
 
-# Доступен ли встроенный веб-движок (решается в main(), до QApplication)
+# Встроенный веб-движок (решается в main(), до QApplication).
+# HAS_WEBENGINE — окно вообще возможно; _QUICK — какой вкус окна:
+# True = QML-окно (WebEngineView), False = Widgets-окно (QWebEngineView).
 HAS_WEBENGINE = False
+HAS_WEBENGINE_QUICK = False
+WEBENGINE_ERROR = ""
 
 def main():
     try:
@@ -4365,13 +4411,35 @@ def main():
     # PySide6. initialize() обязан случиться ДО создания QApplication,
     # иначе WebEngineView в окнах не поднимется. Если движка нет —
     # программа работает как обычно (веб-версия откроется в браузере).
-    global HAS_WEBENGINE
+    global HAS_WEBENGINE, HAS_WEBENGINE_QUICK, WEBENGINE_ERROR
+    # в сборке: уверенно ищем DLL Qt рядом с собой (страховка)
+    try:
+        import sys as _sys
+        if getattr(_sys, "frozen", False):
+            import os as _os
+            _base = Path(getattr(_sys, "_MEIPASS", _sys.executable))
+            for _sub in ("PySide6", "PySide6/Qt/bin", "PySide6/Qt/libexec"):
+                _d = _base / _sub
+                if _d.is_dir() and hasattr(_os, "add_dll_directory"):
+                    _os.add_dll_directory(str(_d))
+    except Exception:
+        pass
     try:
         from PySide6 import QtWebEngineQuick
         QtWebEngineQuick.initialize()
         HAS_WEBENGINE = True
-    except Exception:
-        HAS_WEBENGINE = False
+        HAS_WEBENGINE_QUICK = True
+    except Exception as e:
+        WEBENGINE_ERROR = "Quick: %s: %s" % (type(e).__name__, e)
+        # запасной вкус: окно на QWebEngineView (без QML-плагина);
+        # для Widgets-варианта initialize() не требуется
+        try:
+            from PySide6.QtWebEngineWidgets import QWebEngineView  # noqa: F401
+            HAS_WEBENGINE = True
+            HAS_WEBENGINE_QUICK = False
+            WEBENGINE_ERROR += " (используем Widgets-окно)"
+        except Exception as e2:
+            WEBENGINE_ERROR += " | Widgets: %s: %s" % (type(e2).__name__, e2)
 
     app = QApplication(sys.argv)
 

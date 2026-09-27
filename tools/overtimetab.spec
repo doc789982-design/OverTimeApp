@@ -64,6 +64,7 @@ HIDDENIMPORTS = [
     "webapp.server",          # экспериментальный веб-режим (--web)
     "PySide6.QtWebEngineQuick",   # окно веб-версии внутри программы (этап 4)
     "PySide6.QtWebEngineCore",
+    "PySide6.QtWebEngineWidgets",  # запасной вкус окна (QWebEngineView),
     "methodical_data",        # методички и производственные календари (окно справки)
 ]
 

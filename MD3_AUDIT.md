@@ -242,6 +242,14 @@ Focus-кольцо 2px с 50% brand — свежие MD3-спеки тоже т�
 > QML умирает молча в windowed-exe — stderr нет), предпроверка
 > файлов Chromium в сборке, окно show+raise+requestActivate,
 > повторное открытие поднимает окно.
+> Батч 19 (сборка 201) — журнал юзера: HAS_WEBENGINE=False
+>(инициализация падала, причина глоталась молча). Теперь:
+> WEBENGINE_ERROR пишется в web.log и в диалог; второй вкус
+> окна — QWebEngineView в QMainWindow (без QML-плагина;
+> hiddenimport QtWebEngineWidgets); в frozen — add_dll_directory
+> на PySide6/Qt/bin и libexec; браузерная ветка журналируется
+> (Popen/результат опроса). Размер сборки 179 МБ = движок
+> в zip ЕСТЬ, сбой на уровне загрузки DLL/initialize.
 
 1. **Тёмная тема, on-accent:** вместо белого текста на #4B9AEE — тёмный
    `#062E4F` (как MD3: на светлом primary тёмный on-primary). Решает 2.93:1
