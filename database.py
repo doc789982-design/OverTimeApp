@@ -13,7 +13,9 @@ class DB:
         self.path = path
         
         # МАГИЯ: Увеличиваем таймаут, чтобы SQLite не блокировал Питон
-        self.conn = sqlite3.connect(path, timeout=10.0) 
+        # check_same_thread=False: веб-режим обслуживает запросы в рабочих
+        # потоках; доступ сериализуется блокировкой в webapp/server.py
+        self.conn = sqlite3.connect(path, timeout=10.0, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         
         # --- ТУРБО-РЕЖИМ (УБИРАЕТ ЛАГИ ЧТЕНИЯ/ЗАПИСИ) ---
@@ -83,7 +85,7 @@ class DB:
 
     def save_snapshot(self) -> None:
         # Делаем мгновенную бинарную копию базы в оперативную память для Ctrl+Z
-        mem_db = sqlite3.connect(":memory:")
+        mem_db = sqlite3.connect(":memory:", check_same_thread=False)
         mem_db.row_factory = sqlite3.Row
         self.conn.backup(mem_db)
         
@@ -119,7 +121,7 @@ class DB:
         """Шаг назад (Ctrl+Z)"""
         if not self._undo_stack: 
             return False
-        mem_db = sqlite3.connect(":memory:")
+        mem_db = sqlite3.connect(":memory:", check_same_thread=False)
         self.conn.backup(mem_db)
         self._redo_stack.append(mem_db)
         prev_db = self._undo_stack.pop()
@@ -131,7 +133,7 @@ class DB:
         """Шаг вперед (Ctrl+Y)"""
         if not self._redo_stack: 
             return False
-        mem_db = sqlite3.connect(":memory:")
+        mem_db = sqlite3.connect(":memory:", check_same_thread=False)
         self.conn.backup(mem_db)
         self._undo_stack.append(mem_db)
         next_db = self._redo_stack.pop()

@@ -495,11 +495,21 @@ def open_db():
     return db
 
 
+_DB = None          # единственная база процесса
+_DB_LOCK = threading.Lock()   # сериализует доступ рабочих потоков
+
+
 class Handler(SimpleHTTPRequestHandler):
     # молчаливое соединение (preconnect) не должно висеть вечно
     timeout = 60
 
-    db: DB = None
+    # ЕДИНАЯ база на процесс: снапшоты отмены живут в памяти объекта,
+    # поток-локальные копии их разносили (undo терялся). Доступ из
+    # рабочих потоков сериализуется _DB_LOCK (см. do_GET/do_POST),
+    # а соединению разрешён чужой поток (check_same_thread=False)
+    @property
+    def db(self):
+        return _DB
 
     def __init__(self, *a, **kw):
         super().__init__(*a, directory=os.path.join(ROOT, "static"), **kw)
@@ -523,24 +533,32 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         u = urlparse(self.path)
         q = parse_qs(u.query)
-        try:
-            if u.path == "/api/bootstrap":
-                self.api_bootstrap(q)
-            elif u.path == "/api/month":
-                self.api_month(q)
-            elif u.path == "/api/year":
-                self.api_year(q)
-            elif u.path == "/api/day":
-                self.api_day(q)
-            else:
-                super().do_GET()
-        except Exception as ex:  # noqa: BLE001
-            self.json_out({"error": f"{type(ex).__name__}: {ex}"}, 500)
-            import traceback
-            traceback.print_exc()
+        if not u.path.startswith("/api/"):
+            super().do_GET()   # статика — без базы и без блокировки
+            return
+        with _DB_LOCK:
+            try:
+                if u.path == "/api/bootstrap":
+                    self.api_bootstrap(q)
+                elif u.path == "/api/month":
+                    self.api_month(q)
+                elif u.path == "/api/year":
+                    self.api_year(q)
+                elif u.path == "/api/day":
+                    self.api_day(q)
+                else:
+                    self.json_out({"error": "неизвестный запрос"}, 404)
+            except Exception as ex:  # noqa: BLE001
+                self.json_out({"error": f"{type(ex).__name__}: {ex}"}, 500)
+                import traceback
+                traceback.print_exc()
 
     def do_POST(self):
         u = urlparse(self.path)
+        with _DB_LOCK:
+            self._do_post(u)
+
+    def _do_post(self, u):
         try:
             if u.path == "/api/duty/add":
                 self.api_duty_add()
@@ -775,7 +793,8 @@ def run_web(db_path=None, port=None, log_path=None):
     if db_path:
         REAL_DB = db_path
     try:
-        Handler.db = open_db()
+        global _DB
+        _DB = open_db()
     except Exception as e:
         _wlog(f"ОШИБКА открытия базы: {type(e).__name__}: {e}")
         raise
@@ -847,7 +866,8 @@ def main():
         print("База не найдена:", REAL_DB)
         sys.exit(1)
     global _HTTPD
-    Handler.db = open_db()
+    global _DB
+    _DB = open_db()   # создаём и наполняем демо-базу до первых запросов
     httpd = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     _HTTPD = httpd
     mode = f"РЕАЛЬНАЯ база: {REAL_DB}" if REAL_DB else "демо-база"
