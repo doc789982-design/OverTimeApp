@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import datetime
+import math
 import os
 import re
 import tempfile
@@ -98,13 +99,13 @@ class SheetModel:
         self.x = {self.c0 - 1: 0}
         for c in range(self.c0, self.c1 + 1):
             self.x[c] = self.x[c - 1] + self.col_w[c]
+
         self.y = {self.r0 - 1: 0}
         for r in range(self.r0, self.r1 + 1):
             self.y[r] = self.y[r - 1] + self.row_h[r]
 
         self.width = self.x[self.c1]
         self.height = self.y[self.r1]
-
         # ── мержи (только внутри области печати) ──
         self.merges = {}
         for mr in ws.merged_cells.ranges:
@@ -126,6 +127,49 @@ class SheetModel:
         m = ws.page_margins
         self.margins_mm = (25.4 * (m.left or 0.7), 25.4 * (m.right or 0.7),
                            25.4 * (m.top or 0.75), 25.4 * (m.bottom or 0.75))
+
+        # последним: высоты строк без явной высоты (Excel auto-fit)
+        self._autofit_default_rows()
+
+    def _autofit_default_rows(self):
+        """Excel подгоняет высоту строк БЕЗ явной высоты под содержимое
+        (блок подписей после вставки строк сотрудников теряет высоты).
+        Оцениваем по размеру шрифта: высота строки ≈ 1.35 × размер,
+        символ ≈ 0.55 × размер; ячейки с переносом — по числу строк."""
+        for r in range(self.r0, self.r1 + 1):
+            d = self.ws.row_dimensions.get(r)
+            if d is not None and d.height:
+                continue  # явная высота — не трогаем
+            need = 0.0
+            for c in range(self.c0, self.c1 + 1):
+                if c in self.hidden_cols or not self.is_anchor(r, c):
+                    continue
+                cell = self.ws.cell(r, c)
+                v = self.value_for_print(cell)
+                if not v:
+                    continue
+                size_px = max(6.0, (cell.font.sz or 11.0) * PX_PER_PT)
+                line_h = size_px * 1.35
+                if cell.alignment.wrap_text:
+                    rect = self.cell_rect(r, c)
+                    cpl = max(1, int(max(8.0, rect.width() - 3) / (size_px * 0.55)))
+                    lines = 0
+                    for para in str(v).split("\n"):
+                        lines += max(1, math.ceil(len(para) / cpl))
+                else:
+                    # без переноса текст вытекает на пустых соседей ВБОК —
+                    # высота строки от этого не растёт
+                    lines = len(str(v).split("\n"))
+                need = max(need, lines * line_h + 4)
+            if need > self.row_h[r]:
+                self.row_h[r] = int(round(need))
+
+        # координаты Y изменились — пересобираем
+        self.y = {self.r0 - 1: 0}
+        for r in range(self.r0, self.r1 + 1):
+            self.y[r] = self.y[r - 1] + self.row_h[r]
+        self.height = self.y[self.r1]
+
 
     # ---------- содержимое ----------
 
@@ -188,8 +232,6 @@ class SheetModel:
 class SheetRenderer:
     """Рисует SheetModel на QPainter в листовых пикселях."""
 
-    PEN_HAIR = 0.33    # 0.25 pt в листовых px
-    PEN_THIN = 1.0     # 0.75 pt
 
     def __init__(self, model: SheetModel, font_hook=None):
         self.m = model
@@ -273,6 +315,72 @@ class SheetRenderer:
                 self._text(painter, r, c, cell, str(text))
         painter.restore()
 
+    def _draw_rect(self, r, c):
+        """Прямоугольник для текста: без переноса Excel позволяет тексту
+        выезжать на ПУСТЫЕ соседние ячейки (пока не встретится занятая)."""
+        m = self.m
+        rect = m.cell_rect(r, c)
+        cell = m.ws.cell(r, c)
+        al = cell.alignment
+        if al.wrap_text:
+            return rect
+        if al.horizontal == "right":
+            cc = c - 1
+            while cc >= m.c0:
+                if m.ws.cell(r, cc).value is not None:
+                    break  # скрытые колонки текст перетекает, как в Excel
+                cc -= 1
+            if cc < c - 1:
+                left = m.x[cc] if cc >= m.c0 else 0
+                if left < rect.left():
+                    rect = QRectF(left, rect.top(), rect.right() - left, rect.height())
+        else:
+            cc = c + 1
+            while cc <= m.c1:
+                if m.ws.cell(r, cc).value is not None:
+                    break  # скрытые колонки текст перетекает, как в Excel
+                cc += 1
+            right = m.x[cc - 1]
+            if right > rect.right():
+                rect = QRectF(rect.left(), rect.top(), right - rect.left(), rect.height())
+        return rect
+
+    @staticmethod
+    def _char_split(word, fm, maxw):
+        """Режет слово шире ячейки по символам (Excel делает так же)."""
+        out, cur = [], ""
+        for ch in word:
+            if cur and fm.horizontalAdvance(cur + ch) > maxw:
+                out.append(cur)
+                cur = ch
+            else:
+                cur += ch
+        if cur:
+            out.append(cur)
+        return out
+
+    def _wrap_lines(self, text, fm, maxw):
+        """Перенос по словам; неумещающееся слово — по символам."""
+        lines = []
+        for para in text.split("\n"):
+            cur = ""
+            for word in para.split(" "):
+                cand = (cur + " " + word).strip()
+                if fm.horizontalAdvance(word) > maxw:
+                    # слово само по себе шире ячейки
+                    if cur:
+                        lines.append(cur)
+                        cur = ""
+                    lines.extend(self._char_split(word, fm, maxw))
+                elif fm.horizontalAdvance(cand) <= maxw or not cur:
+                    cur = cand
+                else:
+                    lines.append(cur)
+                    cur = word
+            if cur:
+                lines.append(cur)
+        return lines
+
     def _borders(self, painter, r, c):
         m = self.m
         cell = m.ws.cell(r, c)
@@ -280,18 +388,26 @@ class SheetRenderer:
         mr = m.merges.get(a) if a else None
         rect = m.cell_rect(r, c)
 
+        # Толщина линий — в ПИКСЕЛЯХ УСТРОЙСТВА (косметические перья):
+        # при масштабе печати 45% «волосяная» линия иначе становится
+        # субпиксельной и выглядит неравномерно. hair = 0.25 pt, thin = 0.75 pt.
+        s = painter.transform().m11()  # px устройства на листовой px
+        hair_px = max(1, round(0.25 / 72.0 * 96.0 * s))
+        thin_px = max(hair_px + 1, round(0.75 / 72.0 * 96.0 * s))
+
         def pen(side):
             b = getattr(cell.border, side, None)
             if not b or not b.style:
                 return None
-            color = "#808080" if b.style == "hair" else "#1a1a1a"
+            color = "#000000"
             try:
                 if b.color and isinstance(b.color.rgb, str) and len(b.color.rgb) >= 6:
                     color = "#" + b.color.rgb[-6:]
             except Exception:
                 pass
-            width = self.PEN_HAIR if b.style == "hair" else self.PEN_THIN
-            return QPen(QColor(color), width)
+            p = QPen(QColor(color), hair_px if b.style == "hair" else thin_px)
+            p.setCosmetic(True)
+            return p
 
         def draw(side, x1, y1, x2, y2):
             p = pen(side)
@@ -313,7 +429,7 @@ class SheetRenderer:
 
     def _text(self, painter, r, c, cell, text):
         m = self.m
-        rect = m.cell_rect(r, c)
+        rect = self._draw_rect(r, c)   # с вытеканием на пустых соседей
         inset = 1.5
         box = rect.adjusted(inset, inset, -inset, -inset)
         font = self.qfont(cell)
@@ -321,25 +437,17 @@ class SheetRenderer:
         painter.setFont(font)
         painter.setPen(QColor("#111111"))
         fm = QFontMetrics(font)
-
-        lines = []
-        if al.wrap_text:
-            for para in text.split("\n"):
-                cur = ""
-                for word in para.split(" "):
-                    cand = (cur + " " + word).strip()
-                    if fm.horizontalAdvance(cand) <= box.width() or not cur:
-                        cur = cand
-                    else:
-                        lines.append(cur)
-                        cur = word
-                lines.append(cur)
-        else:
-            lines = text.split("\n")
+        painter.save()
+        # Всё, что не влезло, обрезается границей ячейки — как в Excel
+        painter.setClipRect(rect)
 
         rot = al.textRotation or 0
         if rot == 90:
-            painter.save()
+            # Вертикальный текст переносится по ВЫСОТЕ ячейки
+            if al.wrap_text:
+                lines = self._wrap_lines(text, fm, box.height())
+            else:
+                lines = text.split("\n")
             painter.translate(rect.center())
             painter.rotate(-90)
             w, h = box.height(), box.width()
@@ -353,11 +461,20 @@ class SheetRenderer:
             painter.restore()
             return
 
+        # Перенос по словам; слово шире ячейки режется по символам —
+        # как в Excel; иначе текст выезжает на соседние клетки
+        if al.wrap_text:
+            lines = self._wrap_lines(text, fm, box.width())
+        else:
+            lines = text.split("\n")
+
         total = len(lines) * fm.height()
-        y = box.top()
+        # Умолчание Excel: без явного выравнивания текст прижат К НИЗУ ячейки
         if al.vertical == "center":
             y = box.top() + (box.height() - total) / 2
-        elif al.vertical == "bottom":
+        elif al.vertical == "top":
+            y = box.top()
+        else:
             y = box.bottom() - total
         for ln in lines:
             tw = fm.horizontalAdvance(ln)
@@ -369,6 +486,7 @@ class SheetRenderer:
                 x = box.left()
             painter.drawText(int(x), int(y + fm.ascent()), ln)
             y += fm.height()
+        painter.restore()
 
 
 # ──────────────────────────────────────────────────────────────────
