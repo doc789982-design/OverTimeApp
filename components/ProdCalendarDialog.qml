@@ -143,7 +143,7 @@ Popup {
             boundsBehavior: Flickable.StopAtBounds
             contentWidth: width
             contentHeight: scrollColumn.height
-            ScrollBar.vertical: AppScrollBar { policy: ScrollBar.AsNeeded }
+            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
             Column {
                 id: scrollColumn

@@ -10,11 +10,7 @@ QtObject {
     // подхватят автоматически.
     // ==========================================
     readonly property string appVersion: "2.0.0-ALPHA.20"
-    // Желоб под скроллбар: сайты прокрутки резервируют его, чтобы бегунок
-// лежал РЯДОМ с контентом, а не поверх него
-readonly property real scrollGutter: 14
-
-readonly property int appBuild: 195
+    readonly property int appBuild: 196
     readonly property string appVersionFull: appVersion + " · сборка " + appBuild
 
     // ==========================================

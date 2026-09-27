@@ -181,12 +181,12 @@ Popup {
                         Layout.fillHeight: true
                         clip: true
                         spacing: 1
-                        ScrollBar.vertical: AppScrollBar { policy: ScrollBar.AsNeeded }
+                        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
                         model: root.tocModel
 
                         delegate: Rectangle {
-                            width: tocView.width - AppTheme.scrollGutter
+                            width: tocView.width
                             height: tocLabel.implicitHeight + 8
                             radius: AppTheme.radiusSmall
                             color: modelData.atom === root.currentAtom
@@ -241,7 +241,7 @@ Popup {
                     clip: true
                     spacing: AppTheme.spaceS
                     boundsBehavior: Flickable.StopAtBounds
-                    ScrollBar.vertical: AppScrollBar { policy: ScrollBar.AsNeeded }
+                    ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
                     // подсветка оглавления при прокрутке: последний пункт выше края
                     onContentYChanged: {
@@ -258,7 +258,7 @@ Popup {
                     }
 
                     header: Item {
-                        width: contentView.width - AppTheme.scrollGutter
+                        width: contentView.width
                         height: recoTitleText.implicitHeight + AppTheme.spaceM
 
                         Text {
@@ -279,7 +279,7 @@ Popup {
                     // поэтому обычные дети с visible.)
                     delegate: Item {
                         id: atomDel
-                        width: contentView.width - AppTheme.scrollGutter
+                        width: contentView.width
                         readonly property var d: modelData
                         height: d.k === "sec" ? secCol.height
                               : d.k === "sub" ? subCol.height

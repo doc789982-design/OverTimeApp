@@ -204,6 +204,15 @@ Focus-кольцо 2px с 50% brand — свежие MD3-спеки тоже т�
 > refresh/download/ring/install, единые штрихи shaft/head/extra,
 > вырожденные штрихи пропускаются; в software Canvas мёртв —
 > проверка свойствами + численный контроль геометрии).
+> Батч 14 (сборка 196) — Canvas-рисовка забракована юзером
+>(«ребёнок в Paint»): SVG-слои + флипы «в линию» (xScale
+> через transform Scale — у Item НЕТ scaleX; objectName на
+> Scale для тестов); ring->install без флипа (кольцо
+> дозаливается, стрелка растёт внутри); антидребезг 80мс
+>(down=False и ready=True двумя событиями проигрывали лишний
+> кадр download); AppScrollBar удалён, дефолтные Qt-скроллбары
+>(Flickable: ScrollBar.vertical: ScrollBar{}, НЕ .policy —
+> на Flickable attached-policy null).
 
 1. **Тёмная тема, on-accent:** вместо белого текста на #4B9AEE — тёмный
    `#062E4F` (как MD3: на светлом primary тёмный on-primary). Решает 2.93:1

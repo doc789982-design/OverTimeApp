@@ -140,12 +140,11 @@ Popup {
             boundsBehavior: Flickable.StopAtBounds
             contentWidth: width
             contentHeight: contentArea.height + AppTheme.spaceS
-            ScrollBar.vertical: AppScrollBar { policy: ScrollBar.AsNeeded }
+            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
             Column {
                 id: contentArea
-                // минус желоб скроллбара — бегунок рядом, не поверх контента
-                width: parent.width - AppTheme.scrollGutter
+                                width: parent.width
                 spacing: AppTheme.spaceL
             }
         }

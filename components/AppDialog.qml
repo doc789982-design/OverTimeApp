@@ -169,11 +169,11 @@ Popup {
             Layout.fillHeight: true
             clip: true
             ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
-            ScrollBar.vertical: AppScrollBar { policy: ScrollBar.AsNeeded }
+            ScrollBar.vertical.policy: ScrollBar.AsNeeded
 
             Column {
                 id: contentArea
-                width: scrollArea.width - (AppTheme.spaceL * 2) - AppTheme.scrollGutter
+                width: scrollArea.width - (AppTheme.spaceL * 2)
                 x: AppTheme.spaceL
                 spacing: AppTheme.spaceM
                 topPadding: AppTheme.spaceM
