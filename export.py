@@ -243,7 +243,7 @@ class TemplateExporter:
         prev_str = TemplateExporter._fmt_minutes_ru(prev) if unit_type == "hours" else TemplateExporter._fmt_days_ru(prev)
         
         if real > 0 and prev > 0:
-            return f"{real_str} ({prev_str} за пред. год)"
+            return f"{real_str}\n({prev_str} за пред. год)"
         if real > 0:
             return real_str
         return f"{prev_str} за пред. год"
@@ -472,7 +472,7 @@ class TemplateExporter:
                 main = (TemplateExporter._fmt_days_ru(val) if is_days else TemplateExporter._fmt_minutes_ru(val))
                 if prev_val == 0: return main
                 prev = (TemplateExporter._fmt_days_ru(prev_val) if is_days else TemplateExporter._fmt_minutes_ru(prev_val))
-                return f"{main} ({prev})"
+                return f"{main}\n({prev})"
 
             values = {
                 "{{EMP_NO}}": str(i + 1),

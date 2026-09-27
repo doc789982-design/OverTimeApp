@@ -232,6 +232,8 @@ class SheetModel:
 class SheetRenderer:
     """Рисует SheetModel на QPainter в листовых пикселях."""
 
+    PEN_HAIR = 0.33    # 0.25 pt в листовых px
+    PEN_THIN = 1.0     # 0.75 pt
 
     def __init__(self, model: SheetModel, font_hook=None):
         self.m = model
@@ -388,26 +390,18 @@ class SheetRenderer:
         mr = m.merges.get(a) if a else None
         rect = m.cell_rect(r, c)
 
-        # Толщина линий — в ПИКСЕЛЯХ УСТРОЙСТВА (косметические перья):
-        # при масштабе печати 45% «волосяная» линия иначе становится
-        # субпиксельной и выглядит неравномерно. hair = 0.25 pt, thin = 0.75 pt.
-        s = painter.transform().m11()  # px устройства на листовой px
-        hair_px = max(1, round(0.25 / 72.0 * 96.0 * s))
-        thin_px = max(hair_px + 1, round(0.75 / 72.0 * 96.0 * s))
-
         def pen(side):
             b = getattr(cell.border, side, None)
             if not b or not b.style:
                 return None
-            color = "#000000"
+            color = "#808080" if b.style == "hair" else "#1a1a1a"
             try:
                 if b.color and isinstance(b.color.rgb, str) and len(b.color.rgb) >= 6:
                     color = "#" + b.color.rgb[-6:]
             except Exception:
                 pass
-            p = QPen(QColor(color), hair_px if b.style == "hair" else thin_px)
-            p.setCosmetic(True)
-            return p
+            width = self.PEN_HAIR if b.style == "hair" else self.PEN_THIN
+            return QPen(QColor(color), width)
 
         def draw(side, x1, y1, x2, y2):
             p = pen(side)

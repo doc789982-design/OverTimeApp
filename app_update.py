@@ -1495,6 +1495,17 @@ def parse_github_release_url(url: str) -> Optional[dict]:
     return None
 
 
+def _github_display_from_title(title: str) -> str:
+    """Отображаемое имя версии из заголовка релиза.
+
+    Заголовок релиза выглядит как «OVERTIMETAB BETA.1 · сборка 217» —
+    для уведомлений нужно именно отображаемое имя («BETA.1»), а не
+    машинная версия из тега (2.0.0-ALPHA.…).
+    """
+    m = re.search(r"OVERTIMETAB\s+(.+?)\s*·", title or "", flags=re.IGNORECASE)
+    return m.group(1).strip() if m else ""
+
+
 def _github_build_from_title(title: str) -> int:
     """Сборку берём из заголовка релиза («… · сборка 126»)."""
     m = re.search(r"сборка\s+(\d+)", title or "", flags=re.IGNORECASE)
@@ -1543,7 +1554,11 @@ def fetch_github_release_info(gh: dict, timeout: float = 15.0) -> tuple[Optional
             break
     if not zip_url:
         return None, "На релизе не найден zip-архив с программой."
-    return {"name": "OVERTIMETAB", "version": version, "build": build, "url": zip_url}, ""
+    info = {"name": "OVERTIMETAB", "version": version, "build": build, "url": zip_url}
+    display = _github_display_from_title(str(data.get("name") or ""))
+    if display:
+        info["display"] = display
+    return info, ""
 
 
 def _fetch_version_json(base_url: str, timeout: float = 15.0) -> tuple[Optional[dict], str]:
