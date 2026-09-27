@@ -1,4 +1,5 @@
 import QtQuick
+import Qt5Compat.GraphicalEffects
 
 // ============================================================
 // RIPPLE — ВОЛНА ОТ НАЖАТИЯ (MD3, адаптировано под мышь)
@@ -14,9 +15,14 @@ import QtQuick
 //
 // ФОРМА: всегда КРУГ, растущий из центра. Диаметр круга —
 // max(width, height), чтобы волна от центра дошла до любого
-// края элемента; всё, что выходит за его пределы, срезается
-// рамкой элемента (clip) — круг «распространяется по форме»
-// кнопки/зоны, а не повторяет её контур.
+// края элемента. Обрезка — ПО ФОРМЕ элемента:
+//   • аппаратный рендер (Windows) — слой с OpacityMask по
+//     скруглению maskRadius: круг никогда не вылезает за
+//     скруглённые углы кнопки-стадиона;
+//   • software-фолбэк — прямоугольный clip (слои в software
+//     мертвы), волна остается внутри габаритов элемента.
+//     Слой включается только пока волна живёт — в покое
+//     никакого FBO не держим.
 //
 // Тайминги — десктопные: рост 220 мс, вспышка 80 мс,
 // затухание 160 мс; всё оканчивается меньше чем за 400 мс.
@@ -37,8 +43,16 @@ Item {
     // Привязывается к control.pressed / mouseArea.pressed хоста.
     property bool pressed: false
 
+    // Радиус скругления формы элемента (для маски обрезки):
+    // у кнопок-стадионов это height/2, у круглых зон — width/2.
+    property real maskRadius: height / 2
+
     // Диаметр круга: от центра до самого дальнего края элемента
     readonly property real waveD: Math.max(width, height)
+
+    // Аппаратный ли рендер: в software слои (OpacityMask) мертвы,
+    // там работает только прямоугольный clip
+    readonly property bool hardwareRender: GraphicsInfo.api !== GraphicsInfo.Software
 
     // Ручной запуск (тесты, нестандартные хосты)
     function startRipple() {
@@ -52,6 +66,17 @@ Item {
 
     anchors.fill: parent
     clip: true
+
+    // Маска по форме элемента — только на аппаратном рендере
+    // и только пока волна анимируется (в покое слой выключен)
+    layer.enabled: hardwareRender && rippleAnim.running
+    layer.effect: OpacityMask {
+        maskSource: Rectangle {
+            width: host.width
+            height: host.height
+            radius: host.maskRadius
+        }
+    }
 
     Rectangle {
         id: wave

@@ -51,6 +51,7 @@ Switch {
         // драйвер — состояние pressed самого переключателя
         AppRipple {
             pressed: control.pressed
+            maskRadius: height / 2
             rippleColor: control.checked
                           ? (AppTheme.isDark ? Qt.rgba(11/255, 31/255, 51/255, 0.16)
                                              : Qt.rgba(1, 1, 1, 0.16))

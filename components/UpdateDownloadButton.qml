@@ -1,14 +1,26 @@
 import QtQuick
 import QtQuick.Controls
-import Qt5Compat.GraphicalEffects
 
-// Кнопка загрузки обновления в шапке окна (рядом со справкой).
+// ============================================================
+// КНОПКА ОБНОВЛЕНИЯ В ШАПКЕ (рядом со справкой)
 //
-// Состояния (от серого — к загрузке — к готовности):
-//   • нет обновления  — серая неактивная иконка загрузки
-//   • обновление есть — иконка плавно «дышит» от серого к зелёному
-//   • идёт загрузка   — иконка превращается в кружок, заполняющийся синим
-//   • загружено       — кружок зеленеет, пульсирует и возвращается к иконке
+// Стиль — как у иконок во всей программе: клетка 46px,
+// монохромная иконка refresh.svg, ховер затемняет фон.
+//
+// Состояния (переходы бесшовные, на пружинах):
+//   • нет обновления  — иконка как у всех (серая), клик —
+//     проверка: иконка делает оборот;
+//   • обновление есть — иконка зеленеет и «дышит» (масштаб),
+//     вокруг искрят стрелочки;
+//   • идёт загрузка   — иконка крутится, вокруг неё дуга
+//       прогресса (заполняется плавно, без щелчков);
+//   • загружено       — дуга зеленеет и заполняется, иконка
+//     пружинисто превращается в галочку.
+//
+// Прогресс от бэкенда приходит скачками — дуга сглаживает
+// его анимацией (Behavior 250 мс), поэтому состояние всегда
+// перетекает в следующее, без резких подмен.
+// ============================================================
 Item {
     id: root
     width: 46
@@ -35,34 +47,17 @@ Item {
     }
 
     // ---- Цвета ----
-    readonly property color idleColor: AppTheme.textDisabled
+    readonly property color idleColor: AppTheme.textSecondary   // как у остальных иконок шапки
     readonly property color availColor: AppTheme.accentSuccess
     readonly property color ringColor: AppTheme.accentBrand
 
-    property color iconColor: idleColor
+    // Цвет иконки: состояние + ховер (всякие переходы — цветовой анимацией)
+    property color iconColor: downloading ? ringColor
+                       : (hasUpdate || ready) ? availColor
+                       : (hover.containsMouse ? AppTheme.textPrimary : idleColor)
     Behavior on iconColor { ColorAnimation { duration: AppTheme.durFast; easing.type: Easing.InOutQuad } }
 
-    // Показывать ли кружок вместо иконки.
-    // После пульса готовности возвращаемся к иконке (returnedToIcon).
-    property bool returnedToIcon: false
-    readonly property bool showRing: root.downloading || (root.ready && !root.returnedToIcon)
-
-    // Клик активен, когда обновление доступно (запуск загрузки)
-    // или уже загружено (запуск установки) — но не во время загрузки
-    readonly property bool clickable: root.hasUpdate && !root.downloading
-
-    // Пульсация «обновление доступно»: серая ↔ зелёная плавно
-    SequentialAnimation {
-        running: root.hasUpdate && !root.downloading && !root.ready
-        loops: Animation.Infinite
-        ColorAnimation { target: root; property: "iconColor"; to: root.availColor; duration: 1100; easing.type: Easing.InOutQuad }
-        ColorAnimation { target: root; property: "iconColor"; to: root.idleColor; duration: 1100; easing.type: Easing.InOutQuad }
-    }
-
-    // ---- Искры-стрелочки вокруг кнопки ----
-    // Тихо искрят, когда обновление доступно (но ещё не качается) или
-    // уже скачано и готово к установке. Зона небольшая, эффект живёт
-    // только в главном окне — не поверх других окон.
+    // ---- Искры-стрелочки вокруг кнопки (когда есть что скачать) ----
     UpdateSparkles {
         anchors.centerIn: parent
         z: 10
@@ -76,49 +71,119 @@ Item {
         Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
     }
 
-    // ---- Иконка загрузки ----
-    IconImage {
-        id: downloadIcon
+    // ---- Иконка (refresh) + галочка (готово): крестятся фейдом, галочка пружинит ----
+    Item {
+        id: iconWrap
+        objectName: "updIconWrap"
         anchors.centerIn: parent
-        source: "../icons/export_arrow.svg"
-        width: AppTheme.iconMedium + 2
-        height: AppTheme.iconMedium + 2
-        color: root.iconColor
+        width: refreshIcon.width
+        height: refreshIcon.height
+
+        IconImage {
+            id: refreshIcon
+            objectName: "updRefresh"
+            anchors.centerIn: parent
+            source: "../icons/refresh.svg"
+            width: AppTheme.iconMedium
+            height: AppTheme.iconMedium
+            color: root.iconColor
+            opacity: root.ready ? 0 : 1
+            Behavior on opacity { NumberAnimation { duration: AppTheme.durFast } }
+        }
+
+        IconImage {
+            id: checkIcon
+            objectName: "updCheck"
+            anchors.centerIn: parent
+            source: "../icons/check.svg"
+            width: AppTheme.iconMedium
+            height: AppTheme.iconMedium
+            color: root.availColor
+            opacity: root.ready ? 1 : 0
+            scale: root.ready ? 1 : 0.4
+            Behavior on opacity { NumberAnimation { duration: AppTheme.durFast } }
+            // пружинистое появление с лёгким перелётом — «инерция»
+            Behavior on scale { SpringAnimation { spring: 5.0; damping: 0.35; mass: 1.1 } }
+        }
+
+        // «Дыхание», когда обновление доступно: зеленая иконка мягко пульсирует
+        SequentialAnimation {
+            running: root.hasUpdate && !root.downloading && !root.ready
+            loops: Animation.Infinite
+            NumberAnimation { target: iconWrap; property: "scale"; to: 1.08; duration: 550; easing.type: Easing.OutCubic }
+            NumberAnimation { target: iconWrap; property: "scale"; to: 1.0; duration: 550; easing.type: Easing.InCubic }
+        }
+
+        // Кручение во время загрузки: иконка refresh «работает»
+        RotationAnimation {
+            id: downloadSpin
+            target: iconWrap
+            property: "rotation"
+            from: 0; to: 360
+            duration: 1400
+            loops: Animation.Infinite
+            running: root.downloading
+        }
+
+        // Оборот-отклик на клик «проверить обновления»
+        RotationAnimation {
+            id: checkSpin
+            target: iconWrap
+            property: "rotation"
+            from: 0; to: 360
+            duration: 700
+            easing.type: Easing.OutCubic
+        }
     }
 
-    // ---- Кружок прогресса ----
+    // ---- Дуга прогресса вокруг иконки ----
     Item {
-        id: ring
+        id: arcWrap
+        objectName: "updArc"
         anchors.centerIn: parent
-        width: 30
-        height: 30
-        scale: 1.0
-        opacity: 0   // в базовом (idle) состоянии кружок скрыт
+        width: 32
+        height: 32
+        opacity: 0
+        scale: 0.55
 
-        // Насколько заполнен круг (0..1)
-        property real fill: root.downloading ? (root.progress / 100) : 1.0
-        // Цвет дуги: синий во время загрузки, зелёный когда готово
+        // Заполнение: скачки прогресса сглаживаются анимацией.
+        // До загрузки — 0 (дуга растёт с нуля), в готовности — полная
+        property real fill: root.downloading ? (root.progress / 100) : (root.ready ? 1.0 : 0.0)
+        Behavior on fill { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
+
+        // Цвет дуги: синий при загрузке, зелёный когда готово
         property color arcColor: root.ready ? root.availColor : root.ringColor
         Behavior on arcColor { ColorAnimation { duration: AppTheme.durFast; easing.type: Easing.InOutQuad } }
 
+        // Появление — пружиной с перелётом, уход — фейдом
+        states: State {
+            when: root.downloading || root.ready
+            PropertyChanges { target: arcWrap; opacity: 1; scale: 1 }
+        }
+        transitions: Transition {
+            SpringAnimation { properties: "scale"; spring: 5.0; damping: 0.35; mass: 1.1 }
+            NumberAnimation { properties: "opacity"; duration: AppTheme.durFast }
+        }
+
         Canvas {
+            id: arcCanvas
             anchors.fill: parent
-            property real p: ring.fill
-            property color stroke: ring.arcColor
+            property real p: arcWrap.fill
+            property color stroke: arcWrap.arcColor
             onPaint: {
                 var ctx = getContext("2d")
                 ctx.reset()
-                var w = width, h = height, r = (w - 6) / 2, cx = w / 2, cy = h / 2
-                ctx.lineWidth = 3
+                var w = width, h = height, r = (w - 4) / 2, cx = w / 2, cy = h / 2
+                ctx.lineWidth = 2.5
                 ctx.lineCap = "round"
-                // фоновый серый круг
+                // фоновый круг
                 ctx.beginPath()
                 ctx.arc(cx, cy, r, 0, Math.PI * 2)
-                ctx.strokeStyle = root.idleColor
+                ctx.strokeStyle = Qt.rgba(root.idleColor.r, root.idleColor.g, root.idleColor.b, 0.35)
                 ctx.stroke()
                 // дуга прогресса
                 ctx.beginPath()
-                ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * p)
+                ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(p, 1))
                 ctx.strokeStyle = stroke
                 ctx.stroke()
             }
@@ -126,38 +191,17 @@ Item {
             onStrokeChanged: requestPaint()
         }
 
-        // Пульс готовности + динамический возврат к иконке загрузки
+        // Пульс готовности: дуга пружинисто вздрагивает и успокаивается
         SequentialAnimation {
-            running: root.ready && root.showRing
-            // плавный зелёный пульс: увеличение внутрь и наружу
-            NumberAnimation { target: ring; property: "scale"; to: 1.15; duration: 200; easing.type: Easing.OutCubic }
-            NumberAnimation { target: ring; property: "scale"; to: 1.0; duration: 200; easing.type: Easing.InCubic }
-            // возврат к иконке (showRing → false, кружок исчезает, иконка проявляется)
-            ScriptAction { script: { root.returnedToIcon = true } }
+            running: root.ready
+            SpringAnimation { target: arcWrap; property: "scale"; to: 1.12; spring: 5.0; damping: 0.35; mass: 1.1 }
+            SpringAnimation { target: arcWrap; property: "scale"; to: 1.0; spring: 5.0; damping: 0.35; mass: 1.1 }
         }
     }
 
-    // ---- Состояния видимости иконка/кружок ----
-    states: [
-        State {
-            name: "ringVisible"; when: root.showRing
-            PropertyChanges { target: downloadIcon; opacity: 0 }
-            PropertyChanges { target: ring; opacity: 1 }
-        }
-    ]
-    transitions: [
-        Transition {
-            NumberAnimation { properties: "opacity"; duration: 200; easing.type: Easing.InOutQuad }
-        }
-    ]
-
-    // При старте новой загрузки возвращаем масштаб и флаг
-    onDownloadingChanged: {
-        if (root.downloading) {
-            root.returnedToIcon = false
-            ring.scale = 1.0
-        }
-    }
+    // Клик активен, когда обновление доступно (запуск загрузки)
+    // или уже загружено (запуск установки) — но не во время загрузки
+    readonly property bool clickable: root.hasUpdate && !root.downloading
 
     // Мышка (enabled всегда — чтобы тултип показывался в любом состоянии)
     MouseArea {
@@ -167,17 +211,18 @@ Item {
         cursorShape: (root.clickable || root.idleCheck) ? Qt.PointingHandCursor : Qt.ArrowCursor
         onClicked: {
             if (root.clickable) {
-                // Обновление уже скачано — устанавливаем (бывшая кнопка
-                // в баннере внизу); иначе — начинаем загрузку
+                // Обновление уже скачано — устанавливаем; иначе — начинаем загрузку
                 if (root.ready)
                     backend.applyReadyUpdate()
                 else
                     backend.startRemoteDownload()
             }
             // Праздная кнопка — клик запускает полную проверку обновлений
-            // (локально → адрес из настроек → вшитый GitHub).
-            else if (root.idleCheck)
+            // (локально → адрес из настроек → вшитый GitHub) с оборотом-откликом
+            else if (root.idleCheck) {
+                checkSpin.restart()
                 backend.checkAllUpdateSources()
+            }
         }
     }
 

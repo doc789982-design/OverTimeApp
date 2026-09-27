@@ -49,6 +49,7 @@ CheckBox {
                 // круг из центра зоны, расходится по всей зоне отклика;
                 // драйвер — состояние pressed самого чекбокса
                 pressed: control.pressed
+                maskRadius: width / 2
                 rippleColor: AppTheme.isDark ? Qt.rgba(77/255, 154/255, 238/255, 0.20)
                                              : Qt.rgba(3/255, 116/255, 181/255, 0.16)
             }

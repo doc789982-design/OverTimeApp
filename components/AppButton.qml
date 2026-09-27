@@ -131,6 +131,7 @@ Button {
         // цвет текста кнопки, на контурных и ghost — бренд.
         AppRipple {
             pressed: control.pressed
+            maskRadius: height / 2   // стадион кнопки
             rippleColor: (control.variant === "primary" || control.variant === "success" || control.variant === "danger")
                           ? (AppTheme.isDark ? Qt.rgba(11/255, 31/255, 51/255, 0.16)
                                              : Qt.rgba(1, 1, 1, 0.16))
