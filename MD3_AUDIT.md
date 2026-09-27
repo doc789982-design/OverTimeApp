@@ -261,6 +261,18 @@ Focus-кольцо 2px с 50% brand — свежие MD3-спеки тоже т�
 > запасной; проба включает .pyd-обёртки. Ресурсы движка лежат
 > в колесе как PySide6/resources (не Qt/resources) — мой докоп
 > в PySide6/Qt/resources совпадает с QLibraryInfo путями.
+> Батч 23 (сборка 205) — 204: все файлы «есть», ошибка сменилась
+> на «libshiboken: could not import module». Вскрыто: PySide6
+> 6.11 ставит ЛЕНИВУЮ загрузку модулей (shiboken6.abi3.dll:
+> replaceModuleDict, PYSIDE6_OPTION_LAZY) — она МАСКИРУЕТ
+> исходную ошибку. PYSIDE6_OPTION_LAZY=0 в самом верху Main.py
+> + importlib (мимо обёртки) + печать __cause__/__context__ +
+> поштучный ctypes.WinDLL всех 18 зависимостей цепочки (имя
+> виновника в журнале). САНДБОКС: локальный .git откатывался к
+> db63606 (правки жили только в рабочем дереве) — git checkout
+> Main.py чуть не снёс правки 199-204; лечение: fetch + reset
+> --mixed FETCH_HEAD + checkout HEAD -- Main.py; урок: коммит
+> сразу после правок, проверять git log перед правками.
 > Батч 20 (сборка 202) — точная причина из журнала юзера:
 > «DLL load failed: Не найден указанный модуль» при import
 > QtWebEngineQuick/Widgets = у Qt6WebEngineCore.dll нет
