@@ -411,6 +411,7 @@ class Backend(QObject):
     reminderEnabledChanged = Signal()
     updateReadyChanged = Signal()
     updateBusyChanged = Signal()
+    updateCheckingChanged = Signal()   # идёт ли полная проверка обновлений
     updateVersionChanged = Signal()
     updateStatusTextChanged = Signal()
     updateUrlChanged = Signal()
@@ -3616,6 +3617,12 @@ class Backend(QObject):
     def updateBusy(self):
         return self._update_busy
 
+    @Property(bool, notify=updateCheckingChanged)
+    def updateChecking(self):
+        # Флаг _update_checking раньше не показывался интерфейсу вовсе —
+        # кнопка обновления не могла изобразить «сейчас проверяю».
+        return self._update_checking
+
     @Property(str, notify=updateVersionChanged)
     def updateVersion(self):
         return self._update_version
@@ -3749,6 +3756,7 @@ class Backend(QObject):
         if self._update_checking or self._update_busy or self._remote_downloading:
             return False
         self._update_checking = True
+        self.updateCheckingChanged.emit()
         self._pending_notify = bool(notify)
         self._background_auto = not bool(notify)
         self._remote_active_url = ""
@@ -3756,7 +3764,9 @@ class Backend(QObject):
         return True
 
     def _finish_update_check(self):
-        self._update_checking = False
+        if self._update_checking:
+            self._update_checking = False
+            self.updateCheckingChanged.emit()
         self._pending_notify = False
 
     def _remote_candidate_urls(self):

@@ -44,23 +44,56 @@ Item {
     readonly property bool downloading: backend.remoteDownloading
     readonly property int progress: backend.remoteDownloadProgress
     readonly property bool ready: backend.updateReady
+    // updateChecking — живой флаг полной проверки (Main.py);
+    // updateBusy — распаковка/подготовка обновления
+    readonly property bool checking: backend.updateChecking
     readonly property bool busy: backend.updateBusy
+
+    // Помним, что загрузка уже шла: пока идёт распаковка скачанного
+    // (downloading=false, busy=true) — держим кольцо на 100%,
+    // чтобы галочка выросла из него бесшовно, а не через стрелку
+    property bool everDownloaded: false
+    readonly property bool stagingAfterDownload:
+        everDownloaded && busy && !ready && !downloading && hasUpdate
 
     // Что показывать по данным программы
     readonly property int targetState:
         downloading ? UpdateButton.State.Downloading
+        : stagingAfterDownload ? UpdateButton.State.Downloading
         : ready ? UpdateButton.State.ReadyToInstall
-        : busy ? UpdateButton.State.Checking
+        : (checking || busy) && !hasUpdate ? UpdateButton.State.Checking
         : hasUpdate ? UpdateButton.State.UpdateAvailable
         : UpdateButton.State.CheckForUpdate
 
     // Что показываем сейчас (этим ведёт хореография морфинга)
     property int currentState: UpdateButton.State.CheckForUpdate
-    property real downloadProgress: root.progress / 100.0
 
-    onDownloadProgressChanged:
-        if (currentState === UpdateButton.State.Downloading)
+    // Сглаженный прогресс: проценты приходят скачками (каждые пару
+    // процентов) — кольцо должно наливаться плавно, без щелчков.
+    // Во время распаковки скачанного — держим полный круг.
+    property real smoothProgress: 0
+    Behavior on smoothProgress {
+        NumberAnimation { duration: 250; easing.type: Easing.OutCubic }
+    }
+    onSmoothProgressChanged:
+        if (currentState === UpdateButton.State.Downloading ||
+            currentState === UpdateButton.State.ReadyToInstall)
             morphCanvas.requestPaint()
+
+    function syncProgress() {
+        smoothProgress = downloading ? progress / 100
+                       : (ready || stagingAfterDownload) ? 1
+                       : 0
+    }
+    onProgressChanged: syncProgress()
+    onDownloadingChanged: { everDownloaded = everDownloaded || downloading; syncProgress() }
+    onReadyChanged: syncProgress()
+    onStagingAfterDownloadChanged: syncProgress()
+    Component.onCompleted: {
+        everDownloaded = ready
+        syncProgress()
+        currentState = targetState   // старт сразу в нужное состояние, без морфинга
+    }
 
     // ---- Цвета: тема программы (тёмная/светлая) ----
     readonly property color primaryColor: AppTheme.accentBrand
@@ -106,7 +139,9 @@ Item {
         // рисунок рассчитан на холст 32×32 — масштабируем
         readonly property real fit: width / 32
 
-        // счётчик оборотов для проверки обновлений
+        // счётчик оборотов для проверки обновлений.
+        // forceSpin: клик обязан дать видимый отклик, даже если
+        // проверка мгновенная — прокручиваем не меньше секунды
         property real spinAngle: 0
 
         NumberAnimation on spinAngle {
@@ -114,10 +149,10 @@ Item {
             to: 360
             duration: 1000
             loops: Animation.Infinite
-            running: currentState === UpdateButton.State.Checking
+            running: currentState === UpdateButton.State.Checking || root.forceSpin
         }
         onSpinAngleChanged:
-            if (currentState === UpdateButton.State.Checking)
+            if (currentState === UpdateButton.State.Checking || root.forceSpin)
                 requestPaint()
 
         onMorphProgressChanged: requestPaint()
@@ -131,7 +166,7 @@ Item {
             ctx.lineCap = "round";
             ctx.lineJoin = "round";
 
-            if (currentState === UpdateButton.State.Checking) {
+            if (currentState === UpdateButton.State.Checking || root.forceSpin) {
                 drawCheckIcon(ctx, spinAngle);
             } else if (morphAnimation.running && morphProgress < 1) {
                 drawMorphing(ctx, fromState, toState, morphProgress);
@@ -144,7 +179,7 @@ Item {
                         drawDownloadIcon(ctx);
                         break;
                     case UpdateButton.State.Downloading:
-                        drawProgressCircle(ctx, root.downloadProgress);
+                        drawProgressCircle(ctx, root.smoothProgress);
                         break;
                     case UpdateButton.State.ReadyToInstall:
                         drawInstallIcon(ctx);
@@ -271,15 +306,18 @@ Item {
         function morphCheckToDownload(ctx, t) {
             var eased = easeInOutCubic(t);
 
-            var arcStart = 0.3 * Math.PI * (1 - eased);
-            var arcEnd = 2.2 * Math.PI * (1 - eased);
+            // фазы перекрываются (45–55%): в исходном коде на середине
+            // иконка на миг исчезала целиком — здесь пустого кадра нет
+            if (eased < 0.55) {
+                var w1 = Math.min(1, eased / 0.55);
+                var arcStart = 0.3 * Math.PI * (1 - w1);
+                var arcEnd = 2.2 * Math.PI * (1 - w1);
 
-            if (eased < 0.5) {
                 ctx.beginPath();
                 ctx.arc(0, 0, 12, arcStart, arcEnd);
                 ctx.stroke();
 
-                ctx.globalAlpha = 1 - eased * 2;
+                ctx.globalAlpha = Math.max(0, 1 - w1 * 1.6);
                 ctx.beginPath();
                 ctx.moveTo(12 * Math.cos(0.3 * Math.PI), 12 * Math.sin(0.3 * Math.PI));
                 ctx.lineTo(12 * Math.cos(0.3 * Math.PI) - 5, 12 * Math.sin(0.3 * Math.PI) - 3);
@@ -287,8 +325,9 @@ Item {
                 ctx.closePath();
                 ctx.fill();
                 ctx.globalAlpha = 1;
-            } else {
-                var t2 = (eased - 0.5) * 2;
+            }
+            if (eased >= 0.45) {
+                var t2 = (eased - 0.45) / 0.55;
 
                 ctx.beginPath();
                 ctx.moveTo(0, -10 * t2);
@@ -313,8 +352,9 @@ Item {
         function morphDownloadToProgress(ctx, t) {
             var eased = easeInOutCubic(t);
 
-            if (eased < 0.5) {
-                var t1 = 1 - (eased * 2);
+            // фазы перекрываются — пустого кадра на середине нет
+            if (eased < 0.55) {
+                var t1 = Math.max(0, 1 - (eased / 0.55));
                 ctx.globalAlpha = t1;
 
                 ctx.beginPath();
@@ -334,8 +374,9 @@ Item {
                 ctx.stroke();
 
                 ctx.globalAlpha = 1;
-            } else {
-                var t2 = (eased - 0.5) * 2;
+            }
+            if (eased >= 0.45) {
+                var t2 = (eased - 0.45) / 0.55;
                 var c = root.getCurrentColor();
 
                 ctx.strokeStyle = Qt.rgba(c.r, c.g, c.b, 0.2 * t2);
@@ -425,10 +466,6 @@ Item {
     }
     onTargetStateChanged: stateDebounce.restart()
 
-    Component.onCompleted: {
-        // на старте — сразу нужное состояние, без морфинга
-        currentState = targetState;
-    }
 
     function applyTarget() {
         var to = targetState;
@@ -438,6 +475,11 @@ Item {
         // крутящаяся проверка — та же стрелка, что в покое
         var fromPose = from === UpdateButton.State.Checking
                        ? UpdateButton.State.CheckForUpdate : from;
+        if (to !== UpdateButton.State.CheckForUpdate &&
+            to !== UpdateButton.State.Checking) {
+            forceSpin = false
+            minSpinTimer.stop()
+        }
         currentState = to;
         morphCanvas.requestPaint();
         // морфинг — только по цепочке; обратные и рваные переходы
@@ -454,6 +496,15 @@ Item {
             morphAnimation.stop();
             morphCanvas.morphProgress = 0;
         }
+    }
+
+    // Минимальный прокрут после клика: даже мгновенная проверка
+    // (локальный файл рядом с программой) видимо крутится
+    property bool forceSpin: false
+    Timer {
+        id: minSpinTimer
+        interval: 900
+        onTriggered: root.forceSpin = false
     }
 
     // ---- Мышь ----
@@ -530,6 +581,8 @@ Item {
 
         switch (currentState) {
             case UpdateButton.State.CheckForUpdate:
+                forceSpin = true;
+                minSpinTimer.restart();
                 backend.checkAllUpdateSources();
                 break;
             case UpdateButton.State.UpdateAvailable:

@@ -296,6 +296,21 @@ Focus-кольцо 2px с 50% brand — свежие MD3-спеки тоже т�
 > NEEDED-цепочки PySide6+plugins) + render_upd.py (offscreen+
 > software, QTest-клики, FakeBackend) — пиксельная проверка:
 > 6 состояний × 2 темы, Δ цвета = 0, полный цикл 0→1→2→3→4→0.
+> Батч 26 (сборка 208) — «анимации нет»: КОРЕНЬ — флаг
+> _update_checking не был выставлен в QML вовсе (кнопка не
+> могла знать, что проверка идёт). Правки: Property
+> updateChecking (+emit в _begin/_finish_update_check);
+> targetState: downloading > staging(кольцо 100%) > ready >
+> checking(если нет находки) > available > idle; forceSpin-
+> гарантия отклика на клик (900 мс) даже при мгновенной
+> проверке; smoothProgress (Behavior 250 мс) против щелчков
+> процентов; everDownloaded держит кольцо на 100% всю
+> асинхронную распаковку (UpdateStageWorker); перекрытие фаз
+> 45–55% в морфингах — в тёмной теме кадр морфинга был ПУСТ
+> (иконка исчезала на миг, поймано пиксельной проверкой).
+> Стенд: FakeBackend теперь копия Main.py-потока (checking →
+> avail → download → busy-staging → ready), проверка вращения
+> диф-ом кадров (idle↔spinA↔spinB все различны, 2 темы).
 > Батч 20 (сборка 202) — точная причина из журнала юзера:
 > «DLL load failed: Не найден указанный модуль» при import
 > QtWebEngineQuick/Widgets = у Qt6WebEngineCore.dll нет
