@@ -4440,6 +4440,21 @@ def main():
             WEBENGINE_ERROR += " (используем Widgets-окно)"
         except Exception as e2:
             WEBENGINE_ERROR += " | Widgets: %s: %s" % (type(e2).__name__, e2)
+        # что реально лежит рядом с exe — чтобы видеть недостающее
+        try:
+            import sys as _sys2
+            _b = Path(getattr(_sys2, "_MEIPASS", _sys2.executable))
+            _probe = ["Qt6WebEngineCore.dll", "Qt6Positioning.dll",
+                      "Qt6WebChannel.dll", "Qt6Network.dll",
+                      "PySide6/Qt6WebEngineCore.dll", "PySide6/Qt6Positioning.dll",
+                      "PySide6/QtWebEngineProcess.exe",
+                      "PySide6/Qt/resources/qtwebengine_resources.pak"]
+            _have = [n for n in _probe if (_b / n).exists()]
+            _miss = [n for n in _probe if not (_b / n).exists()]
+            WEBENGINE_ERROR += ("\nесть: %s\nнет: %s" % (", ".join(_have) or "-",
+                                                          ", ".join(_miss) or "-"))
+        except Exception:
+            pass
 
     app = QApplication(sys.argv)
 

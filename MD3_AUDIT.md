@@ -250,6 +250,14 @@ Focus-кольцо 2px с 50% brand — свежие MD3-спеки тоже т�
 > на PySide6/Qt/bin и libexec; браузерная ветка журналируется
 > (Popen/результат опроса). Размер сборки 179 МБ = движок
 > в zip ЕСТЬ, сбой на уровне загрузки DLL/initialize.
+> Батч 20 (сборка 202) — точная причина из журнала юзера:
+> «DLL load failed: Не найден указанный модуль» при import
+> QtWebEngineQuick/Widgets = у Qt6WebEngineCore.dll нет
+> зависимости — slim вырезал QtPositioning (модуль + DLL),
+> а на нём держится ядро WebEngine. Убран из вырезаемого,
+> добавлен hiddenimport; при сбое в журнал пишется список
+> наличия ключевых файлов (WebEngineCore/Positioning/
+> WebChannel/процесс/resources).
 
 1. **Тёмная тема, on-accent:** вместо белого текста на #4B9AEE — тёмный
    `#062E4F` (как MD3: на светлом primary тёмный on-primary). Решает 2.93:1
