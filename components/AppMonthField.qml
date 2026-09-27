@@ -12,7 +12,8 @@ TextField {
     property int currentYear: new Date().getFullYear()
     
     property color cutoutColor: AppTheme.bgModal
-    property bool isFloated: root.text.length > 0 || root.activeFocus || monthDialog.opened
+    property bool isFormField: true   // автофокус диалога ищет такие
+        property bool isFloated: root.text.length > 0 || root.activeFocus || monthDialog.opened
 
     implicitHeight: 44 
     Layout.fillWidth: true
@@ -43,7 +44,37 @@ TextField {
     selectionColor: AppTheme.accentBrand
     selectedTextColor: AppTheme.textOnAccent
 
-    onActiveFocusChanged: { if (activeFocus) Qt.callLater(function() { root.selectAll() }) }
+    onActiveFocusChanged: {
+        if (activeFocus) {
+            // Tab/автофокус: значение выделяется целиком
+            root._focusFresh = true
+            Qt.callLater(function() { root.selectAll(); root._focusFresh = false })
+        }
+    }
+
+    // Клик по полю, только что получившему фокус (в т.ч. самим кликом —
+    // TextInput ставит фокус ДО сигнала pressed): выделяем всё значение,
+    // ввод сразу заменит его. Первый клик — выделение, повторный по
+    // сфокусированному полю — позиция курсора (нативное поведение).
+    property bool _focusFresh: false
+    property bool _clickGuard: false
+    onPressed: (mouse) => {
+        if (root._focusFresh) {
+            root.selectAll()
+            mouse.accepted = true
+            root._clickGuard = true
+        }
+    }
+    // отпускание после клик-выделения не должно двигать курсор
+    onReleased: (mouse) => {
+        if (root._clickGuard) {
+            mouse.accepted = true
+            root._clickGuard = false
+            // базовый обработчик мог сбить выделение — восстанавливаем
+            // уже после полной обработки отпускания
+            Qt.callLater(function() { root.selectAll() })
+        }
+    }
 
     onTextEdited: {
         let raw = text.replace(/[^0-9]/g, '')

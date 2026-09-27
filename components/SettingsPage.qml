@@ -15,7 +15,7 @@ Item {
         id: pageScroll
         anchors.fill: parent
         clip: true
-        ScrollBar.vertical.policy: ScrollBar.AsNeeded
+        ScrollBar.vertical: AppScrollBar { policy: ScrollBar.AsNeeded }
         ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
 
         ColumnLayout {

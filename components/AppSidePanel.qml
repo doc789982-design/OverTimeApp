@@ -140,7 +140,7 @@ Popup {
             boundsBehavior: Flickable.StopAtBounds
             contentWidth: width
             contentHeight: contentArea.height + AppTheme.spaceS
-            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+            ScrollBar.vertical: AppScrollBar { policy: ScrollBar.AsNeeded }
 
             Column {
                 id: contentArea

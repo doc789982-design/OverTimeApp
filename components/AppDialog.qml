@@ -38,13 +38,22 @@ Popup {
     height: effectiveHeight
     
     z: AppTheme.zModal
-    modal: false 
-    dim: false  
+    modal: true   // MD3/HIG: форма блокирует остальной интерфейс до решения 
+    dim: true  
     focus: true
     // Закрываем только по Esc / крестику / «Отмена».
     // Клик мимо окна НЕ закрывает форму: случайный щелчок больше не сжигает
     // введённые дежурства, перерывы и балансы (стандарт Apple/Google для форм).
     closePolicy: Popup.CloseOnEscape
+
+    // Затемнение фона — единое с окнами подтверждения
+    Overlay.modal: Rectangle {
+        color: AppTheme.bgOverlay
+        opacity: root.opened ? 1.0 : 0.0
+        Behavior on opacity {
+            NumberAnimation { duration: AppTheme.durStandard; easing.type: root.opened ? AppTheme.easeEnter : AppTheme.easeExit }
+        }
+    }
 
     // Анимации появления
     enter: Transition {
@@ -145,7 +154,7 @@ Popup {
             Layout.fillHeight: true
             clip: true
             ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
-            ScrollBar.vertical.policy: ScrollBar.AsNeeded
+            ScrollBar.vertical: AppScrollBar { policy: ScrollBar.AsNeeded }
 
             Column {
                 id: contentArea
@@ -190,6 +199,27 @@ Popup {
         }
     }
 
+    // Автофокус первого поля: открыв форму, можно сразу печатать
+    // (значение поля выделяется — ввод заменит его)
+    property bool autoFocusFirst: true
+
+    function findField(item) {
+        if (!item || !item.visible || !item.enabled) return null
+        if (item.isFormField === true) return item
+        var kids = item.children
+        for (var i = 0; i < kids.length; ++i) {
+            var k = kids[i]
+            if (!k || k.visible === undefined) continue   // не визуальный объект
+            var r = findField(k)
+            if (r) return r
+        }
+        return null
+    }
+    function focusFirstField() {
+        var f = findField(contentItem)
+        if (f) f.forceActiveFocus()
+    }
+
     // Функции показа (оставляем как были)
     function showAt(callerItem, mouseX, mouseY) {
         root.morphOpen = false
@@ -223,6 +253,8 @@ Popup {
     // поля (в т.ч. тумблер «Период» и кнопки) уходят за край. Дожидаемся кадра,
     // перечитываем реальную высоту под контент и не даём окну вылезти за экран.
     onOpened: {
+        // автофокус первого поля — после пересчёта геометрии
+        if (root.autoFocusFirst) Qt.callLater(focusFirstField)
         Qt.callLater(function() {
             root.height = root.effectiveHeight
             if (ApplicationWindow.window) {

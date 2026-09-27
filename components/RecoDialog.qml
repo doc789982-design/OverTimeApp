@@ -181,7 +181,7 @@ Popup {
                         Layout.fillHeight: true
                         clip: true
                         spacing: 1
-                        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+                        ScrollBar.vertical: AppScrollBar { policy: ScrollBar.AsNeeded }
 
                         model: root.tocModel
 
@@ -241,7 +241,7 @@ Popup {
                     clip: true
                     spacing: AppTheme.spaceS
                     boundsBehavior: Flickable.StopAtBounds
-                    ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+                    ScrollBar.vertical: AppScrollBar { policy: ScrollBar.AsNeeded }
 
                     // подсветка оглавления при прокрутке: последний пункт выше края
                     onContentYChanged: {

@@ -10,7 +10,8 @@ TextField {
     property color cutoutColor: AppTheme.bgModal
     property bool numericOnly: false   // true = поле принимает только цифры
     property bool hasError: false      // true = рамка ошибки (accentDanger по MD3)
-    property bool isFloated: root.text.length > 0 || root.activeFocus
+    property bool isFormField: true   // автофокус диалога ищет такие
+        property bool isFloated: root.text.length > 0 || root.activeFocus
 
     // Защита числовых полей: буквы физически невозможно ввести
     validator: root.numericOnly ? digitsOnly : null
@@ -57,6 +58,39 @@ TextField {
     selectByMouse: true
     selectionColor: AppTheme.accentBrand
     selectedTextColor: AppTheme.textOnAccent
+
+    // Tab/автофокус: всё значение выделяется — ввод сразу заменяет его
+    onActiveFocusChanged: {
+        if (activeFocus) {
+            // Tab/автофокус: значение выделяется целиком
+            root._focusFresh = true
+            Qt.callLater(function() { root.selectAll(); root._focusFresh = false })
+        }
+    }
+
+    // Клик по полю, только что получившему фокус (в т.ч. самим кликом —
+    // TextInput ставит фокус ДО сигнала pressed): выделяем всё значение,
+    // ввод сразу заменит его. Первый клик — выделение, повторный по
+    // сфокусированному полю — позиция курсора (нативное поведение).
+    property bool _focusFresh: false
+    property bool _clickGuard: false
+    onPressed: (mouse) => {
+        if (root._focusFresh) {
+            root.selectAll()
+            mouse.accepted = true
+            root._clickGuard = true
+        }
+    }
+    // отпускание после клик-выделения не должно двигать курсор
+    onReleased: (mouse) => {
+        if (root._clickGuard) {
+            mouse.accepted = true
+            root._clickGuard = false
+            // базовый обработчик мог сбить выделение — восстанавливаем
+            // уже после полной обработки отпускания
+            Qt.callLater(function() { root.selectAll() })
+        }
+    }
 
     // ==========================================
     // 1. РАМКА
