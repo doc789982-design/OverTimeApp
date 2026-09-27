@@ -61,13 +61,6 @@ HIDDENIMPORTS = [
     "pywintypes",
     "app_update",
     "recovery",               # аварийный восстановитель (первый import Main.py)
-    "webapp.server",          # экспериментальный веб-режим (--web)
-    "PySide6.QtWebEngineQuick",   # окно веб-версии внутри программы (этап 4)
-    "PySide6.QtWebEngineCore",
-    "PySide6.QtWebEngineWidgets",  # запасной вкус окна (QWebEngineView),
-    "PySide6.QtPositioning",     # зависимость Qt6WebEngineCore (не вырезать!)
-    "PySide6.QtPrintSupport",    # зависимость QtWebEngineWidgets (печать из веб-окна)
-    "PySide6.QtQuickWidgets",    # зависимость Qt6WebEngineWidgets (веб-окно)
     "methodical_data",        # методички и производственные календари (окно справки)
 ]
 
@@ -84,45 +77,11 @@ if _version_json.exists():
     _datas.append((str(_version_json), "."))
 if _changelog.exists():
     _datas.append((str(_changelog), "."))
-# Веб-версия (этап переезда): статика интерфейса для режима --web
-_web_static = ROOT / "webapp" / "static"
-if _web_static.exists():
-    _datas.append((str(_web_static), "webapp/static"))
-
-# Встроенный веб-интерфейс (этап 4): Chromium-движок из состава PySide6.
-# Кладём то, что хуки PyInstaller могут не найти сами: QML-плагин,
-# процесс рендера, ресурсы и переводы. Пути определяем по факту —
-# сборка идёт и на Windows (dll/exe), и локально на Linux (so).
-import PySide6 as _pyside  # noqa: E402
-_qt_dir = Path(_pyside.__file__).resolve().parent / "Qt"
-_qml_we = _qt_dir / "qml" / "QtWebEngine"
-if _qml_we.exists():
-    _datas.append((str(_qml_we), "PySide6/Qt/qml/QtWebEngine"))
-if (_qt_dir / "resources").exists():
-    _datas.append((str(_qt_dir / "resources"), "PySide6/Qt/resources"))
-if (_qt_dir / "translations").exists():
-    for _tr in (_qt_dir / "translations").glob("qtwebengine*"):
-        _datas.append((str(_tr), "PySide6/Qt/translations"))
-_bin_extra = []
-_le = _qt_dir / "libexec"
-if _le.exists():
-    for _f in _le.glob("QtWebEngineProcess*"):
-        _bin_extra.append((str(_f), "PySide6/Qt/libexec"))
-_qb = _qt_dir / "bin"
-if _qb.exists():
-    for _pat in ("Qt6WebEngine*", "Qt6WebChannel*"):
-        for _f in _qb.glob(_pat):
-            _bin_extra.append((str(_f), "PySide6/Qt/bin"))
-# на части раскладок (Windows-колёса) библиотеки лежат в корне PySide6
-_top = Path(_pyside.__file__).resolve().parent
-for _pat in ("Qt6WebEngine*.dll", "Qt6WebChannel*.dll", "QtWebEngineProcess*.exe"):
-    for _f in _top.glob(_pat):
-        _bin_extra.append((str(_f), "PySide6"))
 
 a = Analysis(
     [str(ROOT / "Main.py")],
     pathex=[str(ROOT)],
-    binaries=_bin_extra,
+    binaries=[],
     datas=_datas,
     hiddenimports=HIDDENIMPORTS,
     hookspath=[],
@@ -191,81 +150,3 @@ coll = COLLECT(
 
 # На случай, если хуки PyInstaller всё-таки положили WebEngine в dist.
 slim_dist_tree(ROOT / "dist" / "OVERTIMETAB")
-
-
-# ═══════════════════════════════════════════════════════════════════
-# ВСТРОЕННЫЙ ВЕБ-ДВИЖОК: прямой докоп в dist (мимо всех фильтров TOC).
-# Фильтры уже дважды отрывали движку зависимости (Positioning, локали);
-# здесь мы гарантированно кладём полный набор прямо из PySide6 сборщика.
-# ═══════════════════════════════════════════════════════════════════
-import shutil as _shutil
-
-_psd = Path(_pyside.__file__).resolve().parent          # PySide6 сборщика
-_app = ROOT / "dist" / "OVERTIMETAB"
-_internal = _app / "_internal"                          # PyInstaller 6: onedir
-_base = _internal if _internal.is_dir() else _app
-_dest_ps = _base / "PySide6"
-
-def _copy_file(srcf: Path, dstdir: Path):
-    if srcf.is_file():
-        dstdir.mkdir(parents=True, exist_ok=True)
-        _shutil.copy2(srcf, dstdir / srcf.name)
-        return 1
-    return 0
-
-def _copy_dir(srcd: Path, dstdir: Path):
-    if not srcd.is_dir():
-        return 0
-    n = 0
-    for f in srcd.rglob("*"):
-        if f.is_file():
-            dstdir.mkdir(parents=True, exist_ok=True)
-            _shutil.copy2(f, dstdir / f.relative_to(srcd))
-            n += 1
-    return n
-
-_web_n = 0
-# 1) DLL и процесс рендера — верхний уровень PySide6 (раскладка Windows)
-for _pat in ("Qt6WebEngine*.dll", "Qt6WebChannel*.dll", "Qt6Positioning*.dll",
-             "QtWebEngineProcess.exe", "opengl32sw.dll", "icudtl.dat"):
-    for _f in _psd.glob(_pat):
-        _web_n += _copy_file(_f, _dest_ps)
-# 1б) Точные зависимости движка (по таблицам импорта колёс PySide6):
-# Qt6WebEngineWidgets.dll -> Qt6QuickWidgets + Qt6PrintSupport,
-# Qt6WebEngineQuick.dll   -> Qt6WebChannelQuick.
-# (libEGL/libGLESv2/d3dcompiler в Qt 6.11 НЕ нужны — в колёсах их нет)
-for _pat in ("Qt6QuickWidgets.dll", "Qt6PrintSupport.dll", "Qt6WebChannelQuick.dll"):
-    for _f in _psd.glob(_pat):
-        _web_n += _copy_file(_f, _dest_ps)
-# то же — в раскладке Qt/bin и Qt/libexec (Linux-колёса)
-for _d in (_qt_dir / "bin", _qt_dir / "libexec"):
-    if _d.is_dir():
-        for _pat in ("Qt6WebEngine*.dll", "Qt6WebChannel*.dll", "Qt6Positioning*.dll",
-                     "Qt6WebEngine*.so*", "Qt6WebChannel*.so*", "Qt6Positioning*.so*",
-                     "QtWebEngineProcess*"):
-            for _f in _d.glob(_pat):
-                _web_n += _copy_file(_f, _dest_ps / "Qt" / "bin")
-# 2) ресурсы Chromium (.pak) — все возможные места
-for _cand in (_psd / "Qt" / "resources", _psd / "resources"):
-    _web_n += _copy_dir(_cand, _dest_ps / "Qt" / "resources")
-# 3) локали движка (переводы интерфейса Chromium)
-for _cand in (_psd / "Qt" / "translations" / "qtwebengine_locales",
-              _psd / "translations" / "qtwebengine_locales"):
-    _web_n += _copy_dir(_cand, _dest_ps / "Qt" / "translations" / "qtwebengine_locales")
-# 4) QML-плагин WebEngine
-_web_n += _copy_dir(_psd / "Qt" / "qml" / "QtWebEngine",
-                    _dest_ps / "Qt" / "qml" / "QtWebEngine")
-
-# 5) манифест: что реально лежит в dist (видно в логе сборки)
-_req = ["PySide6/Qt6WebEngineCore.dll", "PySide6/Qt6WebEngineWidgets.dll",
-        "PySide6/Qt6WebEngineQuick.dll", "PySide6/Qt6WebChannel.dll",
-        "PySide6/Qt6Positioning.dll", "PySide6/Qt6PrintSupport.dll",
-        "PySide6/QtWebEngineProcess.exe",
-        "PySide6/Qt/resources/qtwebengine_resources.pak",
-        "PySide6/Qt6QuickWidgets.dll", "PySide6/Qt6PrintSupport.dll",
-        "PySide6/Qt6WebChannelQuick.dll", "PySide6/QtWebEngineCore.pyd",
-        "PySide6/QtWebEngineWidgets.pyd"]
-print("[webengine] докопано напрямую: %d файлов" % _web_n)
-for _r in _req:
-    _ok = (_base / _r).exists()
-    print("[webengine] %-52s %s" % (_r, "ЕСТЬ" if _ok else "НЕТ !!!"))

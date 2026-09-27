@@ -1,9 +1,3 @@
-# PySide6 6.11 включает ленивую загрузку модулей (shiboken6.abi3.dll):
-# она МАСКИРУЕТ ошибки импорта («could not import module» без причины)
-# и капризничает в заморозке PyInstaller. Выключаем ДО первого импорта.
-import os as _os_pre
-_os_pre.environ["PYSIDE6_OPTION_LAZY"] = "0"
-
 # --- АВАРИЙНЫЙ ВОССТАНОВИТЕЛЬ ----------------------------------------------
 # Самый первый код программы (подробности — recovery.py): если прошлая
 # копия упала, предложит обновиться или откатиться, не дав намертво
@@ -405,7 +399,6 @@ class Backend(QObject):
     dayCompsChanged = Signal()
     moneyCompsChanged = Signal()
     showToast = Signal(str, str)    
-    webReady = Signal(str, bool)   # адрес веб-версии + удалось ли
     startupUpdateEnabledChanged = Signal()
     timeInputModeChanged = Signal()    
     hotkeysListChanged = Signal()
@@ -458,7 +451,6 @@ class Backend(QObject):
         self.app_dir = Path(__file__).parent
         # Папка данных: начиная с этой версии — Documents\OverTimeTab.
         # Данные со старых версий автоматически переносятся сюда (режим copy).
-        self.webReady.connect(self._onWebReady)
         self._data_dir = self._resolve_data_dir()
         self.config_path = self._data_dir / "config.json"
         
@@ -2958,246 +2950,6 @@ class Backend(QObject):
                 self.showToast.emit(f"Ошибка вставки: {e}", "error")
 
     @Slot()
-    def openWebVersion(self):
-        """Кнопка в справке: открыть веб-версию (этап переезда интерфейса).
-
-        Запускает ВТОРОЙ процесс с --web и путём текущей базы, а затем
-        в фоне проверяет, что сервер поднялся. Результат — тост с адресом
-        (адрес также кладётся в буфер обмена); при сбое — путь к логу.
-        """
-        # Этап 4: веб-интерфейс — окно ВНУТРИ программы, без браузера.
-        # Если встроенный движок доступен — открываем его; иначе прежний
-        # режим: второй процесс с --web + системный браузер.
-        self._web_log("кнопка нажата: HAS_WEBENGINE=%s, Quick=%s; причина: %s"
-                      % (HAS_WEBENGINE, HAS_WEBENGINE_QUICK,
-                         WEBENGINE_ERROR or "нет (успех)"))
-        if HAS_WEBENGINE:
-            self._open_web_window()
-            return
-        self._web_fatal("встроенный браузер недоступен.\n\n%s\n\n"
-                        "Открою в системном браузере, как раньше." % WEBENGINE_ERROR)
-        import subprocess
-        try:
-            log_path = Path(self._data_dir) / "web.log"
-            try:
-                with open(log_path, "a", encoding="utf-8") as lf:
-                    lf.write("\n=== запуск из программы ===\n")
-            except Exception:
-                pass
-            argv = [sys.executable]
-            if not getattr(sys, "frozen", False):
-                argv.append(str(Path(__file__).resolve()))
-            argv += ["--web", "--log", str(log_path)]
-            if self.active_db is not None:
-                argv += ["--db", str(self.active_db.path)]
-            try:
-                lf = open(log_path, "ab")
-                subprocess.Popen(argv, stdout=lf, stderr=lf, close_fds=True)
-                lf.close()
-                self._web_log("запущен процесс --web (ветка браузера)")
-            except Exception as pe:
-                self._web_log("Popen не удался: %s" % pe)
-                subprocess.Popen(argv, close_fds=True)
-            self.showToast.emit("Запускаем веб-версию…", "success")
-            threading.Thread(target=self._poll_web, daemon=True).start()
-        except Exception as e:
-            self.showToast.emit(f"Не удалось открыть веб-версию: {e}", "error")
-
-    def _web_log(self, msg):
-        """Журнал веб-окна: каждый шаг с меткой времени (web.log)."""
-        try:
-            from datetime import datetime
-            log_path = Path(self._data_dir) / "web.log"
-            log_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(log_path, "a", encoding="utf-8") as f:
-                f.write("[%s] %s\n" % (datetime.now().strftime("%H:%M:%S"), msg))
-        except Exception:
-            pass
-
-    def _web_fatal(self, msg):
-        """Ошибка, которую невозможно не заметить: нативный диалог + журнал."""
-        self._web_log("ОШИБКА: " + msg)
-        try:
-            from PySide6.QtWidgets import QMessageBox
-            box = QMessageBox()
-            box.setIcon(QMessageBox.Icon.Critical)
-            box.setWindowTitle("Веб-версия")
-            box.setText("Не удалось открыть веб-версию в окне программы.")
-            box.setInformativeText(msg + "\n\nПодробности: " + str(
-                Path(self._data_dir) / "web.log"))
-            box.exec()
-        except Exception:
-            pass
-        try:
-            self.showToast.emit("Веб-версия не открылась: " + msg[:120], "error")
-        except Exception:
-            pass
-
-    def _open_web_window(self):
-        """Веб-версия как настоящее окно программы (этап 4).
-
-        Движок программы поднимается в фоновом потоке на 127.0.0.1,
-        окно WebEngine показывает его как страницу. Каждый шаг пишется
-        в web.log, любая ошибка — нативным диалогом (не только тостом).
-        """
-        self._web_log("── запуск окна веб-версии ──")
-        try:
-            # 1) сервер: уже живой — переиспользуем, иначе поднимаем
-            port = getattr(self, "_web_port", None)
-            if port is not None:
-                import urllib.request
-                try:
-                    urllib.request.urlopen(
-                        "http://127.0.0.1:%d/api/bootstrap?year=2026" % port,
-                        timeout=2)
-                    self._web_log("сервер уже жив: порт %d" % port)
-                except Exception:
-                    self._web_log("сервер на порту %d не отвечает — поднимаем заново" % port)
-                    port = None
-            if port is None:
-                from webapp.server import serve_in_thread
-                db_path = str(self.active_db.path) if self.active_db else None
-                self._web_log("поднимаем сервер в потоке, база: %s" % (db_path or "демо"))
-                httpd, port = serve_in_thread(db_path)
-                self._web_httpd = httpd
-                self._web_port = port
-                self._web_log("сервер поднят: порт %d" % port)
-            url = "http://127.0.0.1:%d/" % port
-
-            # 2) окно уже открыто — просто поднимаем наверх
-            win = getattr(self, "_webwin", None)
-            if win is not None:
-                try:
-                    win.show()
-                    win.raise_()
-                    win.requestActivate()
-                    self._web_log("окно уже было открыто — подняли наверх")
-                    return
-                except RuntimeError:
-                    self._webwin = None
-
-            # 3) в сборке проверяем файлы Chromium: если их нет, лучше
-            #    внятное сообщение, чем тишина
-            import sys as _sys
-            if getattr(_sys, "frozen", False):
-                base = Path(getattr(_sys, "_MEIPASS", Path(_sys.executable).parent))
-                miss = []
-                for rel in ("PySide6/Qt/libexec", "PySide6/Qt/resources"):
-                    if not (base / rel).exists():
-                        miss.append(rel)
-                we_proc = list((base / "PySide6/Qt/libexec").glob("QtWebEngineProcess*")) \
-                    if (base / "PySide6/Qt/libexec").exists() else []
-                if miss or not we_proc:
-                    self._web_fatal("в сборке нет файлов встроенного браузера "
-                                    "(Chromium): %s" % (", ".join(miss) or "QtWebEngineProcess"))
-                    return
-                self._web_log("файлы Chromium на месте")
-
-            # 4) создаём окно: QML-вариант или Widgets-запасной
-            if not HAS_WEBENGINE_QUICK:
-                self._open_web_window_widgets(url)
-                return
-            from PySide6.QtCore import QUrl
-            from PySide6.QtQml import QQmlComponent
-            engine = getattr(self, "_engine", None)
-            if engine is None:
-                raise RuntimeError("нет QML-движка")
-            comp = None
-            errors = []
-            for u in (QUrl("qrc:/components/WebWindow.qml"),
-                      QUrl.fromLocalFile(str(Path(__file__).resolve().parent
-                                              / "components" / "WebWindow.qml"))):
-                c = QQmlComponent(engine, u)
-                if c.status() == QQmlComponent.Status.Ready:
-                    comp = c
-                    break
-                errors.append("%s: %s" % (u.toString(), [
-                    e.toString() for e in c.errors()][:2]))
-            if comp is None:
-                raise RuntimeError("WebWindow.qml не загрузился: " + "; ".join(errors))
-            self._webwin = comp.create()
-            if self._webwin is None:
-                raise RuntimeError("окно не создалось: " + "; ".join(
-                    e.toString() for e in comp.errors()))
-            self._webwin.setProperty("webUrl", url)
-            self._webwin.show()
-            self._webwin.raise_()
-            try:
-                self._webwin.requestActivate()
-            except Exception:
-                pass
-            self._web_log("окно создано и показано: %s" % url)
-            self.showToast.emit("Веб-версия открыта в окне программы", "success")
-        except Exception as e:
-            import traceback
-            self._web_fatal("%s: %s\n%s" % (type(e).__name__, e,
-                                             traceback.format_exc()[-600:]))
-
-    def _open_web_window_widgets(self, url):
-        """Запасной вкус окна веб-версии: QWebEngineView в QMainWindow.
-
-        Используется, когда QML-плагин WebEngine недоступен, а ядро
-        (QtWebEngineWidgets) — доступно. Внешне то же окно программы.
-        """
-        from PySide6.QtCore import QUrl
-        from PySide6.QtWidgets import QMainWindow
-        from PySide6.QtWebEngineWidgets import QWebEngineView
-        win = getattr(self, "_webwin", None)
-        if win is not None:
-            try:
-                win.show()
-                win.raise_()
-                win.activateWindow()
-                self._web_log("widgets-окно уже было открыто — подняли наверх")
-                return
-            except RuntimeError:
-                self._webwin = None
-        w = QMainWindow()
-        w.setWindowTitle("OVERTIMETAB — веб-версия")
-        w.resize(1320, 900)
-        view = QWebEngineView(w)
-        view.load(QUrl(url))
-        w.setCentralWidget(view)
-        w.show()
-        w.raise_()
-        w.activateWindow()
-        self._webwin = w
-        self._webview = view
-        self._web_log("widgets-окно создано и показано: %s" % url)
-        self.showToast.emit("Веб-версия открыта в окне программы", "success")
-
-    def _poll_web(self):
-        """Фоновая проверка: ждём сервер потомка до ~8 секунд."""
-        import urllib.request
-        url = None
-        for _ in range(40):
-            time.sleep(0.2)
-            for port in range(8081, 8092):
-                try:
-                    with urllib.request.urlopen(
-                            f"http://127.0.0.1:{port}/", timeout=0.4) as r:
-                        if r.status == 200:
-                            url = f"http://127.0.0.1:{port}"
-                            break
-                except Exception:
-                    continue
-            if url:
-                break
-        self.webReady.emit(url or "", bool(url))
-
-    @Slot(str, bool)
-    def _onWebReady(self, url, ok):
-        from PySide6.QtWidgets import QApplication
-        if ok:
-            QApplication.clipboard().setText(url)
-            self.showToast.emit(
-                f"Веб-версия работает: {url} — адрес скопирован в буфер", "success")
-        else:
-            log_path = Path(self._data_dir) / "web.log"
-            self.showToast.emit(
-                f"Веб-сервер не поднялся. Подробности: {log_path}", "error")
-
-    @Slot()
     def undoAction(self):
         """Отменяет последнее действие (Ctrl+Z)"""
         if not self.active_db: return
@@ -4394,13 +4146,6 @@ def _handle_uncaught(exc_type, exc_value, exc_tb):
         except Exception:
             pass
 
-# Встроенный веб-движок (решается в main(), до QApplication).
-# HAS_WEBENGINE — окно вообще возможно; _QUICK — какой вкус окна:
-# True = QML-окно (WebEngineView), False = Widgets-окно (QWebEngineView).
-HAS_WEBENGINE = False
-HAS_WEBENGINE_QUICK = False
-WEBENGINE_ERROR = ""
-
 def main():
     try:
         myappid = 'mycompany.overtimetab.version2'
@@ -4412,103 +4157,6 @@ def main():
     
     # Любая непойманная ошибка — окно с логом и кнопкой «Скопировать».
     sys.excepthook = _handle_uncaught
-
-    # Встроенный веб-интерфейс (этап 4): Chromium-движок из состава
-    # PySide6. initialize() обязан случиться ДО создания QApplication,
-    # иначе WebEngineView в окнах не поднимется. Если движка нет —
-    # программа работает как обычно (веб-версия откроется в браузере).
-    global HAS_WEBENGINE, HAS_WEBENGINE_QUICK, WEBENGINE_ERROR
-    # в сборке: уверенно ищем DLL Qt рядом с собой (страховка)
-    try:
-        import sys as _sys
-        if getattr(_sys, "frozen", False):
-            import os as _os
-            _base = Path(getattr(_sys, "_MEIPASS", _sys.executable))
-            for _sub in ("PySide6", "PySide6/Qt/bin", "PySide6/Qt/libexec"):
-                _d = _base / _sub
-                if _d.is_dir() and hasattr(_os, "add_dll_directory"):
-                    _os.add_dll_directory(str(_d))
-    except Exception:
-        pass
-    # ОСНОВНОЙ вкус — Widgets-окно (QWebEngineView): его зависимости
-    # полностью известны и собраны. QML-окно (Quick) — запасной.
-    # importlib идёт мимо ленивой обёртки PySide6 и выдаёт исходную
-    # ошибку (DLL load failed и т.п.), а не маскирующую обёртку
-    import importlib as _importlib
-    try:
-        _importlib.import_module("PySide6.QtWebEngineWidgets")
-        HAS_WEBENGINE = True
-        HAS_WEBENGINE_QUICK = False
-    except Exception as e:
-        WEBENGINE_ERROR = "Widgets: %s: %s" % (type(e).__name__, e)
-        _c = e.__cause__ if e.__cause__ is not None else e.__context__
-        if _c is not None:
-            WEBENGINE_ERROR += " << причина: %s: %s" % (type(_c).__name__, _c)
-        # поштучная загрузка цепочки зависимостей: кто не грузится,
-        # тот и виновник — будет назван по имени
-        try:
-            import ctypes as _ctypes
-            import sys as _sys3
-            _ps_dir = Path(getattr(_sys3, "_MEIPASS", _sys3.executable)) / "PySide6"
-            _chain = ["shiboken6.abi3.dll", "pyside6.abi3.dll", "MSVCP140.dll",
-                      "VCRUNTIME140.dll", "VCRUNTIME140_1.dll", "Qt6Core.dll",
-                      "Qt6Gui.dll", "Qt6Widgets.dll", "Qt6Network.dll", "Qt6Qml.dll",
-                      "Qt6Quick.dll", "Qt6QuickWidgets.dll", "Qt6PrintSupport.dll",
-                      "Qt6WebChannel.dll", "Qt6WebChannelQuick.dll",
-                      "Qt6Positioning.dll", "Qt6WebEngineCore.dll",
-                      "Qt6WebEngineWidgets.dll"]
-            _bad = []
-            for _d in _chain:
-                _f = _ps_dir / _d
-                if not _f.exists():
-                    _bad.append(_d + " — ФАЙЛА НЕТ")
-                    continue
-                try:
-                    _ctypes.WinDLL(str(_f))
-                except OSError as _oe:
-                    _bad.append("%s — %s" % (_d, _oe))
-            WEBENGINE_ERROR += ("\nпоштучно: " +
-                                ("; ".join(_bad) if _bad
-                                 else "все грузятся по отдельности (!?)"))
-        except Exception:
-            pass
-        try:
-            from PySide6 import QtWebEngineQuick
-            QtWebEngineQuick.initialize()
-            HAS_WEBENGINE = True
-            HAS_WEBENGINE_QUICK = True
-            WEBENGINE_ERROR += " (используем QML-окно)"
-        except Exception as e2:
-            WEBENGINE_ERROR += " | Quick: %s: %s" % (type(e2).__name__, e2)
-        # что реально лежит рядом с exe — чтобы видеть недостающее
-        try:
-            import sys as _sys2
-            _b = Path(getattr(_sys2, "_MEIPASS", _sys2.executable))
-            _probe = ["PySide6/Qt6WebEngineCore.dll",
-                      "PySide6/Qt6WebEngineWidgets.dll",
-                      "PySide6/Qt6WebEngineQuick.dll",
-                      "PySide6/Qt6WebChannel.dll",
-                      "PySide6/Qt6Positioning.dll",
-                      "PySide6/Qt6Network.dll",
-                      "PySide6/Qt6Qml.dll",
-                      "PySide6/Qt6Quick.dll",
-                      "PySide6/Qt6OpenGL.dll",
-                      "PySide6/Qt6PrintSupport.dll",
-                      "PySide6/QtWebEngineProcess.exe",
-                      "PySide6/Qt/bin/libEGL.dll",
-                      "PySide6/Qt/resources/qtwebengine_resources.pak",
-                      "PySide6/Qt/translations/qtwebengine_locales",
-                      "PySide6/Qt6QuickWidgets.dll",
-                      "PySide6/Qt6WebChannelQuick.dll",
-                      "PySide6/QtWebEngineCore.pyd",
-                      "PySide6/QtWebEngineWidgets.pyd",
-                      "PySide6/QtWebEngineQuick.pyd"]
-            _have = [n for n in _probe if (_b / n).exists()]
-            _miss = [n for n in _probe if not (_b / n).exists()]
-            WEBENGINE_ERROR += ("\nесть: %s\nнет: %s" % (", ".join(_have) or "-",
-                                                          ", ".join(_miss) or "-"))
-        except Exception:
-            pass
 
     app = QApplication(sys.argv)
 
@@ -4559,8 +4207,7 @@ def main():
     my_backend = Backend()
     engine = QQmlApplicationEngine()
     engine.rootContext().setContextProperty("backend", my_backend)
-    my_backend._engine = engine   # для окна веб-версии (этап 4)
-    
+        
     def show_window():
         if engine.rootObjects():
             window = engine.rootObjects()[0]
@@ -4626,45 +4273,6 @@ def main():
     server.close() # Закрываем сервер при выходе
     del engine
     sys.exit(exit_code)
-
-def _has_web_flag(argv):
-    """Флаг --web из ярлыка: прощаем опечатки.
-
-    Ярлык мог получить «--web.» (точка от конца предложения), «--WEB»
-    или Windows-стиль «/web» — все эти варианты включают веб-режим.
-    """
-    for a in argv[1:]:
-        if a.lower().rstrip(" .,;:!") in ("--web", "-web", "/web"):
-            return True
-    return False
-
-
-def _first_configured_db():
-    """Первая база из настроек — для экспериментального режима --web.
-
-    Обходит те же места, что и программа (Documents, портативная data\,
-    старый профиль), но без Qt: режим запускается до создания окна.
-    """
-    candidates = [
-        Path.home() / "Documents" / "OverTimeTab" / "config.json",
-        Path(sys.argv[0]).resolve().parent / "data" / "config.json",
-        Path.home() / ".overtimetab" / "config.json",
-    ]
-    for cfg in candidates:
-        try:
-            if not cfg.exists():
-                continue
-            data = json.loads(cfg.read_text(encoding="utf-8"))
-            for p in data.get("db_paths", []):
-                pp = Path(p)
-                if not pp.is_absolute():
-                    pp = (cfg.parent / pp).resolve()
-                if pp.exists():
-                    return str(pp)
-        except Exception:
-            continue
-    return None
-
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -5017,39 +4625,5 @@ if __name__ == "__main__":
             print(f"Ошибка применения обновления: {e}")
             sys.exit(1)
         sys.exit(0)
-        # ЭКСПЕРИМЕНТАЛЬНЫЙ ВЕБ-РЕЖИМ (этап переезда интерфейса, MIGRATION.md):
-        #   OVERTIMETAB.exe --web            — база из настроек
-        #   OVERTIMETAB.exe --web --db ПУТЬ  — указанная база
-        # Поднимает локальный сервер (веб-интерфейс на движке программы)
-        # и открывает браузер. Окно программы не запускается.
-        if _has_web_flag(sys.argv):
-            _web_db = None
-            if "--db" in sys.argv:
-                try:
-                    _web_db = sys.argv[sys.argv.index("--db") + 1]
-                except IndexError:
-                    pass
-            if not _web_db:
-                _web_db = _first_configured_db()
-            _web_log = None
-            if "--log" in sys.argv:
-                try:
-                    _web_log = sys.argv[sys.argv.index("--log") + 1]
-                except IndexError:
-                    pass
-            # Веб-режим не имеет права молчать: любой сбой — в лог-файл
-            try:
-                from webapp.server import run_web
-                run_web(_web_db, log_path=_web_log)
-            except BaseException:
-                _p = _web_log or str(Path.home() / "Documents" / "OverTimeTab" / "web.log")
-                try:
-                    Path(_p).parent.mkdir(parents=True, exist_ok=True)
-                    with open(_p, "a", encoding="utf-8") as f:
-                        f.write("\n=== СБОЙ ВЕБ-РЕЖИМА ===\n" + traceback.format_exc() + "\n")
-                except Exception:
-                    pass
-                sys.exit(1)
-            sys.exit(0)
 
     main()

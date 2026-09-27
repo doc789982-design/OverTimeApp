@@ -43,9 +43,11 @@ for _stream in (sys.stdout, sys.stderr):
 # Если сборщик увидит «import PySide6.QtWebEngine» — он потащит
 # за ним ещё ~150 МБ. Мы говорим: этого импорта в программе нет.
 # ---------------------------------------------------------------------------
-# ВНИМАНИЕ: модули QtWebEngine* НЕ исключать — с этапа 4 переезда
-# веб-интерфейс живёт ВНУТРИ программы (окно WebEngine, Main.py).
 UNUSED_PYSIDE_MODULES = (
+    "PySide6.QtWebEngine",
+    "PySide6.QtWebEngineCore",
+    "PySide6.QtWebEngineWidgets",
+    "PySide6.QtWebEngineQuick",
     "PySide6.Qt3DAnimation",
     "PySide6.Qt3DCore",
     "PySide6.Qt3DExtras",
@@ -60,6 +62,7 @@ UNUSED_PYSIDE_MODULES = (
     "PySide6.QtMultimediaWidgets",
     "PySide6.QtBluetooth",
     "PySide6.QtNfc",
+    "PySide6.QtPositioning",
     "PySide6.QtLocation",
     "PySide6.QtSensors",
     "PySide6.QtSerialPort",
@@ -80,15 +83,14 @@ UNUSED_PYSIDE_MODULES = (
     "PySide6.QtHelp",
     "PySide6.QtTest",
     "PySide6.QtSql",           # база у нас через обычный sqlite3, не через Qt
-    # PySide6.QtPrintSupport НЕ исключать: на нём держится
-    # QtWebEngineWidgets (встроенное окно веб-версии, этап 4)
+    "PySide6.QtPrintSupport",  # печать идёт через Excel, не через Qt
     "PySide6.QtUiTools",
     "PySide6.QtXml",
     "PySide6.QtDBus",
     "PySide6.QtExampleIcons",
     "PySide6.QtSvgWidgets",
     "PySide6.QtOpenGLWidgets",
-    # PySide6.QtQuickWidgets НЕ исключать: зависимость Qt6WebEngineWidgets
+    "PySide6.QtQuickWidgets",
     "PySide6.QtQuickTest",
     "PySide6.QtQuickTimeline",
     "PySide6.QtQuickParticles",
@@ -110,8 +112,7 @@ UNUSED_STDLIB = (
     "ensurepip",
     "venv",
     "xmlrpc",
-    # http.server НЕ исключать: на нём работает экспериментальный
-    # веб-режим (webapp/server.py, OVERTIMETAB.exe --web)
+    "http.server",
     "matplotlib",
     "numpy",
     "pandas",
@@ -126,9 +127,11 @@ UNUSED_STDLIB = (
 # Пишем достаточно длинные слова, чтобы случайно не задеть нужный файл.
 # ---------------------------------------------------------------------------
 _DROP_PATH_PARTS = (
-    # WebEngine (файлы вида /qtwebengine*, qt6webengine*, qtwebengineprocess,
-    # icudtl.dat) НЕ выкидывать: с этапа 4 это встроенный веб-интерфейс.
-    # QtWebChannel оставляем тоже: от него зависит ядро WebEngine.
+    # Браузер Qt (самый жирный кусок, часто 100–180 МБ один только он)
+    "/qtwebengine",
+    "qt6webengine",
+    "qtwebengineprocess",
+    "icudtl.dat",
     # 3D
     "qt63d",
     "qt6quick3d",
@@ -150,6 +153,8 @@ _DROP_PATH_PARTS = (
     "/qtbluetooth",
     "qt6nfc",
     "/qtnfc",
+    "qt6positioning",
+    "/qtpositioning",
     "qt6location",
     "/qtlocation",
     "qt6sensors",
@@ -166,6 +171,8 @@ _DROP_PATH_PARTS = (
     "/qtstatemachine",
     "qt6texttospeech",
     "/qttexttospeech",
+    "qt6webchannel",
+    "/qtwebchannel",
     "qt6websockets",
     "/qtwebsockets",
     "qt6webview",
@@ -241,7 +248,7 @@ _DROP_PATH_PARTS = (
     "qt6quickvectorimage",
     "qt6svgwidgets",
     "qt6openglwidgets",
-    # qt6quickwidgets НЕ вырезать: зависимость Qt6WebEngineWidgets (веб-окно)
+    "qt6quickwidgets",
     "qt6qmlcompiler",
     "/qtquick/vectorimage",
     "/qml/qt/labs/",
@@ -265,23 +272,6 @@ def _norm(path_like) -> str:
     """Путь к одному виду: маленькие буквы и прямые слэши."""
     return str(path_like or "").replace("\\", "/").lower()
 
-# Файлы встроенного веб-движка (этап 4): вырезались ДВАЖДЫ —
-# сначала как «ненужный Positioning» (от него зависит ядро Chromium),
-# потом фильтром переводов (локали движка — .pak, не _ru.qm).
-# Эти части проверяются ПЕРВЫМИ и гарантируют, что движок собирается.
-_KEEP_PATH_PARTS = (
-    "webengine",
-    "webchannel",
-    "positioning",
-    "icudtl",
-    "resources.pak",
-    "qt/resources",
-    "d3dcompiler",
-    "libegl",
-    "libgles",
-    "opengl32sw",
-)
-
 
 def is_unused_hiddenimport(name: str) -> bool:
     """Этот python-модуль табель не импортирует — в сборку не кладём."""
@@ -300,11 +290,6 @@ def should_keep(src, dest="") -> bool:
     dest — куда его хотели положить внутри папки программы
     """
     blob = _norm(src) + " | " + _norm(dest)
-
-    # Сначала — неприкосновенные файлы встроенного веб-движка
-    for part in _KEEP_PATH_PARTS:
-        if part in blob:
-            return True
 
     # Сначала режем явно лишнее (браузер, 3D, камера…).
     # Список специально длинный и конкретный, чтобы не задеть

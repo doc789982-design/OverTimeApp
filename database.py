@@ -13,8 +13,8 @@ class DB:
         self.path = path
         
         # МАГИЯ: Увеличиваем таймаут, чтобы SQLite не блокировал Питон
-        # check_same_thread=False: веб-режим обслуживает запросы в рабочих
-        # потоках; доступ сериализуется блокировкой в webapp/server.py
+        # check_same_thread=False: соединение используется из нескольких
+        # потоков (экспорт, сохранение); таймаут защищает от блокировок
         self.conn = sqlite3.connect(path, timeout=10.0, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         

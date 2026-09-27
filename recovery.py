@@ -445,13 +445,8 @@ def _install_root():
 
 
 def _helper_launch(argv) -> bool:
-    """Служебные запуски (обновление из pending, веб-режим) — не вмешиваемся."""
-    if "--apply-update" in argv:
-        return True
-    for a in argv[1:]:
-        if a.lower().rstrip(" .,;:!") in ("--web", "-web", "/web"):
-            return True
-    return False
+    """Служебные запуски (обновление из pending) — не вмешиваемся."""
+    return "--apply-update" in argv
 
 
 def guard() -> None:
