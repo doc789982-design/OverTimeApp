@@ -321,15 +321,17 @@ class summary_cache_scope:
 def total_overtime_days(end_hours, prev_h_end, end_overtime, prev_o_end, end_days, prev_d_end):
     """«Всего дней» — переработка сотрудника в днях (остаток на конец периода).
 
-    Ночные (ДВО) и сверх нормы считаются в минутах за этот год и за предыдущий;
-    сверх нормы с минусом не учитываем (зажимаем в 0). Сумму делим на 8-часовой
-    рабочий день и округляем вниз, затем прибавляем ДДО (дни).
+    Часовые копилки независимы: минус в одной не съедает часы другой
+    (каждая зажимается в ноль ОТДЕЛЬНО — ДВО и сверх нормы за этот год и за
+    предыдущий). Положительные часы складываются и делятся на 8-часовой
+    рабочий день с округлением вниз, затем прибавляются ДДО (дни).
     """
-    night_min = int(end_hours) + int(prev_h_end)
-    extra_min = int(end_overtime) + int(prev_o_end)
-    if extra_min < 0:
-        extra_min = 0
-    return (night_min + extra_min) // (8 * 60) + int(end_days) + int(prev_d_end)
+    minutes = 0
+    for m in (end_hours, prev_h_end, end_overtime, prev_o_end):
+        m = int(m)
+        if m > 0:
+            minutes += m
+    return minutes // (8 * 60) + int(end_days) + int(prev_d_end)
 
 
 def compute_month_summary(db, employee_id: int, year: int, month: int) -> dict:

@@ -469,6 +469,27 @@ class SheetRenderer:
         t = (x - rect.left()) / rect.width()
         return mid + dy - t * 2 * dy
 
+    def _trio_edge_clips(self, r):
+        """{x внутренней границы тройки: y линии} — под линией границ нет."""
+        if not self.days_overlay:
+            return {}
+        cached = getattr(self, "_clips_cache", None)
+        if cached is None:
+            cached = self._clips_cache = {}
+        if r in cached:
+            return cached[r]
+        res = {}
+        for group, trio in self._trio_groups().items():
+            if (r, group) not in self.days_overlay:
+                continue
+            rect = self._trio_rect(r, trio)
+            cols = sorted((trio["ot"], trio["hours"], trio["days"]))
+            for cc in cols[1:]:
+                x = self.m.x[cc - 1]
+                res[x] = self._trio_line_y(rect, x)
+        cached[r] = res
+        return res
+
     def _text_top_half(self, painter, r, c, cell, text, fm, trio):
         """Значение ячейки тройки — в верхней половине (над линией)."""
         rect = self.m.cell_rect(r, c)
@@ -501,7 +522,8 @@ class SheetRenderer:
         painter.drawLine(QPointF(rect.left(), mid + dy), QPointF(rect.right(), mid - dy))
 
         cell = self.m.ws.cell(row, trio["ot"])
-        font = self.qfont(cell)
+        font = QFont(self.qfont(cell))   # копия — не портим кэш шрифтов
+        font.setBold(True)
         fm = QFontMetrics(font)
         painter.setFont(font)
         painter.setPen(QColor("#111111"))
@@ -575,13 +597,27 @@ class SheetRenderer:
             painter.setPen(p)
             painter.drawLine(x1, y1, x2, y2)
 
+        def draw_v(side, x, y1, y2):
+            """Вертикальная граница; внутренние границы троек обрезаются
+            по наклонной линии — под ней тройка становится одним полем."""
+            p = pen(side)
+            if p is None:
+                return
+            clip = self._trio_edge_clips(r).get(x)
+            if clip is not None and y2 > clip:
+                y2 = clip
+            if y2 <= y1:
+                return
+            painter.setPen(p)
+            painter.drawLine(x, y1, x, y2)
+
         left_c = mr[2] if mr else c
         right_c = mr[3] if mr else c
         top_r = mr[0] if mr else r
         bot_r = mr[1] if mr else r
-        draw("left", rect.left(), rect.top(), rect.left(), rect.bottom())
+        draw_v("left", rect.left(), rect.top(), rect.bottom())
         if c == right_c:
-            draw("right", rect.right(), rect.top(), rect.right(), rect.bottom())
+            draw_v("right", rect.right(), rect.top(), rect.bottom())
         draw("top", rect.left(), rect.top(), rect.right(), rect.top())
         if r == bot_r:
             draw("bottom", rect.left(), rect.bottom(), rect.right(), rect.bottom())
@@ -783,6 +819,18 @@ def print_sheet_to_printer(ws, printer_name, copies, page_from, page_to,
 # Высокий уровень: база → заполненный бланк → печать
 # ──────────────────────────────────────────────────────────────────
 
+def _days_word(n: int) -> str:
+    """Склонение: 1 день / 2 дня / 5 дней (как в панели итогов)."""
+    n = abs(int(n))
+    if n % 100 in (11, 12, 13, 14):
+        return "дней"
+    if n % 10 == 1:
+        return "день"
+    if n % 10 in (2, 3, 4):
+        return "дня"
+    return "дней"
+
+
 def _compute_days_overlay(db_path, year, month, model):
     """Число дней для троек «на начало» и «на конец» месяца.
 
@@ -818,7 +866,9 @@ def _compute_days_overlay(db_path, year, month, model):
                 if group not in trios:
                     continue
                 ot, ot_p, h, h_p, d, d_p = (int(summ[k] or 0) for k in keys[group])
-                overlay[(row, group)] = "%d дн." % total_overtime_days(h, h_p, ot, ot_p, d, d_p)
+                n = total_overtime_days(h, h_p, ot, ot_p, d, d_p)
+                n = max(0, n)  # отрицательный остаток дней показываем нулём
+                overlay[(row, group)] = "Всего %d %s" % (n, _days_word(n))
         return overlay
     finally:
         db.close()
