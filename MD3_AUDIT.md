@@ -187,6 +187,13 @@ Focus-кольцо 2px с 50% brand — свежие MD3-спеки тоже т�
 > (contentItem focus:true — обёртка QQuickPopupItem держит фокус
 > и Keys на детях молчат); Esc теперь шлёт rejected; выделение
 > в полях — accentBrand/textOnAccent + selectByMouse.
+> Батч 12 (сборка 194) — select-all по клику/Tab: TextInput
+> ставит фокус ДО сигнала pressed (флаг _focusFresh из
+> onActiveFocusChanged), база сбивает выделение до released
+> (восстановление Qt.callLater(selectAll)); автофокус первого
+> поля диалога (findField по children, isFormField-маркер;
+> childItems из QML не виден); AppDialog модален (MD3/HIG);
+> AppScrollBar — дефолтные серые скроллбары заменены.
 
 1. **Тёмная тема, on-accent:** вместо белого текста на #4B9AEE — тёмный
    `#062E4F` (как MD3: на светлом primary тёмный on-primary). Решает 2.93:1
