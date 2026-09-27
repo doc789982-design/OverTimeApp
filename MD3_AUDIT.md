@@ -360,6 +360,31 @@ Focus-кольцо 2px с 50% brand — свежие MD3-спеки тоже т�
 > (4) is_newer: при обоих известных сборках решает ТОЛЬКО
 > сборка (8 юнит-сценариев OK, вкл. отсутствие цикла
 > BETA.1↔тег); (5) updates/version.json: version
+> Батч 33 (сборка 215) — починка своей печати на Windows.
+> СИМПТОМ (юзер, 214): «печатается через excel все равно»,
+> выбирался Microsoft Print to PDF (физического принтера нет).
+> КОРЕНЬ: slim_pyside.py вырезал печать — «PySide6.QtPrintSupport»
+> в UNUSED_PYSIDE_MODULES (комментарий «печать идёт через
+> Excel» устарел) + «qt6printsupport» в _DROP_PATH_PARTS;
+> is_unused_hiddenimport молча удалял hiddenimport из спеки →
+> в exe нет Qt-печати → ImportError → фолбэк на Excel. Тост
+> глотал текст ошибки. ФИКСЫ: (1) обе строки вырезания убраны
+> (хук PyInstaller сам собирает DLL + плагин printsupport:
+> _QtModuleDef(QtPrintSupport, plugins=[printsupport]));
+> (2) виртуальные PDF-принтеры («pdf» в имени, кейс-независимо:
+> MS Print to PDF, Adobe PDF, Foxit) идут через QPdfWriter
+> (QtGui — НЕ зависит от плагина печати!): в quickPrint
+> (GUI-поток) QFileDialog.getSaveFileName → PrintWorkerQt
+> (pdf_out) → print_report_pdf → sheet_to_pdf; системный
+> диалог драйвера не вызывается; (3) тост фолбэка показывает
+> причину сбоя (первые 140 символов). Проверки песочницы:
+> filter_toc пропускает Qt6PrintSupport.dll +
+> windowsprintersupport.dll, WebEngine по-прежнему режется;
+> print_report_pdf e2e: 5 стр за 1.35 с; детекция PDF-имён.
+> УРОК: меняя transport печати (Excel→Qt) — проверять
+> slim_pyside (там был список «не нужных» модулей под старую
+> схему); текст ошибки всегда доносить до юзера, иначе
+> диагноз «почему фолбэк» невозможен.
 > Батч 32 (сборка 214) — СВОЯ ПЕЧАТЬ БЕЗ EXCEL. Путь:
 > PrintWorkerQt → print_engine.print_report: продуктовый
 > экспорт (openpyxl, 0.8 с на 40 чел.) → SheetModel читает

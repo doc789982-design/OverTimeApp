@@ -497,10 +497,8 @@ def print_sheet_to_printer(ws, printer_name, copies, page_from, page_to,
 # Высокий уровень: база → заполненный бланк → печать
 # ──────────────────────────────────────────────────────────────────
 
-def print_report(db_path, year, month, template_path, printer_name, copies,
-                 page_from, page_to, orientation, paper_size, collate,
-                 sheet_name="Лист1") -> int:
-    """Формирует бланк и печатает его без Excel. Возвращает число страниц."""
+def _build_sheet(db_path, year, month, template_path, sheet_name="Лист1"):
+    """Формирует заполненный бланк во временный xlsx; возвращает (лист, путь)."""
     from database import DB
     from export import TemplateExporter
 
@@ -514,14 +512,41 @@ def print_report(db_path, year, month, template_path, printer_name, copies,
     finally:
         temp_db.close()
 
+    wb = openpyxl.load_workbook(temp_xlsx)
+    ws = wb[sheet_name] if sheet_name in wb.sheetnames else wb.active
+    return ws, temp_xlsx
+
+
+def _cleanup_sheet(temp_xlsx):
     try:
-        wb = openpyxl.load_workbook(temp_xlsx)
-        ws = wb[sheet_name] if sheet_name in wb.sheetnames else wb.active
+        os.remove(str(temp_xlsx))
+    except OSError:
+        pass
+
+
+def print_report(db_path, year, month, template_path, printer_name, copies,
+                 page_from, page_to, orientation, paper_size, collate,
+                 sheet_name="Лист1") -> int:
+    """Формирует бланк и печатает его без Excel. Возвращает число страниц."""
+    ws, temp_xlsx = _build_sheet(db_path, year, month, template_path, sheet_name)
+    try:
         n = print_sheet_to_printer(ws, printer_name, copies, page_from, page_to,
                                    orientation, paper_size, collate)
         return n
     finally:
-        try:
-            os.remove(str(temp_xlsx))
-        except OSError:
-            pass
+        _cleanup_sheet(temp_xlsx)
+
+
+def print_report_pdf(db_path, year, month, template_path, out_path,
+                     orientation="landscape", paper_size="A4",
+                     sheet_name="Лист1") -> int:
+    """Печать в PDF-файл собственным средством (QPdfWriter, без драйвера).
+
+    Путь для виртуальных PDF-принтеров («Microsoft Print to PDF» и т.п.):
+    документ сохраняется в выбранный файл, системный диалог драйвера не нужен.
+    """
+    ws, temp_xlsx = _build_sheet(db_path, year, month, template_path, sheet_name)
+    try:
+        return sheet_to_pdf(ws, out_path, orientation, paper_size)
+    finally:
+        _cleanup_sheet(temp_xlsx)

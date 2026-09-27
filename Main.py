@@ -158,9 +158,10 @@ class ExportWorker(QThread):
 class PrintWorker(QThread):
     finished_signal = Signal(bool, str)
 
-    def __init__(self, db_path, year, month, printer_name, copies, page_from, page_to, orientation, paper_size, collate):
+    def __init__(self, db_path, year, month, printer_name, copies, page_from, page_to, orientation, paper_size, collate, pdf_out=None):
         super().__init__()
         self.db_path = db_path
+        self.pdf_out = pdf_out
         self.year = year
         self.month = month
         self.printer_name = printer_name
@@ -295,21 +296,36 @@ class PrintWorkerQt(QThread):
 
     def run(self):
         try:
-            from print_engine import print_report
-            pages = print_report(
-                db_path=self.db_path,
-                year=self.year,
-                month=self.month,
-                template_path=EXCEL_TEMPLATE_PATH,
-                printer_name=self.printer_name,
-                copies=self.copies,
-                page_from=self.page_from,
-                page_to=self.page_to,
-                orientation=self.orientation,
-                paper_size=self.paper_size,
-                collate=self.collate,
-            )
-            self.finished_signal.emit(True, f"Документ отправлен на принтер ({pages} стр.)!")
+            from print_engine import print_report, print_report_pdf
+            if self.pdf_out:
+                # Виртуальный PDF-принтер: пишем файл сами, без драйвера
+                pages = print_report_pdf(
+                    db_path=self.db_path,
+                    year=self.year,
+                    month=self.month,
+                    template_path=EXCEL_TEMPLATE_PATH,
+                    out_path=self.pdf_out,
+                    orientation=self.orientation,
+                    paper_size=self.paper_size,
+                )
+            else:
+                pages = print_report(
+                    db_path=self.db_path,
+                    year=self.year,
+                    month=self.month,
+                    template_path=EXCEL_TEMPLATE_PATH,
+                    printer_name=self.printer_name,
+                    copies=self.copies,
+                    page_from=self.page_from,
+                    page_to=self.page_to,
+                    orientation=self.orientation,
+                    paper_size=self.paper_size,
+                    collate=self.collate,
+                )
+            if self.pdf_out:
+                self.finished_signal.emit(True, f"Табель сохранён в PDF ({pages} стр.)")
+            else:
+                self.finished_signal.emit(True, f"Документ отправлен на принтер ({pages} стр.)!")
         except Exception as e:
             self.finished_signal.emit(False, f"{e}")
 
@@ -2804,6 +2820,20 @@ class Backend(QObject):
             self.showToast.emit(f"Шаблон не найден: {Path(template_path).name}", "error")
             return
 
+        # Виртуальный PDF-принтер («Microsoft Print to PDF» и т.п.):
+        # пишем PDF собственным средством, без драйвера принтера.
+        # Спрашиваем имя файла здесь, в главном потоке — до запуска печати.
+        pdf_out = None
+        if "pdf" in (printer_name or "").lower():
+            from PySide6.QtWidgets import QFileDialog
+            from PySide6.QtCore import QStandardPaths
+            docs = QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation)
+            suggested = os.path.join(docs, f"Табель_{self.current_year}_{self.current_month:02d}.pdf")
+            pdf_out, _ = QFileDialog.getSaveFileName(
+                None, "Сохранить табель в PDF", suggested, "PDF (*.pdf)")
+            if not pdf_out:
+                return  # передумали сохранять
+
         # Параметры печати — для запасного пути через Excel
         self._last_print_args = dict(
             printer_name=printer_name, copies=copies, page_from=page_from,
@@ -2817,6 +2847,7 @@ class Backend(QObject):
             # Основной путь: собственный движок печати (без Excel)
             self.print_thread = PrintWorkerQt(
                 db_path=self.active_db.path,
+                pdf_out=pdf_out,
                 year=self.current_year,
                 month=self.current_month,
                 printer_name=printer_name,
@@ -2846,7 +2877,8 @@ class Backend(QObject):
             self.showToast.emit(message, "success")
             return
         # Запасной путь: старый добрый Excel
-        self.showToast.emit("Движок печати не смог — печатаем через Excel...", "warning")
+        reason = str(message)[:140]
+        self.showToast.emit(f"Движок печати не смог ({reason}) — печатаем через Excel...", "warning")
         a = getattr(self, "_last_print_args", {})
         try:
             self.print_thread = PrintWorker(
