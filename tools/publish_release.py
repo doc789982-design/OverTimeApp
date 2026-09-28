@@ -129,6 +129,24 @@ def main() -> int:
     args = parser.parse_args()
 
     version, build = read_identity()
+
+    # Ссылка на архив в updates/version.json обязана быть ПОЛНОЙ (https://…):
+    # запасной путь обновления читает этот файл, и относительное имя склеивается
+    # с базовым адресом — на «releases/latest» выходит битая ссылка (404).
+    vj = ROOT / "updates" / "version.json"
+    if vj.exists():
+        try:
+            vj_url = str(json.loads(vj.read_text(encoding="utf-8")).get("url", ""))
+        except Exception as e:
+            print(f"updates/version.json не читается: {e}", file=sys.stderr)
+            return 1
+        if not vj_url.startswith("https://"):
+            print("В updates/version.json поле \"url\" должно быть ПОЛНОЙ ссылкой "
+                  "https://… на архив, а не именем файла (сейчас: "
+                  + repr(vj_url) + ").",
+                  file=sys.stderr)
+            return 1
+
     tag = args.tag.strip() or f"v{version}"
     title = f"OVERTIMETAB {version}" + (f" · сборка {build}" if build else "")
     notes = changelog_section(version)
