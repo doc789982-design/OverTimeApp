@@ -764,6 +764,10 @@ def render_to_device(model, pdevice, page_from=None, page_to=None, days_overlay=
     renderer = SheetRenderer(model)
     renderer.days_overlay = days_overlay or {}
     painter = QPainter(pdevice)
+    if not painter.isActive():
+        # Устройство не дало начать печать (нет движка/принтер недоступен) —
+        # не молчим и не рисуем в пустоту, а уходим в понятную ошибку.
+        raise RuntimeError("Устройство печати недоступно (не удалось начать печать)")
     try:
         # печатная область в листовых px с учётом масштаба шаблона
         pr = pdevice.pageLayout().paintRectPixels(pdevice.resolution())
@@ -866,7 +870,9 @@ def print_sheet_to_printer(ws, printer_name, copies, page_from, page_to,
     if printer_name:
         printer.setPrinterName(printer_name)
     printer.setCopyCount(int(copies or 1))
-    printer.setCollate(bool(collate))
+    # QPrinter::setCollate убрали из Qt начиная с 6.11 — применяем, когда есть
+    if hasattr(printer, "setCollate"):
+        printer.setCollate(bool(collate))
     model = SheetModel(ws)
     _apply_pages(printer, model, orientation, paper_size)
     pf, pt = None, None

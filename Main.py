@@ -2842,8 +2842,39 @@ class Backend(QObject):
 
         self.showToast.emit("Формирование документа...", "success")
 
+        if not pdf_out:
+            # Реальный принтер: печатаем СИНХРОННО В ГЛАВНОМ ПОТОКЕ.
+            # Драйверная печать Windows внутри движка Qt трогает объекты,
+            # разрешённые только в GUI-потоке (QPixmap и пр.) — из фонового
+            # потока это приводило к вылету программы. PDF-путь (QPdfWriter)
+            # потокобезопасен и остаётся фоновым.
+            try:
+                QApplication.processEvents()  # дать тосту отрисоваться
+                QApplication.setOverrideCursor(Qt.WaitCursor)
+                try:
+                    from print_engine import print_report
+                    pages = print_report(
+                        db_path=self.active_db.path,
+                        year=self.current_year,
+                        month=self.current_month,
+                        template_path=EXCEL_TEMPLATE_PATH,
+                        printer_name=printer_name,
+                        copies=copies,
+                        page_from=page_from,
+                        page_to=page_to,
+                        orientation=orientation,
+                        paper_size=paper_size,
+                        collate=collate,
+                    )
+                finally:
+                    QApplication.restoreOverrideCursor()
+                self.showToast.emit(f"Документ отправлен на принтер ({pages} стр.)!", "success")
+            except Exception as e:
+                self._fallback_excel_print(e)
+            return
+
         try:
-            # Основной путь: собственный движок печати (без Excel)
+            # Виртуальный PDF-принтер: собственный движок в фоне (без Excel)
             self.print_thread = PrintWorkerQt(
                 db_path=self.active_db.path,
                 pdf_out=pdf_out,
@@ -2870,13 +2901,9 @@ class Backend(QObject):
         except Exception:
             pass
 
-    def on_qt_print_finished(self, success, message):
-        """Результат собственного движка печати; при сбое — печать через Excel"""
-        if success:
-            self.showToast.emit(message, "success")
-            return
-        # Запасной путь: старый добрый Excel
-        reason = str(message)[:140]
+    def _fallback_excel_print(self, reason):
+        """Запасной путь: старый добрый Excel"""
+        reason = str(reason)[:140]
         self.showToast.emit(f"Движок печати не смог ({reason}) — печатаем через Excel...", "warning")
         a = getattr(self, "_last_print_args", {})
         try:
@@ -2896,6 +2923,13 @@ class Backend(QObject):
             self.print_thread.start()
         except Exception as e:
             self.showToast.emit(f"Не удалось запустить печать: {e}", "error")
+
+    def on_qt_print_finished(self, success, message):
+        """Результат собственного движка печати; при сбое — печать через Excel"""
+        if success:
+            self.showToast.emit(message, "success")
+            return
+        self._fallback_excel_print(message)
 
     @Slot(bool, str)
     def on_print_finished(self, success, message):
