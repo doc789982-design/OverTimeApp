@@ -375,6 +375,28 @@ Focus-кольцо 2px с 50% brand — свежие MD3-спеки тоже т�
 > начинаться с https://, иначе скрипт отказывается публиковать
 > (проверено: код 1 + понятное сообщение). ЗАПОМНИТЬ при каждом
 > релизе: version.json → url = полный URL на ассет.
+> Батч 43 (сборка 225) — фикс «на другом компе ошибка при любой печати
+> и экспорте»: «для экспорта нужен openpyxl» + «движок печати не смог
+> module numpy has no attribute short». ДИАГНОЗ: openpyxl/compat/
+> numbers.py при import numpy лезет к numpy.short/ushort/intc/… БЕЗ
+> защиты от AttributeError (except ImportError только) — битая/
+> нестандартная numpy на той машине роняет ИМПОРТ openpyxl → оба
+> пути падают (упакованная сборка не страдает: в ней numpy нет
+> вообще; значит тот комп запускает исходники). ФИКС: utils.
+> import_openpyxl() — самолечение: первый import; при не-ImportError
+> выгружаем numpy+openpyxl из sys.modules, ставим sys.modules[
+> "numpy"]=None (import numpy → ImportError → openpyxl решает, что
+> numpy нет) и импортируем заново; export.ensure_openpyxl → через
+> него + настоящая причина в сообщении; print_engine: openpyxl =
+> import_openpyxl(). Тест qa/test_openpyxl_heal.py (subprocess'ы):
+> фальшивая numpy без short валит обычный import (точный текст
+> ошибки воспроизведён), import_openpyxl лечит, чистая среда ок.
+> ВАЖНО на будущее: чужие машины с исходниками — openpyxl может
+> падать от ЛЮБОЙ битой numpy; лекарство уже вшито. Песочница
+> снова пересоздавалась: восстановление = pip install PySide6
+> openpyxl pdfminer.six + tools/make_sandbox_libs.py + git fetch &&
+> git reset FETCH_HEAD (не --hard! рабочие файлы могут быть новее
+> локальной базы).
 > Батч 42 (сборка 224) — СРОЧНЫЙ фикс: ВЫЛЕТ при печати на физический
 > принтер (юзер: «происходит вылет программы просто»). Юзер впервые
 > печатал на РЕАЛЬНЫЙ принтер — до этого все проверки шли через

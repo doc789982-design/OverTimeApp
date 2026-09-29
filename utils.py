@@ -3,6 +3,35 @@ from typing import Optional, Any
 
 SCHEMA_VERSION = 5
 
+
+def import_openpyxl():
+    """Импорт openpyxl с самолечением numpy-конфликта.
+
+    openpyxl при загрузке обращается к типам numpy (numpy.short и др.),
+    если numpy установлен. Битая или нестандартная numpy роняет импорт
+    openpyxl с AttributeError («module 'numpy' has no attribute 'short'»),
+    из-за чего падают и экспорт, и печать. numpy табелю не нужен: в этом
+    случае numpy для openpyxl прячем (sys.modules["numpy"] = None — openpyxl
+    воспринимает это как «numpy не установлен») и импортируем заново.
+    """
+    import sys
+    try:
+        import openpyxl
+        return openpyxl
+    except ImportError:
+        raise
+    except Exception:
+        # конфликт с numpy: выгружаем numpy и недогруженный openpyxl,
+        # numpy помечаем отсутствующим и пробуем ещё раз
+        for name in [n for n in list(sys.modules)
+                     if n in ("numpy", "openpyxl")
+                     or n.startswith(("numpy.", "openpyxl."))]:
+            del sys.modules[name]
+        sys.modules["numpy"] = None
+        import openpyxl
+        return openpyxl
+
+
 def dt_parse(s: str) -> datetime: return datetime.fromisoformat(s)
 def dt_iso(dt: datetime) -> str: return dt.isoformat(timespec="minutes")
 def d_parse(s: str) -> date: return date.fromisoformat(s)

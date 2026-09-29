@@ -9,10 +9,11 @@ from logic import compute_month_summary, is_employee_shift, default_is_working, 
 
 def ensure_openpyxl():
     try:
-        import openpyxl
-        return openpyxl
+        from utils import import_openpyxl
+        return import_openpyxl()
     except Exception as e:
-        raise Exception("Для экспорта нужен пакет openpyxl. Установите: pip install openpyxl") from e
+        raise Exception("Для экспорта нужен пакет openpyxl (%s). "
+                        "Установите или обновите: pip install -U openpyxl" % e) from e
 
 def fio_initials_last(last_name: str | None, first_name: str | None, middle_name: str | None) -> str:
     last = (last_name or "").strip()

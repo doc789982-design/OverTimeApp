@@ -23,7 +23,9 @@ import tempfile
 import uuid
 from pathlib import Path
 
-import openpyxl
+from utils import import_openpyxl
+
+openpyxl = import_openpyxl()   # самолечение numpy-конфликта
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.cell_range import CellRange
 
