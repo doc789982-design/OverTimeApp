@@ -307,6 +307,8 @@ class PrintWorkerQt(QThread):
                     out_path=self.pdf_out,
                     orientation=self.orientation,
                     paper_size=self.paper_size,
+                    page_from=self.page_from,
+                    page_to=self.page_to,
                 )
             else:
                 pages = print_report(
@@ -889,15 +891,26 @@ class Backend(QObject):
 
     @Slot()
     def loadPrinters(self):
+        printers, default = [], ""
         try:
             # Читаем все локальные и сетевые принтеры
             flags = win32print.PRINTER_ENUM_LOCAL | win32print.PRINTER_ENUM_CONNECTIONS
             printers = [p[2] for p in win32print.EnumPrinters(flags)]
-            self._printer_list = printers
-            self._default_printer = win32print.GetDefaultPrinter()
-            self.printerListChanged.emit()
-        except Exception as e:
-            print(f"Ошибка загрузки принтеров: {e}")
+            default = win32print.GetDefaultPrinter()
+        except Exception:
+            printers = []
+        if not printers:
+            # win32print недоступен или списка нет — спросим у Qt
+            try:
+                from PySide6.QtPrintSupport import QPrinterInfo
+                printers = [pi.printerName() for pi in QPrinterInfo.availablePrinters()]
+                dp = QPrinterInfo.defaultPrinter()
+                default = dp.printerName() if dp and not dp.isNull() else ""
+            except Exception:
+                pass
+        self._printer_list = printers
+        self._default_printer = default
+        self.printerListChanged.emit()
 
     @Property(list, notify=printerListChanged)
     def printerList(self): return self._printer_list

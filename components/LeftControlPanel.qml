@@ -191,22 +191,7 @@ Item {
                     }
                 }
 
-                Item {
-                    Layout.preferredWidth: 36
-                    Layout.preferredHeight: 36
-                    HoverHandler { id: exportHover }
-                    AnimatedExportButton {
-                        anchors.fill: parent
-                        onClicked: exportDialog.open()
-                    }
-                    AppToolTip {
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        anchors.bottom: parent.top
-                        anchors.bottomMargin: AppTheme.spaceS
-                        text: "Экспорт"
-                        isVisible: exportHover.hovered
-                    }
-                }
+
             }
         }
     }

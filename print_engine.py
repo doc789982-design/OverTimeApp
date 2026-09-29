@@ -806,13 +806,14 @@ def render_to_device(model, pdevice, page_from=None, page_to=None, days_overlay=
         painter.end()
 
 
-def sheet_to_pdf(ws, out_path, orientation="landscape", paper_size="A4", days_overlay=None):
+def sheet_to_pdf(ws, out_path, orientation="landscape", paper_size="A4",
+                 page_from=None, page_to=None, days_overlay=None):
     from PySide6.QtGui import QPdfWriter
     model = SheetModel(ws)
     pdf = QPdfWriter(out_path)
     pdf.setResolution(96)
     _apply_pages(pdf, model, orientation, paper_size)
-    return render_to_device(model, pdf, days_overlay=days_overlay)
+    return render_to_device(model, pdf, page_from, page_to, days_overlay)
 
 
 def sheet_to_image(ws, out_path, dpi=96):
@@ -917,11 +918,13 @@ def print_sheet_to_printer(ws, printer_name, copies, page_from, page_to,
         printer.setCollate(bool(collate))
     model = SheetModel(ws)
     _apply_pages(printer, model, orientation, paper_size)
+    # Диапазон страниц применяем сами (срезом в render_to_device):
+    # setFromTo на уровне драйвера нумерует страницы задания заново
+    # и может подавить печать уже отобранных страниц.
     pf, pt = None, None
     try:
         if str(page_from).strip() and str(page_to).strip():
             pf, pt = int(page_from), int(page_to)
-            printer.setFromTo(pf, pt)
     except ValueError:
         pass
     if not printer.isValid():
@@ -1031,8 +1034,8 @@ def print_report(db_path, year, month, template_path, printer_name, copies,
 
 
 def print_report_pdf(db_path, year, month, template_path, out_path,
-                     orientation="landscape", paper_size="A4",
-                     sheet_name="Лист1") -> int:
+                     orientation="landscape", paper_size="A4", page_from="",
+                     page_to="", sheet_name="Лист1") -> int:
     """Печать в PDF-файл собственным средством (QPdfWriter, без драйвера).
 
     Путь для виртуальных PDF-принтеров («Microsoft Print to PDF» и т.п.):
@@ -1042,6 +1045,8 @@ def print_report_pdf(db_path, year, month, template_path, out_path,
     try:
         model = SheetModel(ws)
         overlay = _compute_days_overlay(db_path, year, month, model)
-        return sheet_to_pdf(ws, out_path, orientation, paper_size, overlay)
+        return sheet_to_pdf(ws, out_path, orientation, paper_size,
+                            page_from=page_from, page_to=page_to,
+                            days_overlay=overlay)
     finally:
         _cleanup_sheet(temp_xlsx)

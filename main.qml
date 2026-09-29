@@ -892,6 +892,10 @@ FileDialog {
     AppUI.AppPrintDialog { 
         id: customPrintDialog
         onPrintRequested: function(printerName, copies, pageFrom, pageTo, orientation, paperSize, collate) { 
+            if (printerName === "Экспортировать в Excel") { 
+                exportDialog.open() 
+                return 
+            } 
             backend.quickPrint(printerName, copies, pageFrom, pageTo, orientation, paperSize, collate) 
         } 
     }
