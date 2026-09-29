@@ -4601,6 +4601,17 @@ def _startup_update_flow(app) -> bool:
     """
     if not IS_FROZEN:
         return True                      # из редактора кода не обновляемся
+
+    # Установка «с заменой»: убираем файлы прошлых сборок, если новая
+    # версия была поставлена поверх старой (руками или обновлением).
+    try:
+        removed = app_update.cleanup_stale_files(
+            Path(sys.executable).resolve().parent, log=_startup_log)
+        if removed:
+            _startup_log("старые файлы: %s" % "; ".join(removed[:5]))
+    except Exception as e:
+        _startup_log("чистка старых файлов не удалась: %s" % e)
+
     try:
         ui = _startup_ui_config()
         if not ui.get("startup_update", True):

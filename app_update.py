@@ -71,6 +71,154 @@ SKIP_NAMES = {
     "data",
 }
 
+# Манифест файлов сборки (готовится tools/overtimetab.spec): программа при
+# старте сверяет с ним свою папку и убирает файлы прошлых версий —
+# установка «поверх» старой сборки не оставляет мусора.
+MANIFEST_NAME = "app_files.txt"
+CLEANUP_MARKER = "cleanup_build.txt"
+
+# Что никогда не убираем даже вне манифеста: пользовательское и служебное.
+PROTECTED_NAMES = SKIP_NAMES | {
+    MANIFEST_NAME,
+    CLEANUP_MARKER,
+    "version.json",
+    "update_download",
+    ROLLBACK_DIRNAME,
+}
+
+# Расширения заведомо программных файлов в корне папки (остальное в корне
+# — возможные пользовательские файлы, их не трогаем).
+PROGRAM_EXTS = {".dll", ".pyd", ".py", ".pyc", ".pyw", ".so", ".exe",
+                ".zip", ".qm", ".qml", ".qmltypes"}
+
+
+def _manifest_files(root: Path):
+    """Читает манифест сборки. Возвращает (build, files, dirs).
+
+    build — номер сборки из строки-заголовка (или None),
+    files — множество путей файлов (маленькими буквами),
+    dirs  — множество каталогов манифеста (все уровни).
+    """
+    mf = Path(root) / MANIFEST_NAME
+    if not mf.is_file():
+        return None, set(), set()
+    build = None
+    files, dirs = set(), set()
+    try:
+        for line in mf.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            if line.startswith("#"):
+                m = re.search(r"build\s+(\d+)", line)
+                if m:
+                    build = int(m.group(1))
+                continue
+            low = line.lower()
+            files.add(low)
+            parts = low.split("/")
+            for i in range(1, len(parts)):
+                dirs.add("/".join(parts[:i]))
+    except Exception:
+        return None, set(), set()
+    return build, files, dirs
+
+
+def cleanup_stale_files(app_dir, log=None) -> list:
+    """Убирает из папки программы файлы прошлых сборок.
+
+    Новая версия, поставленная поверх старой (руками или обновлением),
+    оставляет файлы, которых в новой сборке нет, — они и вычищаются по
+    манифесту app_files.txt. Пользовательское не трогается: data/ с базами,
+    pending_update, version.json, отчёты и любые файлы не из программных
+    расширений в корне. Возвращает список удалённых относительных путей.
+    """
+    root = install_root(app_dir)
+    build, files, dirs = _manifest_files(root)
+    if not files:
+        return []                                  # манифеста нет — не по чему сверять
+    marker = root / CLEANUP_MARKER
+    try:
+        if build and marker.read_text(encoding="utf-8").strip() == str(build):
+            return []                              # эта сборка уже наводила порядок
+    except Exception:
+        pass
+
+    top_dirs = {d.split("/", 1)[0] for d in dirs if d}
+    removed = []
+
+    def _rm(path, rel):
+        try:
+            if path.is_dir():
+                shutil.rmtree(path, ignore_errors=True)
+            else:
+                path.unlink()
+            removed.append(rel)
+        except OSError:
+            pass                                   # занят системой — оставим
+
+    for dirpath, dirnames, filenames in os.walk(root):
+        rel_dir = os.path.relpath(dirpath, root).replace(os.sep, "/")
+        top = "" if rel_dir == "." else rel_dir.split("/", 1)[0]
+        if rel_dir == ".":
+            dirnames[:] = [d for d in dirnames if d.lower() not in PROTECTED_NAMES]
+        elif top.lower() in top_dirs:
+            pass                                   # дерево новой сборки — сверяем
+        else:
+            dirnames[:] = []                       # пользовательская папка — не ходим
+            continue
+        for name in filenames:
+            rel = (rel_dir + "/" + name) if rel_dir != "." else name
+            if rel.lower() in files:
+                continue
+            if rel_dir == ".":
+                # в корне убираем только заведомо программные файлы
+                if os.path.splitext(name)[1].lower() in PROGRAM_EXTS:
+                    _rm(Path(dirpath) / name, rel)
+            else:
+                # внутри дерева новой сборки — всё принадлежит программе
+                _rm(Path(dirpath) / name, rel)
+        if rel_dir == ".":
+            for name in list(dirnames):
+                if name.lower() in top_dirs:
+                    continue
+                dpath = Path(dirpath) / name
+                try:
+                    children = list(dpath.iterdir())
+                except OSError:
+                    continue
+                # корневой каталог, которого нет в новой сборке: убираем,
+                # если выглядит python-пакетом (numpy, matplotlib и т.п.)
+                if any(c.name == "__init__.py" or c.suffix == ".pyd" for c in children):
+                    _rm(dpath, name)
+                    if name in dirnames:
+                        dirnames.remove(name)
+
+    # пустые каталоги внутри программных деревьев новой сборки
+    for d in sorted((p for p in root.rglob("*") if p.is_dir()),
+                    key=lambda p: len(p.parts), reverse=True):
+        rel = d.relative_to(root).as_posix()
+        top = rel.split("/", 1)[0] if "/" in rel else ""
+        if top and top.lower() in top_dirs:
+            try:
+                if not any(d.iterdir()):
+                    d.rmdir()
+                    removed.append(rel)
+            except OSError:
+                pass
+
+    if build is not None:
+        try:
+            marker.write_text(str(build), encoding="utf-8")
+        except Exception:
+            pass
+    if removed and log:
+        try:
+            log("убрано файлов прошлой сборки: %d" % len(removed))
+        except Exception:
+            pass
+    return removed
+
 class UpdateError(Exception):
     pass
 

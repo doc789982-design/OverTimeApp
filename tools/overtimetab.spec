@@ -177,3 +177,14 @@ coll = COLLECT(
 
 # На случай, если хуки PyInstaller всё-таки положили WebEngine в dist.
 slim_dist_tree(ROOT / "dist" / "OVERTIMETAB")
+
+# Манифест файлов сборки: при старте программа сверяет с ним свою папку
+# и убирает файлы прошлых версий (установка «поверх» старой — с заменой).
+_dist_root = ROOT / "dist" / "OVERTIMETAB"
+_manifest = _dist_root / "app_files.txt"
+_lines = ["# OVERTIMETAB build %d" % _app_build]
+for _p in sorted(_dist_root.rglob("*")):
+    if _p.is_file() and _p != _manifest:
+        _lines.append(_p.relative_to(_dist_root).as_posix())
+_manifest.write_text("\n".join(_lines) + "\n", encoding="utf-8")
+print("[манифест] %d файлов сборки %d" % (len(_lines) - 1, _app_build))
