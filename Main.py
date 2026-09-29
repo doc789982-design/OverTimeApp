@@ -169,7 +169,8 @@ class PrintWorker(QThread):
             flags = win32print.PRINTER_ENUM_LOCAL | win32print.PRINTER_ENUM_CONNECTIONS
             for info in win32print.EnumPrinters(flags, 2):
                 # level 2: (Server, Name, Share, Port, Driver, ...)
-                if len(info) > 3 and info[1] == name and info[3]:
+                if (len(info) > 3 and info[3]
+                        and str(info[1]).strip().lower() == name.strip().lower()):
                     return f"{name} on {info[3]}:"
         except Exception:
             pass

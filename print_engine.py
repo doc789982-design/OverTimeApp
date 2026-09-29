@@ -866,11 +866,51 @@ def _system_font_hook(name):
 _HOOK = _sandbox_hook if os.environ.get("OVERTIMETAB_SANDBOX_FONTS") else None
 
 
+def _match_printer_name(requested, available_names):
+    """Подбирает имя принтера в написании, которое знает Qt.
+
+    Диалог печати получает имена из win32print, Qt — из своих источников:
+    регистр, пробелы и сетевые пути («\\\\сервер\\принтер») могут
+    отличаться. Сверяем без учёта регистра и хвоста сетевого пути.
+    Возвращает имя из available_names или пустую строку.
+    """
+    req = (requested or "").strip()
+    if not req:
+        return ""
+    low = req.lower()
+    for n in available_names:
+        if n.strip().lower() == low:
+            return n
+    tail = low.rsplit("\\", 1)[-1].strip()
+    if tail:
+        for n in available_names:
+            if n.strip().lower().rsplit("\\", 1)[-1].strip() == tail:
+                return n
+    return ""
+
+
 def print_sheet_to_printer(ws, printer_name, copies, page_from, page_to,
                            orientation, paper_size, collate, days_overlay=None):
     printer = QPrinter(QPrinter.HighResolution)
-    if printer_name:
-        printer.setPrinterName(printer_name)
+    requested = (printer_name or "").strip()
+    if requested:
+        # Qt молча оставляет принтер ПО УМОЛЧАНИЮ, если имя не совпало
+        # с его списком (регистр/пробелы/сетевой путь из win32print).
+        # Подбираем правильное написание и проверяем после установки.
+        from PySide6.QtPrintSupport import QPrinterInfo
+        names = [pi.printerName() for pi in QPrinterInfo.availablePrinters()]
+        if names:
+            matched = _match_printer_name(requested, names)
+            if not matched:
+                raise RuntimeError(
+                    "Принтер «%s» не найден в системе (доступны: %s)"
+                    % (requested, ", ".join(names[:6])))
+            printer.setPrinterName(matched)
+            if printer.printerName().strip().lower() != matched.strip().lower():
+                raise RuntimeError(
+                    "Система не дала выбрать принтер «%s»" % requested)
+        else:
+            printer.setPrinterName(requested)
     printer.setCopyCount(int(copies or 1))
     # QPrinter::setCollate убрали из Qt начиная с 6.11 — применяем, когда есть
     if hasattr(printer, "setCollate"):
