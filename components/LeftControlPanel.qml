@@ -140,6 +140,24 @@ Item {
                         isVisible: settingsHover.hovered
                     }
                 }
+
+                Item {
+                    Layout.preferredWidth: 32
+                    Layout.preferredHeight: 32
+                    Layout.alignment: Qt.AlignVCenter
+                    HoverHandler { id: printHover }
+                    AnimatedPrintButton {
+                        anchors.fill: parent
+                        onClicked: customPrintDialog.show()
+                    }
+                    AppToolTip {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        anchors.bottom: parent.top
+                        anchors.bottomMargin: AppTheme.spaceS
+                        text: "Печать"
+                        isVisible: printHover.hovered
+                    }
+                }
             }
 
             RowLayout {
@@ -150,7 +168,7 @@ Item {
                     Layout.fillWidth: true
                     Layout.preferredHeight: 36
                     variant: "secondary" 
-                    text: "Сотрудник" 
+                    text: "Новый сотрудник" 
                     iconSource: "../icons/user_plus.svg" 
                     onClicked: {
                         empDialog.editId = 0
@@ -174,22 +192,7 @@ Item {
                     }
                 }
 
-                Item {
-                    Layout.preferredWidth: 36
-                    Layout.preferredHeight: 36
-                    HoverHandler { id: printHover }
-                    AnimatedPrintButton {
-                        anchors.fill: parent
-                        onClicked: customPrintDialog.show()
-                    }
-                    AppToolTip {
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        anchors.bottom: parent.top
-                        anchors.bottomMargin: AppTheme.spaceS
-                        text: "Печать"
-                        isVisible: printHover.hovered
-                    }
-                }
+
 
 
             }
