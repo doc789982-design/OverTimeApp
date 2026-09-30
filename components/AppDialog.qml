@@ -99,6 +99,14 @@ Popup {
     // Тряска при ошибке
     property real baseShakeX: 0
     function shake() { if (!shakeAnimation.running) { baseShakeX = root.x; shakeAnimation.start() } }
+
+    // Прокрутка содержимого к низу: сообщения об ошибках живут в конце
+    // колонки, и без прокрутки окно трясётся «непонятно из-за чего» —
+    // текст остаётся за нижним краем.
+    function scrollToBottom() {
+        let fl = scrollArea.contentItem
+        if (fl) fl.contentY = Math.max(0, fl.contentHeight - fl.height)
+    }
     SequentialAnimation {
         id: shakeAnimation
         NumberAnimation { target: root; property: "x"; to: baseShakeX + 10; duration: 50; easing.type: Easing.OutQuad }

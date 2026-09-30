@@ -665,6 +665,7 @@ AppDialog {
             if (!root.targetDate) return
 
             if (compCol.compMode === 1 && periodErrorMsg.visible) {
+                root.scrollToBottom()
                 root.shake()
                 return
             }
@@ -722,6 +723,7 @@ AppDialog {
             if (finalDates.length === 0) {
                 compErrorMsg.text = "Ошибка: Нет дней в периоде"
                 compErrorMsg.visible = true
+                root.scrollToBottom()
                 root.shake()
                 return
             }
@@ -729,11 +731,19 @@ AppDialog {
 
             // День сотрудника не может входить в две компенсации сразу:
             // пересечение с уже существующими записями показываем в окне
-            // (свои дни при редактировании не мешают).
+            // (свои дни при редактировании не мешают). В режиме периода
+            // ошибка встаёт рядом с полями периода — в видимую часть
+            // окна; иначе тряска будет «непонятно из-за чего».
             let conflict = backend.checkDayConflicts(finalDates.join(","), root.editCompId || 0)
             if (conflict && conflict.has) {
-                compErrorMsg.text = conflict.message
-                compErrorMsg.visible = true
+                if (compCol.compMode === 1) {
+                    periodErrorMsg.text = conflict.message
+                    periodErrorMsg.visible = true
+                } else {
+                    compErrorMsg.text = conflict.message
+                    compErrorMsg.visible = true
+                }
+                root.scrollToBottom()
                 root.shake()
                 return
             }
@@ -757,6 +767,7 @@ AppDialog {
         } catch(e) {
             compErrorMsg.text = "Ошибка: " + e.message
             compErrorMsg.visible = true
+            root.scrollToBottom()
             root.shake()
         }
     }
