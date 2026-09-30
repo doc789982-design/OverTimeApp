@@ -403,17 +403,27 @@ def compute_month_summary(db, employee_id: int, year: int, month: int) -> dict:
         """, (employee_id, s_iso, e_iso)).fetchall()
 
         # Дни через отгулы (comp_day_off_date) — для day_off метода
-        r_d_dayoff = db.conn.execute("""
+                # Дни через отгулы (comp_day_off_date) — для day_off метода.
+        # Списание крепится к году НАЧАЛА ПЕРИОДА: у новых записей дата старта
+        # лежит в order_date родительской записи, у старых (order_date пуст)
+        # считается по самому дню. Дни периода, перешагнувшие 1 января,
+        # списываются декабрём того года, где период начался, — заначка
+        # следующего года не уходит в минус от чужих трат.
+        anchor_dayoff = """
+            (CASE WHEN substr(cd.day_off_date,1,4) > substr(COALESCE(c.order_date, cd.day_off_date),1,4)
+                  THEN substr(COALESCE(c.order_date, cd.day_off_date),1,4) || '-12-31'
+                  ELSE cd.day_off_date END)
+        """
+        r_d_dayoff = db.conn.execute(f"""
             SELECT COUNT(*) as cd 
-            FROM comp_day_off_date 
-            WHERE employee_id=? 
-              AND day_off_date >= ? AND day_off_date < ?
-              AND compensation_id IN (
-                  SELECT id FROM compensation 
-                  WHERE event_date='1900-01-01' 
-                    AND method='day_off'
-                    AND unit='days'
-              )
+            FROM comp_day_off_date cd
+            JOIN compensation c ON c.id = cd.compensation_id
+            WHERE cd.employee_id=? 
+              AND c.event_date='1900-01-01' 
+              AND c.method='day_off' 
+              AND c.unit='days' 
+              AND {anchor_dayoff} >= ? 
+              AND {anchor_dayoff} < ? 
         """, (employee_id, s_iso, e_iso)).fetchone()["cd"] or 0
 
         # Дни через приказ (amount_days) — для money метода
@@ -469,17 +479,24 @@ def compute_month_summary(db, employee_id: int, year: int, month: int) -> dict:
             AND event_date < ?
         """, (employee_id, s_iso, e_iso)).fetchone()["sd"] or 0
 
-        r_d2 = db.conn.execute("""
+                # Дни отгула крепятся к году НАЧАЛА ПЕРИОДА (event_date записи):
+        # период, перешагнувший 1 января, целиком оплачивается тем годом,
+        # в котором начался — дни следующего года списываются его декабрём.
+        effective_day = """
+            (CASE WHEN substr(cd.day_off_date,1,4) > substr(c.event_date,1,4)
+                  THEN substr(c.event_date,1,4) || '-12-31'
+                  ELSE cd.day_off_date END)
+        """
+        r_d2 = db.conn.execute(f"""
             SELECT COUNT(*) as cd 
-            FROM comp_day_off_date 
-            WHERE employee_id=? 
-            AND day_off_date >= ? AND day_off_date < ? 
-            AND compensation_id IN (
-                SELECT id FROM compensation 
-                WHERE event_date IS NOT NULL 
-                AND event_date != ''
-                AND event_date != '1900-01-01'
-            )
+            FROM comp_day_off_date cd
+            JOIN compensation c ON c.id = cd.compensation_id
+            WHERE cd.employee_id=? 
+            AND c.event_date IS NOT NULL 
+            AND c.event_date != '' 
+            AND c.event_date != '1900-01-01' 
+            AND {effective_day} >= ? 
+            AND {effective_day} < ? 
         """, (employee_id, s_iso, e_iso)).fetchone()["cd"] or 0
 
         res = {"hours": 0, "overtime": 0, "days": int(r_d1 or 0) + int(r_d2 or 0)}

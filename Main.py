@@ -1281,10 +1281,12 @@ class Backend(QObject):
                             (self._selected_employee_id, comp_type, "day_off", d_iso(logic_date), d_iso(d0), int(amount_str), comment or None)
                         )
                 else:
-                    # Дни
+                    # Дни. order_date — НАЧАЛО ПЕРИОДА: по нему списание
+                    # крепится к году, где период начался (даже для «за пред.
+                    # год», чей event_date — техническая метка 1900-01-01).
                     cur = self.active_db.conn.execute(
-                        "INSERT INTO compensation(employee_id,unit,method,amount_days,comment,event_date) VALUES (?,?,?,?,?,?)",
-                        (self._selected_employee_id, "days", "day_off", len(dates_list), comment or None, d_iso(logic_date)),
+                        "INSERT INTO compensation(employee_id,unit,method,amount_days,comment,event_date,order_date) VALUES (?,?,?,?,?,?,?)",
+                        (self._selected_employee_id, "days", "day_off", len(dates_list), comment or None, d_iso(logic_date), d_iso(dates_list[0])),
                     )
                     comp_id = cur.lastrowid
                     for d0 in dates_list:
@@ -1293,9 +1295,14 @@ class Backend(QObject):
                             (comp_id, self._selected_employee_id, d_iso(d0))
                         )
 
-                is_valid, err = validate_non_negative_over_year(self.active_db, self._selected_employee_id, self.current_year)
-                if not is_valid:
-                    raise Exception(err)
+                # Период может шагнуть через 1 января: проверяем все годы,
+                # которые он задел, а не только открытый сейчас.
+                y0 = min([self.current_year] + [d.year for d in dates_list])
+                y1 = max([self.current_year] + [d.year for d in dates_list])
+                for y in range(y0, y1 + 1):
+                    is_valid, err = validate_non_negative_over_year(self.active_db, self._selected_employee_id, y)
+                    if not is_valid:
+                        raise Exception(err)
 
             self.refresh_calendar()
             self._defer_year_refresh()
@@ -3382,9 +3389,11 @@ class Backend(QObject):
                         (comment or None, logic_date, comp_id)
                     )
 
-                is_valid, err = validate_non_negative_over_year(self.active_db, self._selected_employee_id, self.current_year)
-                if not is_valid:
-                    raise Exception(err)
+                uy = d_parse(date_str).year
+                for y in range(min(self.current_year, uy), max(self.current_year, uy) + 1):
+                    is_valid, err = validate_non_negative_over_year(self.active_db, self._selected_employee_id, y)
+                    if not is_valid:
+                        raise Exception(err)
 
             self.refresh_calendar()
             self.loadDayDetails(date_str)
