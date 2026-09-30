@@ -330,7 +330,14 @@ def write_version_json(
     build: int = 0,
     for_package: bool = False,
     display: str = "",
+    url: str = "",
 ) -> None:
+    """Пишет version.json. Ссылку на архив (url) не теряет:
+
+    программа перезаписывает этот файл при запуске (для своих нужд),
+    а ссылка нужна запасному пути обновления — поэтому url из уже
+    существующего файла переносится в новый, если не задан явно.
+    """
     ver = (version or "").strip()
     bld = int(build or 0)
     shown = (display or "").strip()
@@ -346,6 +353,14 @@ def write_version_json(
         payload = {"name": "OVERTIMETAB", "version": shown or ver}
         if bld > 0:
             payload["build"] = bld
+    link = (url or "").strip()
+    if not link:
+        try:
+            link = str(json.loads(path.read_text(encoding="utf-8")).get("url") or "").strip()
+        except Exception:
+            link = ""
+    if link:
+        payload["url"] = link
     path.write_text(
         json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",

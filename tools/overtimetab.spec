@@ -27,6 +27,7 @@ from pathlib import Path
 ROOT = Path(SPECPATH).resolve().parent
 sys.path.insert(0, str(ROOT / "tools"))
 
+from release_url import from_ci_env  # noqa: E402
 from slim_pyside import (  # noqa: E402
     UNUSED_PYSIDE_MODULES,
     UNUSED_STDLIB,
@@ -92,15 +93,20 @@ _app_build = int(_m_bld.group(1)) if _m_bld else 0
 _meta_dir = ROOT / "build"
 _meta_dir.mkdir(exist_ok=True)
 _meta_file = _meta_dir / "version.json"
-_meta_file.write_text(
-    _json.dumps({
-        "name": "OVERTIMETAB",
-        "version": "2.0.0-ALPHA.%d" % _app_build,
-        "build": _app_build,
-        "display": _app_name,
-    }, ensure_ascii=False, indent=2) + "\n",
-    encoding="utf-8",
-)
+# Полная ссылка на сам архив релиза: в релизной сборке (по тегу) она
+# известна заранее — репозиторий, тег, имя и sha коммита. В сборке по
+# ветке адреса нет, поле не пишется.
+_meta = {
+    "name": "OVERTIMETAB",
+    "version": "2.0.0-ALPHA.%d" % _app_build,
+    "build": _app_build,
+    "display": _app_name,
+}
+_asset_url = from_ci_env(_app_name)
+if _asset_url:
+    _meta["url"] = _asset_url
+_meta_file.write_text(_json.dumps(_meta, ensure_ascii=False, indent=2) + "\n",
+                      encoding="utf-8")
 _datas.append((str(_meta_file), "."))
 print("[версия] имя=%s сборка=%d машинная=2.0.0-ALPHA.%d"
       % (_app_name, _app_build, _app_build))

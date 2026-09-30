@@ -375,6 +375,28 @@ Focus-кольцо 2px с 50% brand — свежие MD3-спеки тоже т�
 > начинаться с https://, иначе скрипт отказывается публиковать
 > (проверено: код 1 + понятное сообщение). ЗАПОМНИТЬ при каждом
 > релизе: version.json → url = полный URL на ассет.
+> Батч 47 (сборка 229) — url в version.json ВНУТРИ архива (замечание
+> юзера: «опять не добавляешь url в version.json, который лежит
+> в архиве»). ОБЕ причины: (1) tools/overtimetab.spec писал meta
+> version.json в сборку БЕЗ url; (2) ХУЖЕ — Main._init_updates при
+> каждом запуске ПЕРЕЗАПИВАЕТ install_root/version.json через
+> write_version_json «под себя» и ВЫБРАСЫВАЛ бы url даже если бы
+> он там был. ФИКС: (а) tools/release_url.py — asset_url(display,
+> sha, tag, repo) → «https://github.com/<repo>/releases/download/
+> <tag>/OVERTIMETAB_<display>_<sha7>.zip» (имя = zipname в
+> build-windows.yml: OVERTIMETAB_$appVersion}_${sha7}); from_ci_env
+> читает GITHUB_REF/SHA/REPOSITORY, url ТОЛЬКО при refs/tags/
+> (артефакты веток адреса не имеют; тег у нас двигается на кодовой
+> коммит ДО сборки → прикреплённый зип всегда из tag-рана с верным
+> sha); (б) spec: _meta["url"] = from_ci_env(_app_name); (в)
+> write_version_json: url переносится из существующего файла
+> (читает перед записью), явный параметр url= имеет приоритет,
+> без url поле не появляется. Тест qa/test_version_json_url.py:
+> точная ссылка/refs/tags-префикс/пустые случаи; ветка→пусто;
+> перезапись (как Main) сохраняет url, явный url меняет, новый
+> файл без url чист. REMINDER: ДВА version.json — updates/ в
+> репо (полный url, валидация в publish_release.py) И meta внутри
+> зипа (spec) — обновлять ОБА.
 > Батч 46 (сборка 228) — КАПИТАЛЬНАЯ ревизия печати + две просьбы
 > юзера: диапазоны страниц и «экспорт в Excel — пунктом в списке
 > принтеров, кнопку с панели убрать». НАЙДЕНО И ПОЧИНЕНО при
