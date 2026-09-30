@@ -1764,7 +1764,15 @@ def _raw_github_version_json(gh: dict, timeout: float = 15.0) -> tuple[Optional[
             continue
         if not isinstance(data, dict) or not data.get("version"):
             continue
-        data["base_url"] = f"https://github.com/{owner}/{repo}/releases/download/{tag}"
+        # url в version.json — ИМЯ архива (OVERTIMETAB_…_….zip), а не адрес:
+        # файл читают разные хранилища (GitHub, запасной сервер), и имя
+        # склеивается с адресом того, где файл лежит. Для «latest» тега нет,
+        # поэтому пользуемся постоянным адресом последнего релиза
+        # (/releases/latest/download/<архив>) — GitHub сам подставит тег.
+        if tag:
+            data["base_url"] = f"https://github.com/{owner}/{repo}/releases/download/{tag}"
+        else:
+            data["base_url"] = f"https://github.com/{owner}/{repo}/releases/latest/download"
         return data, ""
     return None, "Не удалось получить данные об обновлении (GitHub API недоступен, version.json в репозитории не найден)."
 

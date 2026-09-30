@@ -130,9 +130,11 @@ def main() -> int:
 
     version, build = read_identity()
 
-    # Ссылка на архив в updates/version.json обязана быть ПОЛНОЙ (https://…):
-    # запасной путь обновления читает этот файл, и относительное имя склеивается
-    # с базовым адресом — на «releases/latest» выходит битая ссылка (404).
+    # Ссылка на архив в updates/version.json — ИМЯ файла (OVERTIMETAB_…_.zip),
+    # а не полный адрес: файл читают разные хранилища (GitHub и запасной сервер
+    # post.mvd.ru), и имя склеивается с адресом того, где файл лежит.
+    # Полный адрес здесь запрещён сознательно: он привязал бы запасной путь
+    # к GitHub, и при его недоступности качать было бы неоткуда.
     vj = ROOT / "updates" / "version.json"
     if vj.exists():
         try:
@@ -140,9 +142,9 @@ def main() -> int:
         except Exception as e:
             print(f"updates/version.json не читается: {e}", file=sys.stderr)
             return 1
-        if not vj_url.startswith("https://"):
-            print("В updates/version.json поле \"url\" должно быть ПОЛНОЙ ссылкой "
-                  "https://… на архив, а не именем файла (сейчас: "
+        if not re.fullmatch(r"OVERTIMETAB_[^\s/]+\.zip", vj_url):
+            print("В updates/version.json поле \"url\" должно быть ИМЕНЕМ архива "
+                  "вида OVERTIMETAB_<версия>_<sha>.zip, а не адресом (сейчас: "
                   + repr(vj_url) + ").",
                   file=sys.stderr)
             return 1
