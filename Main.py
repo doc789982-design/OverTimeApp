@@ -27,7 +27,7 @@ from PySide6.QtGui import QIcon, QAction
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtCore import QObject, Slot, Signal, Property, QUrl, QThread, QTimer, Qt
 
-from database import DB
+from database import DB, format_day_conflicts
 from utils import fmt_date_iso, fmt_dt_iso, d_iso, d_parse, dt_parse, dt_iso, parse_hhmm, subtract_intervals, intersect, merge_intervals, fmt_minutes_ru_words
 from logic import compute_month_summary, is_employee_shift, is_employee_shifted_weekends, validate_non_negative_over_year, default_is_working, build_shifted_weekend_checker, resolve_is_working, _row_flag, summary_cache_scope, total_overtime_days
 import app_update
@@ -1281,6 +1281,14 @@ class Backend(QObject):
                             (self._selected_employee_id, comp_type, "day_off", d_iso(logic_date), d_iso(d0), int(amount_str), comment or None)
                         )
                 else:
+                    # День сотрудника не может входить в две компенсации сразу:
+                    # скажем человеку, с чем пересеклись дни, а не дадим SQLite
+                    # упасть с непонятной ошибкой UNIQUE.
+                    conflicts = self.active_db.find_day_conflicts(
+                        self._selected_employee_id,
+                        [d_iso(d) for d in dates_list])
+                    if conflicts:
+                        raise Exception(format_day_conflicts(conflicts))
                     # Дни. order_date — НАЧАЛО ПЕРИОДА: по нему списание
                     # крепится к году, где период начался (даже для «за пред.
                     # год», чей event_date — техническая метка 1900-01-01).
@@ -1308,6 +1316,23 @@ class Backend(QObject):
             self._defer_year_refresh()
         except Exception as e:
             self.showToast.emit(str(e), "error")
+
+    @Slot(str, int, result="QVariant")
+    def checkDayConflicts(self, dates_csv, exclude_comp_id):
+        # Пересечение запрошенных дней с уже существующими
+        # компенсациями. Окно вызывает перед сохранением, чтобы
+        # показать ошибку прямо в окне (как с остатками), а не тостом.
+        # exclude_comp_id — запись, которую сейчас правим: свои дни не мешают.
+        if not self.active_db or self._selected_employee_id == 0:
+            return {"has": False, "message": ""}
+        dates = [d.strip() for d in (dates_csv or "").split(",") if d.strip()]
+        if not dates:
+            return {"has": False, "message": ""}
+        conflicts = self.active_db.find_day_conflicts(
+            self._selected_employee_id, dates, int(exclude_comp_id or 0))
+        return {"has": bool(conflicts),
+                "message": format_day_conflicts(conflicts) if conflicts else "",
+                "count": len(conflicts)}
 
     @Slot(int, result="QVariant")
     def getAvailableBalances(self, year):

@@ -563,6 +563,48 @@ class DB:
             )
         return comp_id
 
+    def find_day_conflicts(self, employee_id: int, dates, exclude_comp_id: int = 0) -> list:
+        """Какие из дат уже заняты днями ДРУГОЙ компенсации.
+
+        День сотрудника не может входить в две компенсации сразу
+        (UNIQUE в comp_day_off_date). Чтобы человек видел понятное
+        объяснение, а не сырую ошибку SQLite, сохранение заранее
+        спрашивает этот метод. Возвращает список словарей
+        {date, comp_id, start, end, days, prev_year} по порядку дат.
+        """
+        uniq = sorted({(d_iso(d) if isinstance(d, date) else str(d))
+                       for d in dates if d})
+        if not uniq:
+            return []
+        out = []
+        for i in range(0, len(uniq), 500):
+            chunk = uniq[i:i + 500]
+            marks = ",".join("?" * len(chunk))
+            rows = self.conn.execute(f"""
+                SELECT cd.day_off_date d, c.id cid, c.event_date ev,
+                       c.amount_days ad,
+                       (SELECT MIN(x.day_off_date) FROM comp_day_off_date x
+                         WHERE x.compensation_id = c.id) p_start,
+                       (SELECT MAX(x.day_off_date) FROM comp_day_off_date x
+                         WHERE x.compensation_id = c.id) p_end
+                FROM comp_day_off_date cd
+                JOIN compensation c ON c.id = cd.compensation_id
+                WHERE cd.employee_id=? AND cd.day_off_date IN ({marks})
+            """, (employee_id, *chunk)).fetchall()
+            for r in rows:
+                if exclude_comp_id and int(r["cid"]) == int(exclude_comp_id):
+                    continue
+                out.append({
+                    "date": r["d"],
+                    "comp_id": int(r["cid"]),
+                    "start": r["p_start"] or r["d"],
+                    "end": r["p_end"] or r["d"],
+                    "days": int(r["ad"] or 1),
+                    "prev_year": bool(r["ev"] and str(r["ev"]).startswith("1900")),
+                })
+        out.sort(key=lambda x: x["date"])
+        return out
+
     def delete_compensation(self, comp_id: int) -> None:
         self.conn.execute("DELETE FROM compensation WHERE id=?", (comp_id,))        
         
@@ -762,3 +804,38 @@ class DB:
         except Exception as e:
             print(f"Ошибка get_pre_holidays_month: {e}")
             return set()
+
+
+def _ru_date(iso) -> str:
+    """«2027-01-05» → «05.01.2027» (для сообщений человеку)."""
+    p = str(iso).split("-")
+    return ".".join((p[2], p[1], p[0])) if len(p) == 3 else str(iso)
+
+
+def format_day_conflicts(conflicts: list) -> str:
+    """Понятное сообщение о пересечении дней с существующими компенсациями."""
+    if not conflicts:
+        return ""
+    groups = {}
+    for c in conflicts:
+        groups.setdefault(c["comp_id"], []).append(c)
+    parts = []
+    for cid in sorted(groups):
+        g = groups[cid]
+        dates = [_ru_date(x["date"]) for x in g]
+        if len(dates) == 1:
+            head, verb = "День " + dates[0], "входит"
+        else:
+            shown = ", ".join(dates[:3])
+            if len(dates) > 3:
+                shown += " и ещё " + str(len(dates) - 3)
+            head, verb = "Дни " + shown, "входят"
+        if g[0]["start"] != g[0]["end"]:
+            tail = "в компенсацию за период %s – %s (%d дн.%s)" % (
+                _ru_date(g[0]["start"]), _ru_date(g[0]["end"]), g[0]["days"],
+                ", за пред. год" if g[0]["prev_year"] else "")
+        else:
+            tail = "в компенсацию" + (" за пред. год" if g[0]["prev_year"] else "")
+        parts.append("%s уже %s %s" % (head, verb, tail))
+    return ";\n".join(parts) + "."
+

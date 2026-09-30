@@ -727,6 +727,17 @@ AppDialog {
             }
             compErrorMsg.visible = false
 
+            // День сотрудника не может входить в две компенсации сразу:
+            // пересечение с уже существующими записями показываем в окне
+            // (свои дни при редактировании не мешают).
+            let conflict = backend.checkDayConflicts(finalDates.join(","), root.editCompId || 0)
+            if (conflict && conflict.has) {
+                compErrorMsg.text = conflict.message
+                compErrorMsg.visible = true
+                root.shake()
+                return
+            }
+
             let commentTxt = compCommentInput.text || ""
 
             if (root.editCompId > 0) {
