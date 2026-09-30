@@ -29,7 +29,7 @@ from PySide6.QtCore import QObject, Slot, Signal, Property, QUrl, QThread, QTime
 
 from database import DB, format_day_conflicts
 from utils import fmt_date_iso, fmt_dt_iso, d_iso, d_parse, dt_parse, dt_iso, parse_hhmm, subtract_intervals, intersect, merge_intervals, fmt_minutes_ru_words
-from logic import compute_month_summary, is_employee_shift, is_employee_shifted_weekends, validate_non_negative_over_year, default_is_working, build_shifted_weekend_checker, resolve_is_working, _row_flag, summary_cache_scope, total_overtime_days
+from logic import compute_month_summary, is_employee_shift, is_employee_shifted_weekends, validate_non_negative_over_year, default_is_working, build_shifted_weekend_checker, resolve_is_working, _row_flag, summary_cache_scope, total_overtime_days, split_both_years
 import app_update
 
 # ====================================================
@@ -1305,6 +1305,67 @@ class Backend(QObject):
 
                 # Период может шагнуть через 1 января: проверяем все годы,
                 # которые он задел, а не только открытый сейчас.
+                y0 = min([self.current_year] + [d.year for d in dates_list])
+                y1 = max([self.current_year] + [d.year for d in dates_list])
+                for y in range(y0, y1 + 1):
+                    is_valid, err = validate_non_negative_over_year(self.active_db, self._selected_employee_id, y)
+                    if not is_valid:
+                        raise Exception(err)
+
+            self.refresh_calendar()
+            self._defer_year_refresh()
+        except Exception as e:
+            self.showToast.emit(str(e), "error")
+
+    @Slot(str, str, str, str)
+    def saveCompensationBoth(self, dates_csv, comp_type, amount_str, comment):
+        # Период «за оба года»: одна кнопка — две записи.
+        # Сначала дни берёт текущий год (свой поочерёдный период с начала), остаток — заначка
+        # прошлого года (event_date=1900) — ровно так, как человек делал двумя периодами вручную.
+        # Дни не пересекаются, каждая копилка считает своё.
+        if not self.active_db or self._selected_employee_id == 0 or not dates_csv: return
+        try:
+            dates_list = [d_parse(d.strip()) for d in dates_csv.split(",") if d.strip()]
+            if not dates_list: return
+            with self.active_db.transaction():
+                y = dates_list[0].year
+                cur = self.getAvailableBalances(y)
+                prev = self.getAvailableBalances(y - 1)
+                total = int(amount_str) if comp_type in ("hours", "overtime") else len(dates_list)
+                n1, n2 = split_both_years(cur, prev, comp_type, total)
+
+                if comp_type in ("hours", "overtime"):
+                    if n1 > 0:
+                        self.active_db.conn.execute(
+                            "INSERT INTO compensation(employee_id,unit,method,event_date,order_date,amount_minutes,comment) VALUES (?,?,?,?,?,?,?)",
+                            (self._selected_employee_id, comp_type, "day_off", d_iso(dates_list[0]), d_iso(dates_list[0]), n1, comment or None))
+                    if n2 > 0:
+                        self.active_db.conn.execute(
+                            "INSERT INTO compensation(employee_id,unit,method,event_date,order_date,amount_minutes,comment) VALUES (?,?,?,?,?,?,?)",
+                            (self._selected_employee_id, comp_type, "day_off", "1900-01-01", d_iso(dates_list[0]), n2, comment or None))
+                else:
+                    conflicts = self.active_db.find_day_conflicts(
+                        self._selected_employee_id,
+                        [d_iso(d) for d in dates_list])
+                    if conflicts:
+                        raise Exception(format_day_conflicts(conflicts))
+                    if n1 > 0:
+                        cur_ins = self.active_db.conn.execute(
+                            "INSERT INTO compensation(employee_id,unit,method,amount_days,comment,event_date,order_date) VALUES (?,?,?,?,?,?,?)",
+                            (self._selected_employee_id, "days", "day_off", n1, comment or None, d_iso(dates_list[0]), d_iso(dates_list[0])))
+                        for d0 in dates_list[:n1]:
+                            self.active_db.conn.execute(
+                                "INSERT INTO comp_day_off_date(compensation_id,employee_id,day_off_date) VALUES (?,?,?)",
+                                (cur_ins.lastrowid, self._selected_employee_id, d_iso(d0)))
+                    if n2 > 0:
+                        prev_ins = self.active_db.conn.execute(
+                            "INSERT INTO compensation(employee_id,unit,method,amount_days,comment,event_date,order_date) VALUES (?,?,?,?,?,?,?)",
+                            (self._selected_employee_id, "days", "day_off", n2, comment or None, "1900-01-01", d_iso(dates_list[0])))
+                        for d0 in dates_list[n1:]:
+                            self.active_db.conn.execute(
+                                "INSERT INTO comp_day_off_date(compensation_id,employee_id,day_off_date) VALUES (?,?,?)",
+                                (prev_ins.lastrowid, self._selected_employee_id, d_iso(d0)))
+
                 y0 = min([self.current_year] + [d.year for d in dates_list])
                 y1 = max([self.current_year] + [d.year for d in dates_list])
                 for y in range(y0, y1 + 1):

@@ -334,6 +334,28 @@ def total_overtime_days(end_hours, prev_h_end, end_overtime, prev_o_end, end_day
     return minutes // (8 * 60) + int(end_days) + int(prev_d_end)
 
 
+def split_both_years(cur: dict, prev: dict, comp_type: str, amount: int) -> tuple[int, int]:
+    """Делит компенсацию «за оба года» между текущим годом и заначкой.
+
+    cur/prev — остатки, как их показывает окно (getAvailableBalances:
+    дни целыми днями, часы целыми часами). Сначала расходуется текущий
+    год, затем прошлый — ровно как человек делал это двумя периодами
+    вручную. Ёмкость года для дней = дни + часы//8 (лишние дни
+    закрываются ночными часами), для часов — часы этого вида.
+    Возвращает (сколько из текущего года, сколько из прошлого);
+    для часов — в минутах.
+    """
+    amount = int(amount)
+    if comp_type in ("hours", "overtime"):
+        cap = int((cur or {}).get(comp_type) or 0) * 60
+        first = min(max(0, amount), cap)
+        return first, amount - first
+    cur = cur or {}
+    cap = int(cur.get("days") or 0) + int(cur.get("hours") or 0) // 8
+    first = min(max(0, amount), cap)
+    return first, amount - first
+
+
 def _current_year_day_netting(db, employee_id: int, year: int, month: int, base_d: int) -> tuple[int, int]:
     """Сколько дней компенсации текущего года взято из ночных часов.
 

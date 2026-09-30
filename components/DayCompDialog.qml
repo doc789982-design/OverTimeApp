@@ -49,6 +49,10 @@ AppDialog {
         spacing: AppTheme.spaceM
 
         property int compMode: 0
+        // Год списания: 0 — за текущий, 1 — за предыдущий, 2 — за оба.
+        // Раньше была галка «В счет прошлого года»; теперь три
+        // исключающих переключателя, состояние живёт здесь.
+        property int sourceMode: 0
         property bool isUpdating: false
         property real patternConfidence: -1
         property int patternCycle: 0
@@ -339,13 +343,42 @@ AppDialog {
 
         Rectangle { width: parent.width; height: 1; color: AppTheme.borderDivider }
 
-        AppCheckBox {
-            id: compPrevYearCheck
-            text: "В счет прошлого года"
+        // Год списания: галка «В счет прошлого года» выросла в три
+        // исключающих варианта — текущий год, заначка прошлого или
+        // всё сразу (период из всех доступных дней обоих годов).
+        Text {
+            text: "Год списания:"
+            color: AppTheme.textSecondary
+            font.family: AppTheme.fontFamily
+            font.pixelSize: AppTheme.sizeSmall
+        }
+
+        Column {
             width: parent.width
-            onCheckedChanged: {
-                compCol.validateBalances()
-                compCol.validateSingleBalance()
+            spacing: AppTheme.spaceXS
+
+            AppRadioButton {
+                width: parent.width
+                text: "За текущий год"
+                checked: compCol.sourceMode === 0
+                onToggled: compCol.setSourceMode(0)
+            }
+
+            AppRadioButton {
+                width: parent.width
+                text: "За предыдущий год"
+                checked: compCol.sourceMode === 1
+                onToggled: compCol.setSourceMode(1)
+            }
+
+            AppRadioButton {
+                width: parent.width
+                text: "За оба года"
+                checked: compCol.sourceMode === 2
+                // «Оба года» — это два периода сразу; при правке
+                // существующей записи такого не бывает.
+                enabled: root.editCompId === 0
+                onToggled: compCol.setSourceMode(2)
             }
         }
 
@@ -370,6 +403,15 @@ AppDialog {
         // ==========================================
         // ФУНКЦИИ КАЛЬКУЛЯТОРА
         // ==========================================
+
+        function setSourceMode(m) {
+            if (sourceMode === m) return
+            sourceMode = m
+            periodErrorMsg.visible = false
+            singleErrorMsg.visible = false
+            validateBalances()
+            validateSingleBalance()
+        }
 
         function isoOf(dt) {
             let m = ("0" + (dt.getMonth() + 1)).slice(-2)
@@ -509,15 +551,29 @@ AppDialog {
             }
 
             let selectedYear = parseInt(periodStartInput.selectedDate.split("-")[0]) || new Date().getFullYear()
-            let checkYear = compPrevYearCheck.checked ? selectedYear - 1 : selectedYear
-            let balances = backend.getAvailableBalances(checkYear)
+            let b1 = backend.getAvailableBalances(selectedYear)
+            let b2 = compCol.sourceMode >= 1 ? backend.getAvailableBalances(selectedYear - 1) : null
 
-            let availableDays  = balances["days"]  || 0
-            let availableHours = balances["hours"] || 0
-            let maxAllowedDays = availableDays + Math.floor(availableHours / 8)
+            let availableDays, availableHours, maxAllowedDays, yearLabel
+            if (compCol.sourceMode === 1) {
+                availableDays = b2["days"] || 0
+                availableHours = b2["hours"] || 0
+                maxAllowedDays = availableDays + Math.floor(availableHours / 8)
+                yearLabel = "прошлого года"
+            } else if (compCol.sourceMode === 2) {
+                availableDays = (b1["days"] || 0) + (b2["days"] || 0)
+                availableHours = (b1["hours"] || 0) + (b2["hours"] || 0)
+                maxAllowedDays = (b1["days"] || 0) + Math.floor((b1["hours"] || 0) / 8)
+                             + (b2["days"] || 0) + Math.floor((b2["hours"] || 0) / 8)
+                yearLabel = "текущего и прошлого года"
+            } else {
+                availableDays = b1["days"] || 0
+                availableHours = b1["hours"] || 0
+                maxAllowedDays = availableDays + Math.floor(availableHours / 8)
+                yearLabel = "текущего года"
+            }
 
             if (requestedDays > maxAllowedDays) {
-                let yearLabel = compPrevYearCheck.checked ? "прошлого года" : "текущего года"
                 periodErrorMsg.text = "Не хватает остатков " + yearLabel + "!\n" +
                     "Доступно: " + availableDays + " дн. и " + availableHours +
                     " ч. (Итого: " + maxAllowedDays + " дн.)"
@@ -537,18 +593,26 @@ AppDialog {
 
             let unit = compCol.resolveCompUnit()
             let selectedYear = parseInt(root.targetDate.split('-')[0]) || new Date().getFullYear()
-            let checkYear = compPrevYearCheck.checked ? selectedYear - 1 : selectedYear
-            let balances = backend.getAvailableBalances(checkYear)
-            let yearLabel = compPrevYearCheck.checked ? "прошлого года" : "текущего года"
+            let b1 = backend.getAvailableBalances(selectedYear)
+            let b2 = compCol.sourceMode >= 1 ? backend.getAvailableBalances(selectedYear - 1) : null
+            let yearLabel = compCol.sourceMode === 1 ? "прошлого года"
+                          : (compCol.sourceMode === 2 ? "текущего и прошлого года" : "текущего года")
 
             if (unit === "days") {
                 // Как у периода: дни + часы/8 — день при нехватке дней
                 // закрывается ночными часами (8 часов за день).
-                let requested = 1
-                let availableDays = balances["days"] || 0
-                let availableHours = balances["hours"] || 0
-                let maxAllowed = availableDays + Math.floor(availableHours / 8)
-                if (requested > maxAllowed) {
+                let maxAllowed
+                if (compCol.sourceMode === 1) {
+                    maxAllowed = (b2["days"] || 0) + Math.floor((b2["hours"] || 0) / 8)
+                } else if (compCol.sourceMode === 2) {
+                    maxAllowed = (b1["days"] || 0) + Math.floor((b1["hours"] || 0) / 8)
+                               + (b2["days"] || 0) + Math.floor((b2["hours"] || 0) / 8)
+                } else {
+                    maxAllowed = (b1["days"] || 0) + Math.floor((b1["hours"] || 0) / 8)
+                }
+                if (1 > maxAllowed) {
+                    let availableDays = (b1["days"] || 0) + ((b2 && b2["days"]) || 0)
+                    let availableHours = (b1["hours"] || 0) + ((b2 && b2["hours"]) || 0)
                     singleErrorMsg.text = "Не хватает остатков " + yearLabel + "!\n" +
                         "Доступно: " + availableDays + " дн. и " + availableHours +
                         " ч. (Итого: " + maxAllowed + " дн.)"
@@ -561,7 +625,14 @@ AppDialog {
 
             // hours / overtime — сравниваем минуты
             let requestedMin = compTumbler.hours * 60 + compTumbler.minutes
-            let availableMin = (balances[unit] || 0) * 60
+            let availableMin
+            if (compCol.sourceMode === 1) {
+                availableMin = (b2[unit] || 0) * 60
+            } else if (compCol.sourceMode === 2) {
+                availableMin = ((b1[unit] || 0) + (b2[unit] || 0)) * 60
+            } else {
+                availableMin = (b1[unit] || 0) * 60
+            }
             let label = unit === "overtime" ? "сверхурочных" : "в ночное время"
             if (requestedMin > availableMin) {
                 let availH = Math.floor(availableMin / 60)
@@ -607,7 +678,7 @@ AppDialog {
         periodDaysInput.text = "1"
         compCol.recalcEndFromDays()
         compCommentInput.text = ""
-        compPrevYearCheck.checked = false
+        compCol.sourceMode = 0
     }
 
     function openForComp(dateStr, callerItem, mouseX, mouseY) {
@@ -634,7 +705,7 @@ AppDialog {
         periodErrorMsg.visible = false
         compCol.patternConfidence = -1
         periodUseShiftPattern.checked = false
-        compPrevYearCheck.checked = false
+        compCol.sourceMode = 0
 
         // Восстанавливаем правильный индекс в зависимости от типа и графика
         if (backend.isSelectedEmployeeShift) {
@@ -665,7 +736,7 @@ AppDialog {
             if (!root.targetDate) return
 
             if (compCol.compMode === 1 && periodErrorMsg.visible) {
-                root.scrollToBottom()
+                root.scrollToItem(periodErrorMsg)
                 root.shake()
                 return
             }
@@ -674,6 +745,7 @@ AppDialog {
             if (compCol.compMode === 0) {
                 compCol.validateSingleBalance()
                 if (singleErrorMsg.visible) {
+                    root.scrollToItem(singleErrorMsg)
                     root.shake()
                     return
                 }
@@ -723,7 +795,7 @@ AppDialog {
             if (finalDates.length === 0) {
                 compErrorMsg.text = "Ошибка: Нет дней в периоде"
                 compErrorMsg.visible = true
-                root.scrollToBottom()
+                root.scrollToItem(compErrorMsg)
                 root.shake()
                 return
             }
@@ -739,11 +811,12 @@ AppDialog {
                 if (compCol.compMode === 1) {
                     periodErrorMsg.text = conflict.message
                     periodErrorMsg.visible = true
+                    root.scrollToItem(periodErrorMsg)
                 } else {
                     compErrorMsg.text = conflict.message
                     compErrorMsg.visible = true
+                    root.scrollToItem(compErrorMsg)
                 }
-                root.scrollToBottom()
                 root.shake()
                 return
             }
@@ -756,10 +829,15 @@ AppDialog {
                     : (compTumbler.hours * 60 + compTumbler.minutes).toString()
                 backend.updateCompensation(root.editCompId, root.targetDate,
                                            finalType, amountForEdit,
-                                           String(commentTxt), compPrevYearCheck.checked)
+                                           String(commentTxt), compCol.sourceMode === 1)
+            } else if (compCol.sourceMode === 2) {
+                // «За оба года»: одна кнопка — два периода, сначала
+                // текущий год, затем заначка прошлого.
+                backend.saveCompensationBoth(finalDates.join(","), finalType, amount,
+                                             String(commentTxt))
             } else {
                 backend.saveCompensation(finalDates.join(","), finalType, amount,
-                                         String(commentTxt), compPrevYearCheck.checked)
+                                         String(commentTxt), compCol.sourceMode === 1)
             }
 
             root.close()
@@ -767,7 +845,7 @@ AppDialog {
         } catch(e) {
             compErrorMsg.text = "Ошибка: " + e.message
             compErrorMsg.visible = true
-            root.scrollToBottom()
+            root.scrollToItem(compErrorMsg)
             root.shake()
         }
     }

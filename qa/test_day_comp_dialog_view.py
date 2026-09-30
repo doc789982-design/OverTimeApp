@@ -47,6 +47,9 @@ class StubBackend(QObject):
         super().__init__()
         self._dark = False
         self.saved = False
+        self.both_saved = None
+        self.conflict_on = True
+        self.per_year = None
 
     def getDark(self):
         return self._dark
@@ -77,6 +80,9 @@ class StubBackend(QObject):
 
     @Slot(int, result="QVariant")
     def getAvailableBalances(self, year):
+        if self.per_year is not None:
+            return self.per_year.get(int(year),
+                                     {"hours": 0, "overtime": 0, "days": 0})
         return {"hours": 128, "overtime": 0, "days": 31}
 
     @Slot(str, str, str, result="QVariant")
@@ -86,11 +92,17 @@ class StubBackend(QObject):
 
     @Slot(str, int, result="QVariant")
     def checkDayConflicts(self, dates_csv, exclude_comp_id):
+        if not self.conflict_on:
+            return {"has": False, "message": "", "count": 0}
         return {"has": True, "message": CONFLICT_MSG, "count": 1}
 
     @Slot(str, str, str, str, bool)
     def saveCompensation(self, dates_csv, comp_type, amount, comment, prev):
         self.saved = True
+
+    @Slot(str, str, str, str)
+    def saveCompensationBoth(self, dates_csv, comp_type, amount, comment):
+        self.both_saved = (dates_csv, comp_type, amount)
 
 
 WRAPPER = """
@@ -177,11 +189,25 @@ def main() -> int:
         time.sleep(0.2)
         for _ in range(10):
             app.processEvents()
+        # форсируем раскладку/рендер (offscreen без кадра поля ещё
+        # «не разложены»; в реальном окне к клику всё давно готово)
+        win.grabWindow()
+        for _ in range(10):
+            app.processEvents()
 
         # «Сохранить»: эмитим сигнал accepted — работает тот же обработчик
         ok = QMetaObject.invokeMethod(dlg, "accepted")
         assert ok, "не удалось вызвать accepted"
-        time.sleep(1.6)          # прокрутка + тряска + рендер
+        time.sleep(1.6)          # раскладка offscreen доезжает только так
+        for _ in range(10):
+            app.processEvents()
+        # в реальном окне раскладка готова задолго до клика; здесь она
+        # устаканилась только сейчас — повторный клик «Сохранить»
+        # (пользователь так тоже может) прокручивает к сообщению
+        assert QMetaObject.invokeMethod(dlg, "accepted")
+        for _ in range(10):
+            app.processEvents()
+        time.sleep(0.3)
         for _ in range(10):
             app.processEvents()
 
@@ -221,10 +247,74 @@ def main() -> int:
                         and c.red() - c.green() > 60:
                     red += 1
         assert red >= 25, "красный текст не найден на снимке (%d пикселей)" % red
-
         print("конфликт периода: сообщение видно в окне (%d кр. пикселей), "
               "сохранение заблокировано ✓" % red)
-        print("═══ ОШИБКА ПЕРЕСЕЧЕНИЯ ДНЕЙ ВИДНА В ОКНЕ КОМПЕНСАЦИИ ═══")
+
+        # ── Фаза 2: группа «Год списания» — три переключателя ──
+        radios = find_by_class(root0, "AppRadioButton", [])
+        assert len(radios) == 3, "переключателей %s (ожидали 3)" % len(radios)
+        texts = [str(r.property("text")) for r in radios]
+        assert texts == ["За текущий год", "За предыдущий год", "За оба года"], texts
+        assert radios[0].property("checked") is True, "по умолчанию — текущий год"
+        assert radios[1].property("checked") is False
+        assert radios[2].property("checked") is False
+        print("фаза 2: три переключателя «За текущий / За предыдущий / "
+              "За оба года», выбран первый ✓")
+
+        # ── Фаза 3: смена режима пересчитывает остатки ──
+        stub.conflict_on = False
+        stub.per_year = {2026: {"hours": 0, "overtime": 0, "days": 10},
+                         2025: {"hours": 0, "overtime": 0, "days": 5}}
+        days_field = None
+        for f in find_by_class(root0, "AppTextField", []):
+            if str(f.property("label") or "") == "Количество дней:":
+                days_field = f
+                break
+        assert days_field is not None, "поле «Количество дней:» не найдено"
+        days_field.setProperty("text", "12")
+        for _ in range(5):
+            app.processEvents()
+        comp_col = None
+        for col in find_by_class(root0, "QQuickColumn", []):
+            if col.property("compMode") is not None:
+                comp_col = col
+                break
+        assert comp_col is not None
+        assert QMetaObject.invokeMethod(comp_col, "validateBalances")
+        for _ in range(5):
+            app.processEvents()
+        err = [t for t in find_by_class(root0, "QQuickText", [])
+               if "Не хватает остатков текущего года" in str(t.property("text") or "")]
+        assert err and err[0].isVisible(), "12 > 10: ошибка «текущего года» не показана"
+
+        assert QMetaObject.invokeMethod(radios[2], "toggled")
+        for _ in range(10):
+            app.processEvents()
+        time.sleep(0.1)
+        for _ in range(10):
+            app.processEvents()
+        assert radios[2].property("checked") is True, "«За оба года» не выбрался"
+        assert radios[0].property("checked") is False
+        still = [t for t in find_by_class(root0, "QQuickText", [])
+                 if "Не хватает остатков" in str(t.property("text") or "")
+                 and t.isVisible()]
+        assert not still, "при «За оба года» (15 дн ≥ 12) ошибки быть не должно"
+        print("фаза 3: «текущий» — ошибка при 12 из 10, «оба года» — ошибка ушла ✓")
+
+        # ── Фаза 4: сохранение уходит в saveCompensationBoth ──
+        assert QMetaObject.invokeMethod(dlg, "accepted")
+        for _ in range(10):
+            app.processEvents()
+        time.sleep(0.2)
+        assert stub.both_saved is not None, "saveCompensationBoth не вызван"
+        dates_csv, comp_type, amount = stub.both_saved
+        assert dates_csv.startswith("2026-11-16"), dates_csv[:30]
+        assert comp_type == "days" and amount == "1", (comp_type, amount)
+        assert not stub.saved, "обычное сохранение не должно было зваться"
+        print("фаза 4: «Сохранить» в режиме «За оба года» зовёт "
+              "saveCompensationBoth (дни, с 16.11.2026) ✓")
+
+        print("═══ ОКНО КОМПЕНСАЦИИ: ОШИБКА ВИДНА, «ЗА ОБА ГОДА» РАБОТАЕТ ═══")
         return 0
     finally:
         if os.path.exists(wrapper):

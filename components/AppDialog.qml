@@ -107,6 +107,43 @@ Popup {
         let fl = scrollArea.contentItem
         if (fl) fl.contentY = Math.max(0, fl.contentHeight - fl.height)
     }
+
+    // Прокрутка к конкретному элементу (сообщению об ошибке): окно
+    // показывает именно его — и если он выше края, и если ниже.
+    // Позиции полей узнаём ПОСЛЕ раскладки: в момент клика высоты могут
+    // быть ещё не пересчитаны, и адрес прокрутки выйдет устаревшим.
+    // Поэтому пробуем следующим кадром (Qt.callLater) и подстраховываем
+    // коротким таймером — для окна это мгновенно.
+    function _scrollItemIntoView(item) {
+        let fl = scrollArea.contentItem
+        if (!fl || !item) return
+        let pos = item.mapToItem(fl, 0, 0).y
+        let h = item.height
+        if (pos < fl.contentY) {
+            fl.contentY = Math.max(0, pos - AppTheme.spaceM)
+        } else if (pos + h > fl.contentY + fl.height) {
+            fl.contentY = Math.max(0, pos + h - fl.height + AppTheme.spaceM)
+        }
+    }
+
+    Timer {
+        id: scrollRetry
+        interval: 120
+        repeat: false
+        property var target: null
+        onTriggered: if (target) root._scrollItemIntoView(target)
+    }
+
+    function scrollToItem(item) {
+        if (!item) return
+        // Обычный случай — раскладка давно готова: скроллим сразу,
+        // а следующим кадром и коротким таймером перепроверяем
+        // (на случай, если высоты полей ещё пересчитывались).
+        root._scrollItemIntoView(item)
+        Qt.callLater(function() { root._scrollItemIntoView(item) })
+        scrollRetry.target = item
+        scrollRetry.restart()
+    }
     SequentialAnimation {
         id: shakeAnimation
         NumberAnimation { target: root; property: "x"; to: baseShakeX + 10; duration: 50; easing.type: Easing.OutQuad }
