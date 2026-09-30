@@ -542,10 +542,16 @@ AppDialog {
             let yearLabel = compPrevYearCheck.checked ? "прошлого года" : "текущего года"
 
             if (unit === "days") {
+                // Как у периода: дни + часы/8 — день при нехватке дней
+                // закрывается ночными часами (8 часов за день).
                 let requested = 1
-                let maxAllowed = balances["days"] || 0
+                let availableDays = balances["days"] || 0
+                let availableHours = balances["hours"] || 0
+                let maxAllowed = availableDays + Math.floor(availableHours / 8)
                 if (requested > maxAllowed) {
-                    singleErrorMsg.text = "Не хватает остатков " + yearLabel + "! Доступно дней отгула: " + maxAllowed + "."
+                    singleErrorMsg.text = "Не хватает остатков " + yearLabel + "!\n" +
+                        "Доступно: " + availableDays + " дн. и " + availableHours +
+                        " ч. (Итого: " + maxAllowed + " дн.)"
                     singleErrorMsg.visible = true
                 } else {
                     singleErrorMsg.visible = false

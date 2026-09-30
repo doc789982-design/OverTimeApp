@@ -106,7 +106,7 @@ def main() -> int:
     assert may["end_days"] == 4, "D: май = %s (ожидали 4)" % may["end_days"]
     print("D: одиночный день — списан своим месяцем ✓")
 
-    # ── E. Старые записи без order_date: прежнее поведение ──
+    # ── E. Старые записи без order_date: прежняя привязка к году ──
     db = fresh_db("2025-01", opening_days=10)   # заначка-2026 = 10
     cur = db.conn.execute(
         "INSERT INTO compensation(employee_id,unit,method,amount_days,event_date) "
@@ -119,8 +119,13 @@ def main() -> int:
     dec = compute_month_summary(db, 1, 2026, 12)
     jan = compute_month_summary(db, 1, 2027, 1)
     assert dec["prev_d_end"] == 9, "E: декабрь = %s (ожидали 9)" % dec["prev_d_end"]
-    assert jan["prev_d_end"] == -1, "E: январь = %s (ожидали −1, старое поведение)" % jan["prev_d_end"]
-    print("E: старые записи без якоря — поведение не изменилось ✓")
+    # Год якоря прежний (день 05.01.2027 остаётся в 2027-м, а не в декабре
+    # 2026-го), но теперь день сверх пустой копилки дней лезет в часы:
+    assert jan["prev_d_end"] == 0, "E: январь дней = %s (ожидали 0)" % jan["prev_d_end"]
+    assert jan["prev_h_end"] == -480, "E: январь часов = %s (ожидали −480)" % jan["prev_h_end"]
+    bad, msg = validate_non_negative_over_year(db, 1, 2027)
+    assert not bad and "(Ночные)" in msg, "E: 2027 должен блокироваться по часам: %s" % msg
+    print("E: старые записи без якоря — год прежний, сверх копилки лезет в часы ✓")
 
     print("═══ ЯКОРЬ ГОДА У ПЕРИОДА: РАБОТАЕТ ═══")
     return 0

@@ -334,6 +334,73 @@ def total_overtime_days(end_hours, prev_h_end, end_overtime, prev_o_end, end_day
     return minutes // (8 * 60) + int(end_days) + int(prev_d_end)
 
 
+def _current_year_day_netting(db, employee_id: int, year: int, month: int, base_d: int) -> tuple[int, int]:
+    """Сколько дней компенсации текущего года взято из ночных часов.
+
+    Правило то же, что показывает окно компенсации: «Итого: N дн.» =
+    дни + часы/8. Когда дни отгулов исчерпали дневную копилку, каждый
+    следующий день списывается из ночных часов (8 часов за день).
+    Считаем по месяцам, в которые попадали дни компенсаций: между
+    такими месяцами копилка дней только растёт, поэтому перевес надо
+    искать в самих месяцах трат (раньше разобранный день обратно
+    в часы не возвращается).
+    Возвращает (на начало месяца, на конец месяца) — целые дни.
+    """
+    emp = db.get_employee(employee_id)
+    hy, hm = safe_get_hire_date(emp["start_month"])
+    if year < hy or (year == hy and month < hm):
+        return 0, 0
+    y_start = datetime(year, hm, 1) if year == hy else datetime(year, 1, 1)
+    y_s_iso, y_e_iso = d_iso(y_start.date()), d_iso(date(year + 1, 1, 1))
+
+    # Дни отгулов — по эффективным датам (тот же якорь начала периода,
+    # что и в get_comp_real), денежные дни — по дате приказа.
+    eff = """(CASE WHEN substr(cd.day_off_date,1,4) > substr(c.event_date,1,4)
+                  THEN substr(c.event_date,1,4) || '-12-31'
+                  ELSE cd.day_off_date END)"""
+    spend = {}
+    for r in db.conn.execute(f"""
+            SELECT substr({eff},1,7) ym, COUNT(*) c
+            FROM comp_day_off_date cd
+            JOIN compensation c ON c.id = cd.compensation_id
+            WHERE cd.employee_id=?
+              AND c.event_date IS NOT NULL AND c.event_date != ''
+              AND c.event_date != '1900-01-01'
+              AND {eff} >= ? AND {eff} < ?
+            GROUP BY 1
+        """, (employee_id, y_s_iso, y_e_iso)):
+        spend[r["ym"]] = spend.get(r["ym"], 0) + int(r["c"] or 0)
+    for r in db.conn.execute("""
+            SELECT substr(event_date,1,7) ym, SUM(amount_days) sd
+            FROM compensation
+            WHERE employee_id=? AND unit='days' AND method='money'
+              AND event_date IS NOT NULL AND event_date != ''
+              AND event_date != '1900-01-01'
+              AND event_date >= ? AND event_date < ?
+            GROUP BY 1
+        """, (employee_id, y_s_iso, y_e_iso)):
+        spend[r["ym"]] = spend.get(r["ym"], 0) + int(r["sd"] or 0)
+    if sum(spend.values()) <= base_d:
+        return 0, 0          # дневная копилка покрывает все траты — часы не трогаем
+
+    shift_checker = build_shift_checker(db, employee_id)
+    holidays = db.get_holidays_month(d_iso(date(year, 1, 1)), d_iso(date(year, 12, 31)))
+    before = after = cum = 0
+    for ym in sorted(spend):
+        m_k = int(ym[5:7])
+        if m_k > month:
+            break
+        cum += spend[ym]
+        accr = _get_accruals_for_period(db, employee_id, y_start,
+                                        month_bounds_dt(year, m_k)[1],
+                                        shift_checker, holidays)
+        over = max(0, cum - base_d - int(accr["days"] or 0))
+        if m_k < month:
+            before = max(before, over)
+        after = max(after, over)
+    return before, after
+
+
 def compute_month_summary(db, employee_id: int, year: int, month: int) -> dict:
     _cms_key = None
     if _SUMMARY_CACHE["depth"] > 0:
@@ -512,6 +579,29 @@ def compute_month_summary(db, employee_id: int, year: int, month: int) -> dict:
     ytd_before = _get_accruals_for_period(db, employee_id, y_start, m_start, shift_checker, db.get_holidays_month(d_iso(date(year, 1, 1)), d_iso(date(year, 12, 31))))
     this_acc = _get_accruals_for_period(db, employee_id, m_start, m_end, shift_checker, db.get_holidays_month(d_iso(date(year, 1, 1)), d_iso(date(year, 12, 31))))
     norm_m = compute_month_norm_minutes(db, employee_id, year, month, shift_checker)
+
+    # Дни сверх дневной копилки закрываются ночными часами (8 ч = день) —
+    # то же правило, что окно компенсации показывает как «Итого: N дн.»
+    # (дни + часы/8). Списание делится на «взято днями» и «взято часами»,
+    # поэтому остатки и графа «Компенсировано» сходятся арифметически.
+
+    # Заначка: её пул зафиксирован 1 января, лишние дни — из ночных часов.
+    def _net_stash(cum_d, cum_h):
+        over = max(0, cum_d - pd)
+        return cum_d - over, cum_h + over * 480
+    nb_d, nb_h = _net_stash(spent_before["days"], spent_before["hours"])
+    ne_d, ne_h = _net_stash(spent_before["days"] + spent_now["days"],
+                            spent_before["hours"] + spent_now["hours"])
+    spent_before = dict(spent_before, days=nb_d, hours=nb_h)
+    spent_now = dict(spent_now, days=ne_d - nb_d, hours=ne_h - nb_h)
+
+    # Текущий год: копилка дней растёт с начислениями — считаем по месяцам.
+    ex_b, ex_a = _current_year_day_netting(db, employee_id, year, month, base_d)
+    if ex_a:
+        comp_before = dict(comp_before, hours=comp_before["hours"] + ex_b * 480,
+                           days=comp_before["days"] - ex_b)
+        comp_now = dict(comp_now, hours=comp_now["hours"] + (ex_a - ex_b) * 480,
+                        days=comp_now["days"] - (ex_a - ex_b))
 
     # 4. РАСЧЕТ ИТОГОВ (МАТЕМАТИКА)
     
