@@ -2295,6 +2295,11 @@ class Backend(QObject):
             self.refresh_employees()
             self.refresh_calendar()
             self.showToast.emit("Сотрудник обновлен", "success")
+            # Если правили выбранного сотрудника — дата приема могла сместиться:
+            # вкладки месяцев и прочие панели слушают этот сигнал и без него остаются старыми,
+            # пока пользователь не перевыберет сотрудника.
+            if emp_id == self._selected_employee_id:
+                self.selectedEmployeeChanged.emit()
         except Exception as e:
             self.active_db.conn.execute("ROLLBACK;")
             self.showToast.emit(f"Ошибка: {e}", "error")
