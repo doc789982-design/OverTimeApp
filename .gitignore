@@ -10,6 +10,7 @@ dist/
 build/
 *.spec
 !tools/overtimetab.spec
+!tools/installer_stub.spec
 webapp/demo.db
 webapp/demo.db-shm
 webapp/demo.db-wal

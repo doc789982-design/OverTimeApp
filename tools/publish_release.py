@@ -2,8 +2,13 @@
 """
 Публикует GitHub Release из версии в AppTheme.qml и текста CHANGELOG.md.
 
-Я запускаю это после заметной версии. Тег v… на GitHub поднимает
-workflow «Сборка Windows» — он сам приложит zip к этому же релизу.
+Релиз состоит из ДВУХ обязательных файлов (иначе публикация не проходит):
+    OVERTIMETAB_<версия>_<sha>.exe — установщик для человека;
+    OVERTIMETAB_<версия>_<sha>.zip — обновление для установленной
+        программы: автообновление ищет на релизе файл с .zip на конце.
+Скрипт сам дожидается сборки Windows, проверяет ОБА файла, снимает
+старые ассеты и проверяет, что сборка описана в BUILD_HISTORY.md.
+Полный процесс выпуска — RELEASING.md.
 
 Запуск из корня репозитория:
     python tools/publish_release.py
@@ -112,26 +117,76 @@ def current_short_sha() -> str:
     return out.strip()
 
 
-def cleanup_old_release_zips(tag: str, keep_sha: str) -> None:
-    """На одном теге должен висеть один zip. Actions именует архив с хешем
-    коммита, поэтому новый файл не затирает старый — снимаем хвосты сами."""
+def asset_errors(assets: list, keep_sha: str) -> list[str]:
+    """Проверка состава релиза: zip и exe-установщик, оба с текущим sha.
+
+    Релиз обязан содержать ДВА файла: установщик (*.exe) для человека и
+    архив (*.zip) для установленной программы (автообновление ищет файл
+    с .zip на конце — см. app_update.fetch_github_release_info).
+    """
+    keep = (keep_sha or "").lower()
+    errors = []
+    names = [str(a.get("name") or "") for a in (assets or [])]
+    zips = [n for n in names if n.lower().endswith(".zip")]
+    exes = [n for n in names if n.lower().endswith(".exe")]
+    if not any(keep in n.lower() for n in zips):
+        errors.append(
+            "на релизе нет архива OVERTIMETAB_*_%s.zip — установленным "
+            "программам нечем обновляться" % keep)
+    if not any(keep in n.lower() for n in exes):
+        errors.append(
+            "на релизе нет установщика OVERTIMETAB_*_%s.exe — человеку "
+            "нечего скачивать (см. RELEASING.md: релиз = zip + exe, "
+            "сборкой управляет .github/workflows/build-windows.yml)" % keep)
+    return errors
+
+
+def release_assets(tag: str) -> list:
     view = run_gh(["release", "view", tag, "--json", "assets"], check=False)
     if view.returncode != 0:
-        return
+        return []
     try:
-        assets = json.loads(view.stdout or "{}").get("assets") or []
+        return json.loads(view.stdout or "{}").get("assets") or []
     except Exception:
-        return
+        return []
+
+
+def wait_for_build(timeout_sec: int = 1200) -> bool:
+    """Ждёт завершения свежего запуска «Сборка Windows»."""
+    import time as _time
+    print("ждём сборку Windows на Actions…")
+    _time.sleep(20)
+    r = run_gh(["run", "list", "--workflow=build-windows.yml", "--limit", "1",
+                "--json", "databaseId,status,conclusion"], check=False)
+    try:
+        info = json.loads(r.stdout or "[]")
+        run_id = (info[0] or {}).get("databaseId")
+    except Exception:
+        run_id = None
+    if not run_id:
+        print("не удалось найти запуск сборки — проверьте вручную: "
+              "gh run watch --workflow=build-windows.yml")
+        return False
+    watch = subprocess.run(["gh", "run", "watch", str(run_id), "--exit-status",
+                            "--interval", "20"], cwd=str(ROOT))
+    return watch.returncode == 0
+
+
+def cleanup_old_release_assets(tag: str, keep_sha: str) -> None:
+    """На одном теге — по одному zip и одному exe текущего sha.
+    Actions именует файлы хешем коммита, новый не затирает старый —
+    снимаем хвосты сами (и зипы, и установщики)."""
     keep = (keep_sha or "").lower()
-    for asset in assets:
+    for asset in release_assets(tag):
         name = str(asset.get("name") or "")
-        if not name.lower().endswith(".zip"):
+        low = name.lower()
+        if not (low.endswith(".zip") or low.endswith(".exe")):
             continue
-        if keep and keep in name.lower():
+        if keep and keep in low:
             continue
         gone = run_gh(["release", "delete-asset", tag, name, "--yes"], check=False)
         if gone.returncode == 0:
-            print(f"сняли старый архив {name}")
+            print(f"сняли старый файл {name}")
         else:
             sys.stderr.write(gone.stderr or gone.stdout or f"не сняли {name}\n")
 
@@ -141,6 +196,8 @@ def main() -> int:
     parser.add_argument("--dry-run", action="store_true", help="только показать текст, не публиковать")
     parser.add_argument("--prerelease", action="store_true",
                         help="пометить релиз как пререлиз (по умолчанию — обычный релиз)")
+    parser.add_argument("--no-wait", action="store_true",
+                        help="не ждать сборку и не проверять ассеты (экстренные случаи)")
     parser.add_argument("--tag", default="",
                         help="тег существующего релиза (например v2.0.0-ALPHA.20), "
                              "если имя версии сменилось, а обновляться должны старые клиенты")
@@ -238,7 +295,27 @@ def main() -> int:
         if notes_file.exists():
             notes_file.unlink()
 
-    print("Готово. Zip к релизу приложит Actions, когда дособерёт Windows.")
+    if args.no_wait:
+        print("Запущено без ожидания (--no-wait): проверьте ассеты сами — "
+              "на релизе обязаны быть zip и exe одной сборки.")
+        return 0
+
+    # ── Строгий контроль релиза ──────────────────────────────
+    # Релиз = zip (обновление для программ) + exe (установщик для
+    # человека). Ждём сборку и проверяем оба файла; старые снимаем.
+    if not wait_for_build():
+        print("Сборка Windows не завершилась успехом — релиз неполный.",
+              file=sys.stderr)
+        return 1
+    sha = current_short_sha()
+    assets = release_assets(tag)
+    problems = asset_errors(assets, sha)
+    if problems:
+        for p in problems:
+            print("ОШИБКА РЕЛИЗА: " + p, file=sys.stderr)
+        return 1
+    cleanup_old_release_assets(tag, sha)
+    print(f"Релиз в порядке: zip + exe сборки {build} ({sha}).")
     return 0
 
 

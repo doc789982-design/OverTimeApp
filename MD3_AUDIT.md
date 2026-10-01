@@ -375,6 +375,58 @@ Focus-кольцо 2px с 50% brand — свежие MD3-спеки тоже т�
 > начинаться с https://, иначе скрипт отказывается публиковать
 > (проверено: код 1 + понятное сообщение). ЗАПОМНИТЬ при каждом
 > релизе: version.json → url = полный URL на ассет.
+> Батч 61 (сборка 243) — УСТАНОВЩИК: ОДИН ФАЙЛ .exe ДЛЯ ЧЕЛОВЕКА
+> (юзер: «арх распаковать, ярлык… колхозно; нужен установщик; файл =
+> и полная установка, и обновление, которое поймёт даже давно
+> установленная программа; новую архитектуру не придумывать»).
+> СХЕМА (после разбора юзером риска «zip прописан в старых сборках»):
+> на релизе ДВА файла — .exe для человека (заглушка + тот же zip),
+> .zip для программы (автообновление ищет файл с .zip на конце —
+> НЕ УБИРАТЬ). Склейка безопасна: PyInstaller ищет свой архив полным
+> сканом с конца (pyi_utils.c: цикл до start_pos>0 — ради подписей),
+> zip-ридер читает с конца; старые сборки ловят файл .exe: download_zip
+> дописывает .zip к любому имени (первый коммит, все сборки) —
+> проверено симуляцией на реальном app_update.py (версия/сборка/
+> stage_package/манифест). СДЕЛАНО: tools/installer_stub.py (заглушка,
+> stdlib only: распаковка во %TEMP%\OVERTIMETAB_setup_*, запуск
+> OVERTIMETAB.exe --setup, ошибки MessageBoxW; extract_payload с
+> защитой от «выйти за папку») + installer_stub.spec (onefile,
+> noconsole, dist_stub) + tools/make_installer.py (склейка с
+> проверкой MZ/наличия exe/чтения результата); installer.py (папки:
+> AppData\Programs\OVERTIMETAB или Program Files; поиск копии: реестр →
+> стандартные пути; copy_program с прогрессом; ярлыки .lnk через
+> ctypes IShellLinkW (vtable: SetPath=18, SetArguments=11,
+> IPersistFile.Save=6, QI 3 аргумента); реестр Uninstall (HKCU/HKLM);
+> деинсталляция: ярлыки+ключ+rmdir cmd-трюком ping+rmdir, данные
+> Documents\OverTimeTab только по галке); components/SetupWizard.qml
+> (Item, страницы welcome/place/progress/confirmRemove/done; AppTheme/
+> AppButton/AppCheckBox/AppRadioButton; «Обновить там же» при находке)
+> + main_setup.qml (ВХОД ИЗ КОРНЯ — компонент модуля components сам
+> контекст не видит, как main.qml; окно+title+alias setup) + Main.py:
+> SetupBackend (notify-свойства! PySide6 6.11: Property(constant) +
+> Signal в классе = «backend is null» — проверено диагностикой;
+> главный Backend потому и работает) + setup_main(argv), вход в
+> __main__ до parse_apply_argv; elevate при Program Files: ShellExecuteW
+> runas с --setup --elevated. CI: сборка заглушки (build_stub) →
+> make_installer → upload zip+exe → релиз с ДВУМЯ файлами.
+> НАСИЛЬНО (просил юзер: «чтобы иначе нельзя было сборку делать»):
+> publish_release.py после запуска релиза ЖДЁТ Actions (wait_for_build
+> → gh run watch), СТРОГО проверяет ОБА ассета (asset_errors: zip+exe
+> c текущим sha), чистит старые (cleanup_old_release_assets), флаг
+> --no-wait только для экстренных случаев; RELEASING.md — инструкция
+> «как выпускать сборку» для любого будущего сопровождающего (человек/
+> ИИ); qa/test_release_gates.py — статические ворота: workflow содержит
+> шаги заглушки/склейки/двух файлов, publish_release проверяет и ждёт,
+> RELEASING на месте, все части цепочки существуют. Тесты:
+> qa/test_installer.py (склейка, отказы, распаковка, папки, поиск
+> копии, копирование с прогрессом, data_root), qa/test_setup_view.py
+> (6 групп: welcome/Далее/путь, place/галки/Установить, пустой путь —
+> ошибка, «Обновить там же» → прогресс, finishedOk → Готово, uninstall:
+> confirmRemove + галка данных выкл + uninstall(False)). Грабли,
+> закрытые в тестах: SetupWizard грузится ТОЛЬКО через main_setup.qml;
+> find_text — eff_visible по цепочке property("visible"); QML-типы из
+> findChildren — QObject без isVisible; стаб — notify-свойства + @Slot.
+> Батарея: 21 тест. ЗАМЕТКИ РЕЛИЗА: первая строка — «качайте .exe».
 > Батч 60 (сборка 242) — КАРТА СБОРОК: ПАМЯТЬ ПРОЕКТА НЕЗАВИСИМО ОТ
 > АССИСТЕНТА (юзер: «сделай на гитхабе или в файлах репозитория /
 > в сборке чейнджлог-файл со всем этим — вдруг перееду на другой ИИ,
