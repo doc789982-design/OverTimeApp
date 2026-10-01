@@ -1868,6 +1868,13 @@ class Backend(QObject):
                     hire_date_iso = str(emp_h["start_month"])[:7] + "-01"
             except Exception:
                 hire_date_iso = ""
+        # Дата увольнения/перевода: дни после неё — так же серые неактивные.
+        end_date_iso = ""
+        if self._selected_employee_id > 0:
+            try:
+                end_date_iso = str(emp_h["end_date"] or "").strip()
+            except Exception:
+                end_date_iso = ""
         
         duty_map = {}
         comp_set = set()
@@ -1931,6 +1938,7 @@ class Backend(QObject):
                     "day_number": d.day,
                     "is_current_month": d.month == self.current_month,
                     "is_before_hire": bool(hire_date_iso) and d_str < hire_date_iso,
+                    "is_after_end": bool(end_date_iso) and d_str > end_date_iso,
                     "is_weekend": (not is_working) and (not is_holiday),
                     "is_holiday": is_holiday,
                     "is_pre_holiday": d in pre_holidays_set,

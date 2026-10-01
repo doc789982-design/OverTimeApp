@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Тест нормы выработки с даты приема (неполный месяц приема).
+"""Тест нормы выработки с даты приема и по дату увольнения (неполные месяцы).
 
 Сценарий пользователя: сменщик принят 25-го числа, а норма считалась
 за весь месяц — огромная «недоработка», которой по факту нет.
@@ -39,6 +39,15 @@ def fresh_db():
     path = os.path.join(tempfile.mkdtemp(prefix="norm_"), "test.sqlite")
     db = DB(path)
     return db
+
+
+def expected_norm_to(year, month, to_day):
+    """Будни с 1-го по to_day включительно, по 8 часов."""
+    total = 0
+    for d in range(1, to_day + 1):
+        if date(year, month, d).weekday() < 5:
+            total += 480
+    return total
 
 
 def expected_norm(year, month, from_day):
@@ -122,7 +131,38 @@ def main() -> int:
         "G: у пятидневщика норма и раньше была 0, а не %s" % s["norm_minutes"]
     print("G: пятидневщик — норма по-прежнему 0 (это понятие сменщика) ✓")
 
-    print("═══ НОРМА С ДАТЫ ПРИЕМА: НЕПОЛНЫЙ МЕСЯЦ СЧИТАЕТСЯ ВЕРНО ═══")
+    # ── H. Увольнение 20-го (пятница): норма по 20-е включительно ──
+    db = fresh_db()
+    db.add_employee("Уволенный", "Двадцатого", "", "", "", "2026-03-01", 0, 0, 0, 0, 0, 0)
+    db.conn.execute("UPDATE employee SET end_date='2026-03-20' WHERE id=1")
+    got = compute_month_norm_minutes(db, 1, 2026, 3, lambda d: True)
+    assert got == expected_norm_to(2026, 3, 20), "H: %s != %s" % (got, expected_norm_to(2026, 3, 20))
+    print("H: увольнение 20.03 (пятница) — норма по 20-е включительно ✓")
+
+    # ── I. Увольнение в воскресенье — по пятницу ──
+    db = fresh_db()
+    db.add_employee("Воскресное", "Увольнение", "", "", "", "2026-03-01", 0, 0, 0, 0, 0, 0)
+    db.conn.execute("UPDATE employee SET end_date='2026-03-15' WHERE id=1")
+    got = compute_month_norm_minutes(db, 1, 2026, 3, lambda d: True)
+    assert got == expected_norm_to(2026, 3, 13), "I: %s" % got
+    print("I: увольнение в воскресенье 15.03 — норма по пятницу 13-е ✓")
+
+    # ── J. Месяц после увольнения — норма 0 ──
+    logic._SUMMARY_CACHE["data"].clear()
+    s = compute_month_summary(db, 1, 2026, 4)
+    assert s["norm_minutes"] == 0, "J: %s" % s["norm_minutes"]
+    print("J: месяц после увольнения — норма 0 ✓")
+
+    # ── K. Принят 5-го, уволен 20-го — норма ровно между датами ──
+    db = fresh_db()
+    db.add_employee("Короткий", "Срок", "", "", "", "2026-03-05", 0, 0, 0, 0, 0, 0)
+    db.conn.execute("UPDATE employee SET end_date='2026-03-20' WHERE id=1")
+    got = compute_month_norm_minutes(db, 1, 2026, 3, lambda d: True)
+    want = sum(480 for d in range(5, 21) if date(2026, 3, d).weekday() < 5)
+    assert got == want, "K: %s != %s" % (got, want)
+    print("K: принят 5-го, уволен 20-го — норма ровно между датами ✓")
+
+    print("═══ НОРМА С ДАТЫ ПРИЕМА И ПО ДАТУ УВОЛЬНЕНИЯ: ВСЁ СЧИТАЕТСЯ ВЕРНО ═══")
     return 0
 
 

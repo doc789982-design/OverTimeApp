@@ -243,11 +243,13 @@ Item {
                                               ? backend.calendarDays[index]
                                               : null
                         property bool isValid: dayInfo !== null && dayInfo.date_str !== undefined
+                        // Запертые дни: до даты приема или после увольнения/перевода
+                        property bool isLocked: isValid && (dayInfo.is_before_hire === true || dayInfo.is_after_end === true)
                         
-                        // Дни до даты приема — серые неактивные (как вкладки
-                        // месяцев до приема): полупрозрачные и без действий.
+                        // Запертые дни (до приема / после увольнения) — серые
+                        // неактивные (как вкладки месяцев до приема).
                         opacity: (isValid && dayInfo.is_current_month)
-                                 ? (dayInfo.is_before_hire ? 0.3 : 1.0)
+                                 ? (isLocked ? 0.3 : 1.0)
                                  : 0.0
                         
                         property bool isToday: {
@@ -449,8 +451,8 @@ Item {
                                 
                                 Keys.onPressed: (event) => {
                                     if (!isValid) return
-                                    // До даты приема действий с днём нет (ни мышкой, ни с клавиатуры)
-                                    if (dayInfo.is_before_hire === true) return
+                                    // Запертые дни: действий нет (ни мышкой, ни с клавиатуры)
+                                    if (isLocked) return
 
                                     if (event.key === Qt.Key_Control
                                         || event.key === Qt.Key_Shift
@@ -516,7 +518,7 @@ Item {
                             MouseArea { 
                                 id: dayMouseArea
                                 anchors.fill: parent
-                                enabled: isValid && dayInfo.is_current_month && !dayInfo.is_before_hire
+                                enabled: isValid && dayInfo.is_current_month && !isLocked
                                 hoverEnabled: true
                                 acceptedButtons: Qt.LeftButton | Qt.RightButton
                                 
