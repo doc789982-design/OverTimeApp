@@ -39,11 +39,13 @@ def main() -> int:
     bullets = app_update.parse_changelog_bullets(text)
     tagged = [b for b in bullets if b["build"] > 0]
     builds = sorted({b["build"] for b in tagged})
-    assert builds == list(range(231, 241)), "ожидались сборки 231–240: %s" % builds
+    want = [226, 227, 228, 230] + list(range(231, 241))
+    assert builds == want, "ожидались сборки %s: %s" % (want, builds)
     for b in tagged:
         assert "<!--" not in b["text"], "пометка осталась в тексте: %s" % b["text"][:60]
     assert any("За оба года" in b["text"] for b in tagged if b["build"] == 235)
-    print("A: 10 записей помечены сборками 231–240, тексты чистые ✓")
+    assert any("Панель подразделения" in b["text"] for b in tagged if b["build"] == 230)
+    print("A: 15 записей помечены (226–228, 230, 231–240), тексты чистые ✓")
 
     # ── B. Интервалы ──
     one = app_update.changelog_for_builds(text, 239, 240)
@@ -52,11 +54,19 @@ def main() -> int:
     many = app_update.changelog_for_builds(text, 230, 239)
     assert [b["build_num"] for b in many] == list(range(239, 230, -1)), \
         [b["build_num"] for b in many]
+    # перепрыг с 225 (как спрашивал пользователь): все помеченные сборки
+    jump = app_update.changelog_for_builds(text, 225, 240)
+    assert [b["build_num"] for b in jump] == \
+        [240, 239, 238, 237, 236, 235, 234, 233, 232, 231, 230, 228, 227, 226], \
+        [b["build_num"] for b in jump]
+    assert any("Установка с заменой" in x for x in jump[-1]["added"])
+    assert any("Панель подразделения" in x for x in
+               [b for b in jump if b["build_num"] == 230][0]["changed"])
     allv = app_update.changelog_for_builds(text, 0, 240)
-    assert len(allv) == 10, len(allv)
+    assert len(allv) == 14, len(allv)
     assert app_update.changelog_for_builds(text, 240, 240) == []
     assert app_update.changelog_for_builds(text, 250, 260) == []
-    print("B: 239→240 — одна сборка; 230→239 — девять блоков; пусто — ничего ✓")
+    print("B: 239→240 один; 230→239 девять; 225→240 — четырнадцать блоков ✓")
 
     # ── C. Группировка и секции ──
     b237 = [b for b in many if b["build_num"] == 237][0]
