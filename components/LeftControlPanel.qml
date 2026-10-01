@@ -187,7 +187,7 @@ Item {
                         if (!currentYear) {
                             currentYear = new Date().getFullYear().toString();
                         }
-                        empDialog.startMonth = currentYear + "-01"
+                        empDialog.hireDate = currentYear + "-01-01"
                         empDialog.showAt(parent, width / 2, -10)
                     }
                 }

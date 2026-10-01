@@ -40,6 +40,12 @@ class DB:
         self._max_history = 20
         
         self._init_or_migrate()
+        # Месяц приема стал датой приема: у существующих записей
+        # дата = 1-е число их месяца — поведение не меняется ни на копейку.
+        try: self.conn.execute("ALTER TABLE employee ADD COLUMN hire_date TEXT")
+        except Exception: pass
+        self.conn.execute("UPDATE employee SET hire_date = start_month || '-01' "
+                           "WHERE hire_date IS NULL OR hire_date = ''")
 
         # Подорожники для старых баз
         try: self.conn.execute("ALTER TABLE employee_group ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0")
@@ -223,6 +229,7 @@ class DB:
                     rank TEXT,
                     position TEXT,
                     start_month TEXT NOT NULL,
+                    hire_date TEXT,
                     end_date TEXT,
                     end_reason TEXT,
                     opening_minutes INTEGER NOT NULL DEFAULT 0,
@@ -652,16 +659,26 @@ class DB:
         )
 
     def add_employee(self, last: str, first: str, middle: str, rank: str, position: str, start_month: str, opening_minutes: int, opening_days: int, opening_overtime: int, prev_opening_minutes: int, prev_opening_overtime: int, prev_opening_days: int, group_id: Optional[int] = None) -> int:
+        # Принимаем и дату (ГГГГ-ММ-ДД), и старый формат «месяц» ГГГГ-ММ
+        # (для старых вызовов и тестов): месяц всегда согласован с датой.
+        sm = (start_month or "").strip()
+        if len(sm) == 10:
+            hire_date = sm
+            sm = sm[:7]
+        elif len(sm) == 7:
+            hire_date = sm + "-01"
+        else:
+            raise ValueError("Дата приема: ГГГГ-ММ-ДД или ГГГГ-ММ")
         sort_order = self._next_employee_sort_order(group_id)
         cur = self.conn.execute(
             """
-            INSERT INTO employee(last_name,first_name,middle_name,rank,position,start_month,
+            INSERT INTO employee(last_name,first_name,middle_name,rank,position,start_month,hire_date,
                                  opening_minutes,opening_days,opening_overtime_minutes,
                                  prev_opening_minutes, prev_opening_overtime_minutes, prev_opening_days,
                                  group_id, sort_order)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
-            (last, first, middle or None, rank or None, position or None, start_month,
+            (last, first, middle or None, rank or None, position or None, sm, hire_date,
              opening_minutes, opening_days, opening_overtime,
              prev_opening_minutes, prev_opening_overtime, prev_opening_days,
              group_id, sort_order),
@@ -672,6 +689,20 @@ class DB:
         self.conn.execute("DELETE FROM employee WHERE id=?", (employee_id,))
 
     def update_employee(self, employee_id: int, **fields) -> None:
+        # Месяц приема и дата приема всегда согласованы:
+        # что бы ни передал вызывающий код — дату или месяц.
+        # Если передана дата — она главная (месяц от неё);
+        # иначе месяц дополняется 1-м числом.
+        hd = str(fields.get("hire_date") or "").strip()
+        sm = str(fields.get("start_month") or "").strip()
+        v = hd or sm
+        if len(v) == 10:      # дата приема целиком
+            fields["hire_date"] = v
+            fields["start_month"] = v[:7]
+        elif len(v) == 7:     # старый формат «месяц»
+            fields["start_month"] = v
+            fields["hire_date"] = v + "-01"
+
         if not fields:
             return
         cols = ", ".join([f"{k}=?" for k in fields.keys()])

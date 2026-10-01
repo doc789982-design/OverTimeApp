@@ -1798,6 +1798,7 @@ class Backend(QObject):
                 "rank": e["rank"] or "",
                 "position": e["position"] or "",
                 "start_month": e["start_month"],
+                "hire_date": e["hire_date"] or "",
                 "opening_minutes": int(e["opening_minutes"] or 0),
                 "opening_overtime": int(e["opening_overtime_minutes"] or 0),
                 "opening_days": int(e["opening_days"] or 0),
@@ -2844,7 +2845,7 @@ class Backend(QObject):
                 emp_data = self.active_db.get_employee(emp_id)
                 current_group = emp_data["group_id"]
                 # Превращаем "2022-05" в "2022-05-01"
-                start_date = f"{emp_data['start_month']}-01" if emp_data["start_month"] else "2000-01-01"
+                start_date = (emp_data["hire_date"] or f"{emp_data['start_month']}-01") if emp_data["start_month"] else "2000-01-01"
                 
                 self.active_db.conn.execute("INSERT INTO employee_transfer (employee_id, transfer_date, group_id) VALUES (?, ?, ?)", (emp_id, start_date, current_group))
                 
@@ -3350,7 +3351,7 @@ class Backend(QObject):
         
         # Вычисляем возможные даты "невидимых" якорей
         anchor_date1 = "2000-01-01"
-        anchor_date2 = f"{emp_data['start_month']}-01" if emp_data["start_month"] else "2000-01-01"
+        anchor_date2 = (emp_data["hire_date"] or f"{emp_data['start_month']}-01") if emp_data["start_month"] else "2000-01-01"
         
         res = []
         for r in rows:

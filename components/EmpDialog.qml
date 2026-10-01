@@ -14,7 +14,7 @@ AppDialog {
     property alias middleName: empMiddleName.text
     property alias rank: empRank.text
     property alias position: empPosition.text
-    property alias startMonth: empStartMonth.selectedMonth
+    property alias hireDate: empStartDate.selectedDate
     property alias openHours: empOpenHours.text
     property alias openOvertime: empOpenOvertime.text
     property alias openDays: empOpenDays.text
@@ -36,7 +36,7 @@ AppDialog {
         AppTextField { id: empMiddleName; width: parent.width; label: "Отчество" }
         AppTextField { id: empRank; width: parent.width; label: "Звание" }
         AppTextField { id: empPosition; width: parent.width; label: "Должность" }
-        AppMonthField { id: empStartMonth; width: parent.width; label: "Месяц приема"; isRequired: true }
+        AppDateField { id: empStartDate; width: parent.width; label: "Дата приема"; isRequired: true }
 
         // ==========================================
         // ЗАГОЛОВОК + ПЕРЕКЛЮЧАТЕЛЬ
@@ -201,14 +201,14 @@ AppDialog {
         if (root.editId === 0) {
             backend.saveEmployee(
                 empLastName.text, empFirstName.text, empMiddleName.text, 
-                empRank.text, empPosition.text, empStartMonth.selectedMonth,
+                empRank.text, empPosition.text, empStartDate.selectedDate,
                 cur_mins, cur_over, cur_days,
                 prev_mins, prev_over, prev_days
             )
         } else {
             backend.updateEmployee(
                 root.editId, empLastName.text, empFirstName.text, 
-                empMiddleName.text, empRank.text, empPosition.text, empStartMonth.selectedMonth,
+                empMiddleName.text, empRank.text, empPosition.text, empStartDate.selectedDate,
                 cur_mins, cur_over, cur_days,
                 prev_mins, prev_over, prev_days
             )
