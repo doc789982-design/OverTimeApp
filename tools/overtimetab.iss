@@ -92,7 +92,7 @@ begin
     if MsgBox(
         'Удалить также данные сотрудников?' + #13#10 +
         'Папка «Документы\OverTimeTab» с базами и отчётами будет удалена.',
-        mbConfirmation, MB_YES_NO) = IDYES then
+        mbConfirmation, MB_YESNO) = IDYES then
     begin
       DelTree(ExpandConstant('{userdocs}\OverTimeTab'), True, True, True);
     end;

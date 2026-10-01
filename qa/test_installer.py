@@ -57,7 +57,8 @@ def main() -> int:
     # ── C. данные при удалении ──
     assert "{userdocs}\\OverTimeTab" in iss and "DelTree" in iss, \
         "удаление не спрашивает про данные"
-    assert "MB_YES_NO" in iss, "вопрос про данные должен быть да/нет"
+    assert "MB_YESNO" in iss, "вопрос про данные должен быть да/нет"
+    assert "MB_YES_NO" not in iss, "MB_YES_NO — не константа Inno (пишется MB_YESNO)"
     print("C: удаление спрашивает про Документы\\OverTimeTab (по умолчанию — остаются) ✓")
 
     # ── D. самописный мастер 243 удалён ──
