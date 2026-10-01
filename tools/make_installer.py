@@ -26,6 +26,15 @@ import sys
 import zipfile
 from pathlib import Path
 
+# Windows-консоль (и GitHub Actions) по умолчанию использует cp1251/cp1252 —
+# русские буквы в print падают с UnicodeEncodeError ЕЩЁ ДО выхода из скрипта,
+# хотя вся работа уже сделана. Приводим потоки к UTF-8.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 
 class GlueError(Exception):
     pass
