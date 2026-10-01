@@ -40,10 +40,15 @@ def main() -> int:
                    "make_installer.py",
                    "build_stub/installer_stub.exe"):
         assert marker in wf, "в workflow нет шага: " + marker
-    up = wf[wf.find("actions/upload-artifact"):]
+    up = wf[wf.find("actions/upload-artifact"):wf.find("Опубликовать релиз")]
     assert ".zip" in up and ".exe" in up, "в artifacts нет пары zip+exe"
+    # у upload-artifact поле называется path (НЕ files — такая опечатка
+    # роняет шаг и релиз остаётся без файлов)
+    assert "path:" in up and "files:" not in up, \
+        "у шага upload-artifact поле path:, а не files:"
     rel = wf[wf.find("softprops/action-gh-release"):]
     assert ".zip" in rel and ".exe" in rel, "в релиз грузят не оба файла"
+    assert "files:" in rel, "у публикации релиза поле files:"
     print("A: workflow собирает заглушку, клеит exe, грузит zip + exe ✓")
 
     # ── B. проверка состава релиза ──
