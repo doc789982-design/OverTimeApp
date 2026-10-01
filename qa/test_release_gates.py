@@ -80,7 +80,7 @@ def main() -> int:
 
     # ── D. инструкция ──
     doc = (ROOT / "RELEASING.md").read_text(encoding="utf-8")
-    for word in (".exe", ".zip", "make_installer", "publish_release"):
+    for word in (".exe", ".zip", "Inno Setup", "overtimetab.iss", "publish_release"):
         assert word in doc, "RELEASING.md не объясняет: " + word
     print("D: RELEASING.md описывает схему «zip + exe» ✓")
 
