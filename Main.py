@@ -3982,20 +3982,28 @@ class Backend(QObject):
         return ""
 
     def _prepare_whats_new(self):
-        last = ""
+        # После обновления показываем записи ТОЛЬКО тех сборок, что появились
+        # после последней виденной: 239 → 240 — одна порция изменений;
+        # перепрыг через несколько сборок (230 → 239) — всё накопившееся:
+        # 231–239. Номер прошлой сборки — в конфиге; для старых конфигов
+        # достаётся из ключа «ВЕРСИЯ+сборка».
+        last_build = 0
         try:
             if self.config_path.exists():
                 data = json.loads(self.config_path.read_text(encoding="utf-8"))
-                last = str(data.get("ui", {}).get("last_changelog_version") or "")
+                ui_cfg = data.get("ui", {})
+                last_build = int(ui_cfg.get("last_changelog_build") or 0)
+                if not last_build:
+                    last_build = app_update.build_from_version_key(
+                        str(ui_cfg.get("last_changelog_version") or ""))
         except Exception:
-            last = ""
-        current_key = self._version_key()
-        if last and last == current_key:
+            last_build = 0
+        cur_build = int(self._app_build or 0)
+        if not cur_build or last_build >= cur_build:
             self._whats_new = []
             return
         text = self._read_changelog_text()
-        # Одна версия — один список. Сборка 71→72 внутри 20 показывает весь блок 20.
-        blocks = app_update.changelog_for_version(text, self._app_version or "")
+        blocks = app_update.changelog_for_builds(text, last_build, cur_build)
         self._whats_new = app_update.changelog_for_qml(blocks)
 
     @Slot()
@@ -4007,6 +4015,8 @@ class Backend(QObject):
             pass
         if self._app_version:
             self._write_ui_config("last_changelog_version", self._version_key())
+        if self._app_build:
+            self._write_ui_config("last_changelog_build", int(self._app_build))
         self._whats_new = []
         self.whatsNewChanged.emit()
 

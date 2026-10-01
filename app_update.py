@@ -1618,6 +1618,79 @@ def changelog_for_qml(blocks: list[dict]) -> list[dict]:
     return out
 
 
+
+_BUILD_TAG_RE = re.compile(r"<!--\s*b\s*:\s*(\d+)\s*-->\s*$")
+
+
+def strip_build_tags(text: str) -> str:
+    """Убирает невидимые пометки сборок (<!--b:239-->) из текста журнала."""
+    return re.sub(r"<!--\s*b\s*:\s*\d+\s*-->", "", text or "")
+
+
+def build_from_version_key(key: str) -> int:
+    """Номер сборки из ключа настроек «ВЕРСИЯ+сборка» («BETA.1+239» → 239)."""
+    m = re.search(r"\+(\d+)\s*$", str(key or ""))
+    return int(m.group(1)) if m else 0
+
+
+def parse_changelog_bullets(text: str) -> list[dict]:
+    """Плоский список записей журнала с пометками сборок.
+
+    Каждая запись: {build, section, text, version}. build — номер сборки
+    из невидимой пометки в конце строки (<!--b:239-->); без пометки — 0
+    (записи, появившиеся до введения пометок).
+    """
+    out: list[dict] = []
+    version, section = "", None
+    for raw_line in (text or "").splitlines():
+        line = raw_line.rstrip()
+        m = _CHANGELOG_HEADER_RE.match(line)
+        if m:
+            version = m.group(1).strip()
+            section = None
+            continue
+        sm = _CHANGELOG_SECTION_RE.match(line)
+        if sm:
+            section = _CHANGELOG_SECTION_MAP.get(sm.group(1).strip().lower())
+            continue
+        if not section:
+            continue
+        if line.startswith("- "):
+            body = line[2:].strip()
+            bm = _BUILD_TAG_RE.search(body)
+            build = int(bm.group(1)) if bm else 0
+            body = _BUILD_TAG_RE.sub("", body).strip()
+            out.append({"build": build, "section": section,
+                        "text": body, "version": version})
+        elif line.startswith("  ") and out:
+            out[-1]["text"] += " " + line.strip()
+    return out
+
+
+def changelog_for_builds(text: str, since_build: int, upto_build: int) -> list[dict]:
+    """Блоки «Что нового» для сборок в интервале (since_build, upto_build].
+
+    Одна сборка — один блок, сверху новее. Так после обновления видно
+    только то, что появилось с прошлого запуска, а перепрыг через
+    несколько сборок (230 → 239) показывает всё накопившееся: 231–239.
+    Записи без пометки сборки (появившиеся до её введения) не показываются.
+    """
+    since_build, upto_build = int(since_build or 0), int(upto_build or 0)
+    bullets = [b for b in parse_changelog_bullets(text)
+               if b["build"] > 0 and since_build < b["build"] <= upto_build]
+    if not bullets:
+        return []
+    blocks = []
+    for build in sorted({b["build"] for b in bullets}, reverse=True):
+        group = [b for b in bullets if b["build"] == build]
+        block = {"version": group[0]["version"], "build_num": build, "date": "",
+                 "added": [], "changed": [], "fixed": [], "removed": [],
+                 "build": []}
+        for b in group:
+            block[b["section"]].append(b["text"])
+        blocks.append(block)
+    return blocks
+
 # ---------------------------------------------------------------------------
 # Сетевое обновление (веб-хранилище). Полная закачка zip.
 # ---------------------------------------------------------------------------

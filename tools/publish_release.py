@@ -58,6 +58,8 @@ def changelog_section(version: str) -> str:
     while chunk and chunk[-1].strip() in ("", "---"):
         chunk.pop()
     body = "\n".join(chunk).strip()
+    # невидимые пометки сборок (<!--b:239-->) в текст релиза не идут
+    body = re.sub(r"<!--\s*b\s*:\s*\d+\s*-->", "", body)
     return body + "\n"
 
 
