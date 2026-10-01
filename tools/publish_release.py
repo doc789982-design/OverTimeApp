@@ -84,6 +84,28 @@ def history_has_build(build: int) -> bool:
         return False
 
 
+def changelog_style_ok() -> bool:
+    """Записи журнала — простым языком (правила: начало CHANGELOG.md).
+
+    Проверяет tools/changelog_style.py: без программистского жаргона,
+    одно–три предложения, не длиннее 420 знаков. Выпуск сборки с
+    кривой записью невозможен — правила действуют для любого, кто
+    ведёт журнал, независимо от памяти конкретного собеседника.
+    """
+    try:
+        from changelog_style import text_problems
+    except ImportError:
+        from tools.changelog_style import text_problems  # type: ignore
+    problems = text_problems(CHANGELOG.read_text(encoding="utf-8"))
+    if problems:
+        print("Записи журнала не проходят проверку стиля "
+              "(правила — в начале CHANGELOG.md):", file=sys.stderr)
+        for p in problems:
+            print("  - " + p, file=sys.stderr)
+        return False
+    return True
+
+
 def run_gh(args: list[str], check: bool = True) -> subprocess.CompletedProcess:
     return subprocess.run(
         ["gh", *args],
@@ -223,6 +245,11 @@ def main() -> int:
                   + repr(vj_url) + ").",
                   file=sys.stderr)
             return 1
+
+    # Стиль журнала: записи обязаны быть простым языком (без жаргона,
+    # коротко). Правила — в начале CHANGELOG.md, проверяет changelog_style.
+    if not changelog_style_ok():
+        return 1
 
     # Карта сборок: текущая сборка обязана быть описана в BUILD_HISTORY.md.
     # Файл генерируется из истории git: python tools/build_history.py --write --tag.
