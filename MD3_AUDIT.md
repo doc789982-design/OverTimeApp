@@ -375,6 +375,39 @@ Focus-кольцо 2px с 50% brand — свежие MD3-спеки тоже т�
 > начинаться с https://, иначе скрипт отказывается публиковать
 > (проверено: код 1 + понятное сообщение). ЗАПОМНИТЬ при каждом
 > релизе: version.json → url = полный URL на ассет.
+> Батч 62 (сборка 244) — УСТАНОВЩИК ПЕРЕПИСАН НА СТАНДАРТНЫЙ INNO SETUP.
+> Юзер после релиза 243: «бесполезную работу сделал… установщик
+> кривой, зачем сам писал? есть же стандартные в интернете, как при
+> установке любой программы». Запускал 243, не понравилось (без
+> конкретики). МОЯ ОШИБКА признана в отчёте: гибрид родился под задачу
+> «один файл = установка + обновление» (стандартные так не умеют),
+> но после перехода на схему «zip + exe» стандартный стал возможен —
+> и надо было спросить, а я доделал начатое. СДЕЛАНО: tools/
+> overtimetab.iss — Inno Setup 6: AppId 7E4C1D52-…, {autopf}\
+> OVERTIMETAB, PrivilegesRequired=lowest + OverridesAllowed=dialog
+> (вопрос «для меня/для всех», при «для всех» сам перезапускается с
+> правами), русский (compiler:Languages\Russian.isl), SetupIconFile=..\
+> app_icon.ico, lzma2/max SolidCompression, UsePreviousAppDir,
+> desktopicon-галка ({cm:CreateDesktopIcon}), Пуск — всегда,
+> OutputDir=.. (exe в корень репо), OutputBaseFilename задаётся /F
+> на CI (= имя zip); удаление: CurUninstallStepChanged → MsgBox
+> да/нет про Документы\OverTimeTab ({userdocs}), DelTree только по
+> «да». УДАЛЕНО ПОЛНОСТЬЮ: installer_stub.py/.spec, make_installer.py,
+> installer.py, SetupWizard.qml, main_setup.qml, qa/test_setup_view.py,
+> SetupBackend+setup_main+ветка --setup/--uninstall из Main.py,
+> main_setup.qml из make_resources, !installer_stub.spec из .gitignore.
+> CI (правит владелец руками, агент не может): два шага (заглушка +
+> склейка) → один шаг: choco install innosetup + iscc /DProductVersion
+> (сборка из AppTheme) /F<zipname> tools\overtimetab.iss; artifacts/
+> release не меняются (exe ложится в корень как раньше). Тесты:
+> qa/test_installer.py переписан (директивы iss, источник/вывод,
+> данные при удалении, Д: самописного мастера нет, E: путь данных
+> как в app_update), qa/test_release_gates.py — маркеры innosetup/iscc/
+> overtimetab.iss + отсутствие installer_stub/make_installer; ворота
+> КРАСНЫЕ до правки workflow юзером — СОЗНАТЕЛЬНО. Грабли Inno:
+> Source в .iss относителен к папке скрипта (SourceDir=..\dist\
+> OVERTIMETAB), OutputDir=.. = корень репо; /F переопределяет
+> OutputBaseFilename; iscc в PATH после choco install innosetup.
 > Батч 61 (сборка 243) — УСТАНОВЩИК: ОДИН ФАЙЛ .exe ДЛЯ ЧЕЛОВЕКА
 > (юзер: «арх распаковать, ярлык… колхозно; нужен установщик; файл =
 > и полная установка, и обновление, которое поймёт даже давно

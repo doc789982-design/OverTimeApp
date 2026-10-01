@@ -35,11 +35,12 @@ def main() -> int:
         encoding="utf-8")
     pub = (ROOT / "tools" / "publish_release.py").read_text(encoding="utf-8")
 
-    # ── A. workflow собирает оба файла ──
-    for marker in ("installer_stub.spec",
-                   "make_installer.py",
-                   "build_stub/installer_stub.exe"):
-        assert marker in wf, "в workflow нет шага: " + marker
+    # ── A. workflow собирает оба файла (zip + установщик Inno Setup) ──
+    for marker in ("innosetup", "iscc", "overtimetab.iss"):
+        assert marker in wf, "в workflow нет шага установщика: " + marker
+    for old_marker in ("installer_stub", "make_installer"):
+        assert old_marker not in wf, \
+            "в workflow остались шаги самописного мастера: " + old_marker
     up = wf[wf.find("actions/upload-artifact"):wf.find("Опубликовать релиз")]
     assert ".zip" in up and ".exe" in up, "в artifacts нет пары zip+exe"
     # у upload-artifact поле называется path (НЕ files — такая опечатка
@@ -49,7 +50,7 @@ def main() -> int:
     rel = wf[wf.find("softprops/action-gh-release"):]
     assert ".zip" in rel and ".exe" in rel, "в релиз грузят не оба файла"
     assert "files:" in rel, "у публикации релиза поле files:"
-    print("A: workflow собирает заглушку, клеит exe, грузит zip + exe ✓")
+    print("A: workflow собирает установщик Inno Setup, грузит zip + exe ✓")
 
     # ── B. проверка состава релиза ──
     ok = [{"name": "OVERTIMETAB_BETA.1_a1b2c3d.zip"},
@@ -84,16 +85,15 @@ def main() -> int:
     print("D: RELEASING.md описывает схему «zip + exe» ✓")
 
     # ── E. все части цепочки ──
-    for p in ("tools/installer_stub.py", "tools/installer_stub.spec",
-              "tools/make_installer.py", "installer.py",
-              "components/SetupWizard.qml"):
-        assert (ROOT / p).exists(), "нет файла " + p
+    assert (ROOT / "tools" / "overtimetab.iss").exists(), "нет скрипта Inno Setup"
+    for p in ("tools/installer_stub.py", "tools/make_installer.py",
+              "installer.py", "components/SetupWizard.qml", "main_setup.qml"):
+        assert not (ROOT / p).exists(), "остался файл самописного мастера: " + p
     main_src = (ROOT / "Main.py").read_text(encoding="utf-8")
-    assert '"--setup" in sys.argv' in main_src and "setup_main" in main_src
-    assert "--uninstall" in main_src
+    assert "--setup" not in main_src and "SetupBackend" not in main_src
     spec = (ROOT / "tools" / "overtimetab.spec").read_text(encoding="utf-8")
     assert "BUILD_HISTORY" in spec  # карта сборок — в каждой сборке
-    print("E: заглушка, склейщик, логика, мастер и вход --setup на месте ✓")
+    print("E: скрипт Inno Setup на месте, самописного мастера нет ✓")
 
     print("═══ РЕЛИЗ БЕЗ УСТАНОВЩИКА НЕ ВЫПУСТИТЬ: ВОРОТА ДЕРЖАТ ═══")
     return 0
