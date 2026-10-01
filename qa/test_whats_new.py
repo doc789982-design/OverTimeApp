@@ -44,8 +44,9 @@ def main() -> int:
             226, 227, 228, 230] + list(range(231, 241))
     assert set(want) <= set(builds), "не хватает исторических сборок: %s" % (
         sorted(set(want) - set(builds)))
+    # всё, что выше 240 — свежие батчи (242, 243, …): их может быть много
     extra = set(builds) - set(want)
-    assert extra <= {cur_build}, "неожиданные сборки: %s" % sorted(extra)
+    assert all(b > 240 for b in extra), "неожиданные сборки: %s" % sorted(extra)
     for b in tagged:
         assert "<!--" not in b["text"], "пометка осталась в тексте: %s" % b["text"][:60]
     assert any("За оба года" in b["text"] for b in tagged if b["build"] == 235)
