@@ -29,7 +29,7 @@ sys.path.insert(0, ROOT)
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 
 import app_update
-from publish_release import changelog_section
+from publish_release import changelog_section, read_identity
 
 
 def main() -> int:
@@ -39,9 +39,13 @@ def main() -> int:
     bullets = app_update.parse_changelog_bullets(text)
     tagged = [b for b in bullets if b["build"] > 0]
     builds = sorted({b["build"] for b in tagged})
+    _, cur_build = read_identity()          # текущая сборка — из AppTheme
     want = [174, 210, 211, 213, 214, 218, 219, 221, 222, 224, 225,
             226, 227, 228, 230] + list(range(231, 241))
-    assert builds == want, "ожидались сборки %s: %s" % (want, builds)
+    assert set(want) <= set(builds), "не хватает исторических сборок: %s" % (
+        sorted(set(want) - set(builds)))
+    extra = set(builds) - set(want)
+    assert extra <= {cur_build}, "неожиданные сборки: %s" % sorted(extra)
     for b in tagged:
         assert "<!--" not in b["text"], "пометка осталась в тексте: %s" % b["text"][:60]
     assert any("За оба года" in b["text"] for b in tagged if b["build"] == 235)
@@ -70,8 +74,8 @@ def main() -> int:
     assert len(jump2) == 15, len(jump2)
     assert any("numpy" in x for x in
                [b for b in jump2 if b["build_num"] == 225][0]["added"])
-    allv = app_update.changelog_for_builds(text, 0, 240)
-    assert len(allv) == 25, len(allv)
+    allv = app_update.changelog_for_builds(text, 0, cur_build)
+    assert len(allv) == len(set(builds)), (len(allv), len(set(builds)))
     assert app_update.changelog_for_builds(text, 240, 240) == []
     assert app_update.changelog_for_builds(text, 250, 260) == []
     print("B: 239→240 один; 230→239 девять; 225→240 — четырнадцать блоков ✓")
