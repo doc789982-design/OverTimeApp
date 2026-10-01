@@ -1857,6 +1857,17 @@ class Backend(QObject):
             build_shifted_weekend_checker(self.active_db, self._selected_employee_id)
             if self._selected_employee_id > 0 else None
         )
+        # Дата приема выбранного сотрудника: дни до неё в месяце
+        # приема — серые неактивные (как вкладки месяцев до приема).
+        hire_date_iso = ""
+        if self._selected_employee_id > 0:
+            try:
+                emp_h = self.active_db.get_employee(self._selected_employee_id)
+                hire_date_iso = str(emp_h["hire_date"] or "").strip()
+                if not hire_date_iso and emp_h["start_month"]:
+                    hire_date_iso = str(emp_h["start_month"])[:7] + "-01"
+            except Exception:
+                hire_date_iso = ""
         
         duty_map = {}
         comp_set = set()
@@ -1919,6 +1930,7 @@ class Backend(QObject):
                     "date_str": d_str,
                     "day_number": d.day,
                     "is_current_month": d.month == self.current_month,
+                    "is_before_hire": bool(hire_date_iso) and d_str < hire_date_iso,
                     "is_weekend": (not is_working) and (not is_holiday),
                     "is_holiday": is_holiday,
                     "is_pre_holiday": d in pre_holidays_set,

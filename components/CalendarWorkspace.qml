@@ -244,7 +244,11 @@ Item {
                                               : null
                         property bool isValid: dayInfo !== null && dayInfo.date_str !== undefined
                         
-                        opacity: (isValid && dayInfo.is_current_month) ? 1.0 : 0.0
+                        // Дни до даты приема — серые неактивные (как вкладки
+                        // месяцев до приема): полупрозрачные и без действий.
+                        opacity: (isValid && dayInfo.is_current_month)
+                                 ? (dayInfo.is_before_hire ? 0.3 : 1.0)
+                                 : 0.0
                         
                         property bool isToday: {
                             if (!isValid) return false
@@ -445,6 +449,8 @@ Item {
                                 
                                 Keys.onPressed: (event) => {
                                     if (!isValid) return
+                                    // До даты приема действий с днём нет (ни мышкой, ни с клавиатуры)
+                                    if (dayInfo.is_before_hire === true) return
 
                                     if (event.key === Qt.Key_Control
                                         || event.key === Qt.Key_Shift
@@ -510,7 +516,7 @@ Item {
                             MouseArea { 
                                 id: dayMouseArea
                                 anchors.fill: parent
-                                enabled: isValid && dayInfo.is_current_month
+                                enabled: isValid && dayInfo.is_current_month && !dayInfo.is_before_hire
                                 hoverEnabled: true
                                 acceptedButtons: Qt.LeftButton | Qt.RightButton
                                 

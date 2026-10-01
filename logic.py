@@ -123,6 +123,26 @@ def compute_month_norm_minutes(db, employee_id: int, year: int, month: int, shif
     shifted_checker = build_shifted_weekend_checker(db, employee_id)
     start_dt, end_dt = month_bounds_dt(year, month)
     cur, last = start_dt.date(), (end_dt - timedelta(days=1)).date()
+    # Неполный месяц приема: норма считается с даты приема по производственному
+    # календарю: человек обязан отработать только рабочие дни, идущие
+    # после приема. У принятого 25-го норма — только хвост месяца.
+    # У старых записей (дата = 1-е число) поведение не меняется.
+    hire_iso = ""
+    try:
+        emp = db.get_employee(employee_id)
+        hire_iso = str(emp["hire_date"] or "").strip()
+        if not hire_iso:
+            sm = str(emp["start_month"] or "").strip()[:7]
+            hire_iso = sm + "-01" if len(sm) == 7 else ""
+    except Exception:
+        hire_iso = ""
+    if len(hire_iso) == 10:
+        try:
+            hd = d_parse(hire_iso)
+            if cur < hd:
+                cur = hd
+        except Exception:
+            pass
     work_map = db.get_calendar_month(d_iso(cur), d_iso(last))
     override_set = db.get_calendar_overrides(d_iso(cur), d_iso(last))
 
