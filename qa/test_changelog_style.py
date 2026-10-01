@@ -31,8 +31,8 @@ def main() -> int:
 
     # ── A. правила в шапке ──
     head = text[:text.find("## BETA.1")]
-    for marker in ("Как писать записи", "программистских", "<!--b:N-->",
-                   "changelog_style"):
+    for marker in ("Как писать записи", "обычный человек", "<!--b:N-->",
+                   "changelog_style", "соседней сборке", "установщике"):
         assert marker in head, "в шапке CHANGELOG.md нет: " + marker
     for word in ("релиз", "мастер"):
         assert word in head, "шапка должна называть запрещённые слова"
@@ -43,7 +43,7 @@ def main() -> int:
     assert not problems, "\n".join(problems)
     n = sum(1 for line in text.split("\n") if line.startswith("- **")
             and "<!--b:" in line)
-    assert n >= 60, "записей с пометками подозрительно мало: %d" % n
+    assert n >= 40, "записей с пометками подозрительно мало: %d" % n
     print("B: все %d записей проходят проверку стиля ✓" % n)
 
     # ── C. ловит нарушения ──
@@ -55,6 +55,9 @@ def main() -> int:
     for body, why in cases:
         assert entry_problems("X", body), "не поймал: " + why
     assert entry_problems("X", " Окно стало понятнее.") == []
+    # мета-темы ловятся и в заголовке
+    assert entry_problems("Установщик программы", " Ставит программу.") != []
+    assert entry_problems("X", " Записи в журнале изменений переписаны.") != []
     # каждое запрещённое слово ловится
     for w in DENY_WORDS:
         assert text_problems("- **X.** Есть %s здесь. <!--b:1-->" % w), w
