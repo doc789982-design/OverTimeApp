@@ -63,6 +63,22 @@ def changelog_section(version: str) -> str:
     return body + "\n"
 
 
+def history_has_build(build: int) -> bool:
+    """Описана ли сборка в BUILD_HISTORY.md (карта сборок из истории git).
+
+    Карта — память проекта, независимая от ассистента: каждый, кто
+    сопровождает табель (в том числе ИИ), знает, что въехало в какую
+    сборку. Публикация без описания сборки запрещена.
+    """
+    hist = ROOT / "BUILD_HISTORY.md"
+    if not hist.exists():
+        return False
+    try:
+        return ("## Сборка %d" % int(build)) in hist.read_text(encoding="utf-8")
+    except Exception:
+        return False
+
+
 def run_gh(args: list[str], check: bool = True) -> subprocess.CompletedProcess:
     return subprocess.run(
         ["gh", *args],
@@ -150,6 +166,15 @@ def main() -> int:
                   + repr(vj_url) + ").",
                   file=sys.stderr)
             return 1
+
+    # Карта сборок: текущая сборка обязана быть описана в BUILD_HISTORY.md.
+    # Файл генерируется из истории git: python tools/build_history.py --write --tag.
+    if not history_has_build(build):
+        print(f"В BUILD_HISTORY.md нет раздела \"Сборка {build}\". Запустите "
+              "python tools/build_history.py --write --tag, закоммитьте файл "
+              "и повторите публикацию.",
+              file=sys.stderr)
+        return 1
 
     tag = args.tag.strip() or f"v{version}"
     title = f"OVERTIMETAB {version}" + (f" · сборка {build}" if build else "")

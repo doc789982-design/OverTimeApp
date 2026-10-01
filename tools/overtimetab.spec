@@ -77,6 +77,11 @@ _changelog = ROOT / "CHANGELOG.md"
 _datas = []
 if _changelog.exists():
     _datas.append((str(_changelog), "."))
+# Карта сборок (память проекта о том, что въехало в какую сборку) —
+# в каждой сборке рядом с журналом изменений.
+_history = ROOT / "BUILD_HISTORY.md"
+if _history.exists():
+    _datas.append((str(_history), "."))
 
 # version.json внутрь сборки. В AppTheme лежит имя для человека (например
 # «BETA.1»), а обновлятор старых сборок понимает только «X.Y.Z-ИМЯ.N».
