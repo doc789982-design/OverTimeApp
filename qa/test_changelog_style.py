@@ -30,13 +30,17 @@ def main() -> int:
     text = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
 
     # ── A. правила в шапке ──
-    head = text[:text.find("## BETA.1")]
+    head = text[:text.find("### Добавили")]
     for marker in ("Как писать записи", "обычный человек", "<!--b:N-->",
                    "changelog_style", "соседней сборке", "установщике"):
         assert marker in head, "в шапке CHANGELOG.md нет: " + marker
     for word in ("релиз", "мастер"):
         assert word in head, "шапка должна называть запрещённые слова"
-    print("A: правила описаны в шапке журнала ✓")
+    # журнал плоский: единственный ## — правила, заголовков версий нет
+    h2 = [l for l in text.split("\n") if l.startswith("## ")]
+    assert h2 == ["## Как писать записи"], "лишние заголовки: %s" % h2
+    assert "Предыдущие версии" not in text and "## BETA" not in text
+    print("A: правила в шапке, журнал плоский — без заголовков версий ✓")
 
     # ── B. текущий журнал чист ──
     problems = text_problems(text)

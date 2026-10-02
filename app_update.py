@@ -378,7 +378,9 @@ def read_build_json(path: Path) -> int:
 def format_version_label(version: str, build: int = 0) -> str:
     ver = (version or "").strip()
     if int(build or 0) > 0:
-        return f"{ver} · сборка {int(build)}"
+        # журнал плоский, имени версии у записи может не быть — тогда
+        # заголовок блока просто «Сборка N»
+        return f"{ver} · сборка {int(build)}" if ver else f"Сборка {int(build)}"
     return ver
 
 

@@ -103,10 +103,10 @@ def main() -> int:
 
     # ── F. Формат для QML ──
     qml = app_update.changelog_for_qml(one)
-    assert qml and qml[0]["version"] == "BETA.1 · сборка 239", qml[0]["version"]
+    assert qml and qml[0]["version"] == "Сборка 239", qml[0]["version"]
     assert qml[0]["hasAdded"] and not qml[0]["hasFixed"]
     assert "увольнения" in qml[0]["addedText"]
-    print("F: заголовок блока «BETA.1 · сборка 239», текст собран ✓")
+    print("F: заголовок блока «Сборка 239» (журнал плоский), текст собран ✓")
 
     print("═══ «ЧТО НОВОГО» ПОКАЗЫВАЕТ ТОЛЬКО СВЕЖИЕ СБОРКИ ═══")
     return 0

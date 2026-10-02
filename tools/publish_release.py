@@ -41,28 +41,21 @@ def read_version() -> str:
     return read_identity()[0]
 
 
-def changelog_section(version: str) -> str:
+def changelog_section(version: str = "") -> str:
+    """Текст журнала для заметок релиза.
+
+    Журнал плоский: четыре раздела (Добавили/Поменяли/Починили/Удалили)
+    без заголовков версий — в какой сборке появилась запись, говорит
+    невидимая пометка <!--b:N-->. В заметки идёт весь журнал целиком;
+    аргумент version оставлен для совместимости со старыми вызовами.
+    """
     if not CHANGELOG.exists():
         sys.exit("Нет CHANGELOG.md — сначала запишите, что изменилось")
     text = CHANGELOG.read_text(encoding="utf-8")
-    lines = text.splitlines()
-    start = None
-    heading_re = re.compile(rf"^##\s+{re.escape(version)}\b")
-    for i, line in enumerate(lines):
-        if heading_re.search(line):
-            start = i
-            break
-    if start is None:
-        sys.exit(f"В CHANGELOG.md нет раздела «{version}»")
-    end = len(lines)
-    for j in range(start + 1, len(lines)):
-        if lines[j].startswith("## "):
-            end = j
-            break
-    chunk = lines[start:end]
-    while chunk and chunk[-1].strip() in ("", "---"):
-        chunk.pop()
-    body = "\n".join(chunk).strip()
+    i = text.find("### Добавили")
+    if i < 0:
+        sys.exit("В CHANGELOG.md нет раздела «### Добавили»")
+    body = text[i:].strip()
     # невидимые пометки сборок (<!--b:239-->) в текст релиза не идут
     body = re.sub(r"<!--\s*b\s*:\s*\d+\s*-->", "", body)
     return body + "\n"
