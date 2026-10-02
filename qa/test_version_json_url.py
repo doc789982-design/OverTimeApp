@@ -125,7 +125,7 @@ def test_latest_base_url():
         "display": "BETA.1", "url": WANT,
     }).encode("utf-8")
 
-    def fake_urlopen(url, timeout=0):
+    def fake_urlopen(url, timeout=0, data=None, context=None):
         return _FakeResp(payload)
 
     try:

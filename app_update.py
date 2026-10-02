@@ -1764,7 +1764,7 @@ def fetch_github_release_info(gh: dict, timeout: float = 15.0) -> tuple[Optional
         headers={"Accept": "application/vnd.github+json", "User-Agent": "OVERTIMETAB-updater"},
     )
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with _urlopen_https(req, timeout) as resp:
             data = json.loads(resp.read().decode("utf-8", errors="replace"))
     except urllib.error.HTTPError as e:
         code = e.code
@@ -1799,14 +1799,99 @@ def fetch_github_release_info(gh: dict, timeout: float = 15.0) -> tuple[Optional
     return info, ""
 
 
+def _der_to_pem(der: bytes) -> str:
+    """DER-сертификат из хранилища Windows -> PEM для load_verify_locations."""
+    import base64
+    return ("-----BEGIN CERTIFICATE-----\n"
+            + base64.encodebytes(der).decode("ascii")
+            + "-----END CERTIFICATE-----\n")
+
+
+_WINDOWS_SSL_CONTEXT = None
+
+
+def windows_ssl_context():
+    """SSL-контекст со всеми сертификатами из хранилищ Windows.
+
+    Обычный контекст urllib собирает доверенные корни с фильтром по
+    назначению сертификата, из-за чего корпоративные центры сертификации
+    (проверка трафика, внутренние УЦ) иногда не попадают в список —
+    браузер при этом работает. Здесь загружаем всё из «Доверенных
+    корневых» и «Промежуточных» хранилищ текущего пользователя и
+    компьютера — так же, как браузер.
+    """
+    global _WINDOWS_SSL_CONTEXT
+    if _WINDOWS_SSL_CONTEXT is not None:
+        return _WINDOWS_SSL_CONTEXT
+    import ssl
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    ctx.check_hostname = True
+    for store in ("ROOT", "CA"):
+        try:
+            for cert, _enc, _props in ssl.enum_certificates(store):
+                try:
+                    ctx.load_verify_locations(cadata=_der_to_pem(cert))
+                except Exception:
+                    pass
+        except Exception:
+            pass  # не Windows — хранилищ нет, контекст останется пустым
+    _WINDOWS_SSL_CONTEXT = ctx
+    return ctx
+
+
+def _is_cert_error(exc: Exception) -> bool:
+    """Ошибка доверия к сертификату сайта (CERTIFICATE_VERIFY_FAILED)."""
+    import ssl
+    if isinstance(exc, ssl.SSLError):
+        return True
+    reason = getattr(exc, "reason", None)
+    return isinstance(reason, ssl.SSLError)
+
+
+def _ssl_fallback_enabled() -> bool:
+    # на Windows — всегда; переменная ниже оставлена для тестов не на Windows
+    return sys.platform == "win32" or bool(
+        os.environ.get("OVERTIMETAB_TEST_SSL_FALLBACK"))
+
+
+def _urlopen_https(url, timeout: float, data=None):
+    """HTTPS-запрос с повторной попыткой для корпоративных сертификатов.
+
+    Первая попытка — стандартный контекст. Если компьютер не принял
+    сертификат сайта (CERTIFICATE_VERIFY_FAILED — типично для сетей с
+    проверкой трафика), повторяем с контекстом, которому доверены все
+    сертификаты из хранилищ Windows, — как делают браузеры.
+    """
+    import ssl
+    try:
+        return urllib.request.urlopen(url, timeout=timeout, data=data)
+    except (urllib.error.URLError, ssl.SSLError) as e:
+        if _is_cert_error(e) and _ssl_fallback_enabled():
+            return urllib.request.urlopen(
+                url, timeout=timeout, data=data,
+                context=windows_ssl_context())
+        raise
+
+
+def _cert_error_message(url: str, exc: Exception) -> str:
+    """Понятное объяснение ошибки сертификата для окна проверки обновлений."""
+    host = url.split("//", 1)[-1].split("/", 1)[0]
+    return ("Компьютер не доверяет сертификату сайта " + host + " ("
+            + str(getattr(exc, "reason", exc)) + "). Обычно причина — "
+            "защита сетевого трафика на рабочем компьютере. Обратитесь "
+            "к системному администратору.")
+
+
 def _fetch_version_json(base_url: str, timeout: float = 15.0) -> tuple[Optional[dict], str]:
     """Классический путь: читаем version.json с хранилища прямо в память."""
     url = _update_info_url(base_url)
     try:
-        with urllib.request.urlopen(url, timeout=timeout) as resp:
+        with _urlopen_https(url, timeout) as resp:
             raw = resp.read()
         data = json.loads(raw.decode("utf-8", errors="replace"))
     except Exception as e:
+        if _is_cert_error(e):
+            return None, _cert_error_message(url, e)
         return None, f"Не удалось прочитать version.json ({e})."
     if not isinstance(data, dict):
         return None, "version.json содержит некорректные данные."
@@ -1832,7 +1917,7 @@ def _raw_github_version_json(gh: dict, timeout: float = 15.0) -> tuple[Optional[
     for ref in refs:
         url = f"https://raw.githubusercontent.com/{owner}/{repo}/{urllib.parse.quote(ref)}/updates/version.json"
         try:
-            with urllib.request.urlopen(url, timeout=timeout) as resp:
+            with _urlopen_https(url, timeout) as resp:
                 raw = resp.read()
             data = json.loads(raw.decode("utf-8", errors="replace"))
         except Exception:
@@ -1928,7 +2013,7 @@ def download_zip(
         except Exception:
             pass
     try:
-        with urllib.request.urlopen(download_url, timeout=timeout) as resp:
+        with _urlopen_https(download_url, timeout) as resp:
             total = 0
             cl = resp.headers.get("Content-Length")
             if cl:
