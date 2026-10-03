@@ -86,6 +86,7 @@ Item {
                     anchors.fill: parent
                     anchors.margins: -4 
                     hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
                     onClicked: root.removeClicked()
                 }
             }
@@ -99,6 +100,7 @@ Item {
             anchors.right: root.removable ? layoutRow.right : parent.right
             anchors.rightMargin: root.removable ? 24 : 0
             hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
             onClicked: root.clicked()
         }
     }

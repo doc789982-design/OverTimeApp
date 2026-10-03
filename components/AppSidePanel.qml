@@ -124,6 +124,7 @@ Popup {
                     id: closeHov
                     anchors.fill: parent
                     hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
                     onClicked: root.close() 
                 }
             }

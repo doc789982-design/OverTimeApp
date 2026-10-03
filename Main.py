@@ -4004,7 +4004,7 @@ class Backend(QObject):
             return
         text = self._read_changelog_text()
         blocks = app_update.changelog_for_builds(text, last_build, cur_build)
-        self._whats_new = app_update.changelog_for_qml(blocks)
+        self._whats_new = app_update.whats_new_qml(blocks)
 
     @Slot()
     def ackWhatsNew(self):

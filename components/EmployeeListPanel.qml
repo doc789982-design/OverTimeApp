@@ -60,6 +60,8 @@ Rectangle {
                 Behavior on color { ColorAnimation { duration: AppTheme.durNormal; easing.type: AppTheme.easeColor } }
                 Behavior on border.color { ColorAnimation { duration: AppTheme.durNormal; easing.type: AppTheme.easeColor } }
                 Behavior on border.width { NumberAnimation { duration: AppTheme.durFast; easing.type: AppTheme.easeStandard } }
+                // Курсор текста — над всем полем поиска, а не только над строкой
+                HoverHandler { cursorShape: Qt.IBeamCursor }
 
                 Rectangle {
                     anchors.fill: parent

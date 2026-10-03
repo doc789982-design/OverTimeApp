@@ -110,7 +110,8 @@ Popup {
                     MouseArea { 
                         id: closeHov; 
                         anchors.fill: parent; 
-                        hoverEnabled: true; 
+                        hoverEnabled: true;
+                        cursorShape: Qt.PointingHandCursor; 
                         onClicked: root.close() 
                     }
                 }

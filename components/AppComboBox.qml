@@ -157,6 +157,7 @@ ComboBox {
             delegate: ItemDelegate {
                 width: ListView.view.width
                 height: 36 
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
                 property bool isSelected: control.currentIndex === index
                 
                 contentItem: Text {

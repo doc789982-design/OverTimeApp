@@ -195,7 +195,7 @@ TextField {
                 width: 32; height: 32; radius: AppTheme.radiusSmall
                 color: prevHover.pressed ? AppTheme.statePress : (prevHover.containsMouse ? AppTheme.stateHover : "transparent")
                 Text { anchors.centerIn: parent; text: "‹"; color: AppTheme.textSecondary; font.pixelSize: AppTheme.sizeH2 }
-                MouseArea { id: prevHover; anchors.fill: parent; hoverEnabled: true; onClicked: root.changeMonth(-1) }
+                MouseArea { id: prevHover; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.changeMonth(-1) }
             }
             
             Text {
@@ -208,7 +208,7 @@ TextField {
                 width: 28; height: 28; radius: AppTheme.radiusSmall
                 color: nextHover.pressed ? AppTheme.statePress : (nextHover.containsMouse ? AppTheme.stateHover : "transparent")
                 Text { anchors.centerIn: parent; text: "›"; color: AppTheme.textSecondary; font.pixelSize: AppTheme.sizeH2 }
-                MouseArea { id: nextHover; anchors.fill: parent; hoverEnabled: true; onClicked: root.changeMonth(1) }
+                MouseArea { id: nextHover; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.changeMonth(1) }
             }
         }
 

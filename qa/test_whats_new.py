@@ -16,7 +16,10 @@
   C. Группировка: сверху новее, секции на месте (237 — «Починили»);
   D. Ключ старого формата «BETA.1+239» → 239 (конфиги прошлых сборок);
   E. Заметки релиза (publish_release.changelog_section) без пометок;
-  F. Формат для QML: заголовок блока «BETA.1 · сборка N».
+  F. Сводка для QML: одна порция на всё обновление — записи всех
+     сборок интервала в общих разделах, без заголовков сборок;
+     окно без «После обновления…» и с общим заголовком «Что нового
+     в версии …».
 
 Запуск:
     python3 qa/test_whats_new.py             # из корня репозитория
@@ -101,12 +104,24 @@ def main() -> int:
     assert app_update.strip_build_tags("текст <!--b:239--> конец") == "текст  конец"
     print("E: заметки релиза чистые, strip_build_tags работает ✓")
 
-    # ── F. Формат для QML ──
-    qml = app_update.changelog_for_qml(one)
-    assert qml and qml[0]["version"] == "Сборка 239", qml[0]["version"]
-    assert qml[0]["hasAdded"] and not qml[0]["hasFixed"]
-    assert "увольнения" in qml[0]["addedText"]
-    print("F: заголовок блока «Сборка 239» (журнал плоский), текст собран ✓")
+    # ── F. Сводка для QML: одна порция на всё обновление ──
+    jump = app_update.changelog_for_builds(text, 224, 240)
+    summary = app_update.whats_new_qml(jump)
+    assert len(summary) == 1, "сводка должна быть одна, а не по сборкам"
+    s = summary[0]
+    # записи разных сборок интервала — в общих разделах
+    assert "За оба года" in s["addedText"] and "Выборочная печать" in s["addedText"]
+    assert "numpy" in s["addedText"], s["addedText"][:200]
+    assert not s["version"], "заголовков сборок больше нет"
+    single = app_update.whats_new_qml(one)
+    assert "увольнения" in single[0]["addedText"]
+    # окно: общий заголовок с версией, без «После обновления…»
+    qml_src = open(os.path.join(ROOT, "components", "WhatsNewDialog.qml"),
+                   encoding="utf-8").read()
+    assert "После обновления" not in qml_src, "строка «После обновления…» вернулась"
+    assert "Что нового в версии" in qml_src and "appVersionFull" in qml_src
+    assert 'text: "Версия "' not in qml_src, "заголовки блоков версий вернулись"
+    print("F: сводка единая (224→240 в четырёх разделах), окно чистое ✓")
 
     print("═══ «ЧТО НОВОГО» ПОКАЗЫВАЕТ ТОЛЬКО СВЕЖИЕ СБОРКИ ═══")
     return 0

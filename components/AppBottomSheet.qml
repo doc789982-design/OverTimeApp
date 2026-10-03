@@ -56,7 +56,7 @@ Popup {
                 color: closeHov.pressed ? AppTheme.statePress : (closeHov.containsMouse ? AppTheme.stateHover : "transparent")
                 Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
                 IconImage { anchors.centerIn: parent; source: "../icons/close.svg"; width: AppTheme.iconSmall; height: AppTheme.iconSmall; color: AppTheme.textSecondary }
-                MouseArea { id: closeHov; anchors.fill: parent; hoverEnabled: true; onClicked: root.close() }
+                MouseArea { id: closeHov; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.close() }
             }
         }
 

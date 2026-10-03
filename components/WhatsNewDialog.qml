@@ -5,7 +5,7 @@ import QtQuick.Controls.impl
 
 AppDialog {
     id: root
-    title: "Что нового"
+    title: "Что нового в версии " + AppTheme.appVersionFull
     acceptText: "Понятно"
     rejectText: "Закрыть"
     acceptVariant: "primary"
@@ -20,30 +20,12 @@ AppDialog {
             root.showCentered()
     }
 
-    Text {
-        width: parent.width
-        text: "После обновления. Базы и настройки на месте."
-        color: AppTheme.textSecondary
-        font.family: AppTheme.fontFamily
-        font.pixelSize: AppTheme.sizeBody
-        wrapMode: Text.WordWrap
-    }
-
     Repeater {
         model: backend.whatsNew
 
         Column {
             width: root.width - AppTheme.spaceL * 2
             spacing: AppTheme.spaceS
-
-            Text {
-                width: parent.width
-                text: "Версия " + modelData.version
-                color: AppTheme.textPrimary
-                font.family: AppTheme.fontFamily
-                font.pixelSize: AppTheme.sizeH5
-                font.weight: AppTheme.weightBold
-            }
 
             Column {
                 width: parent.width
@@ -139,13 +121,6 @@ AppDialog {
                     wrapMode: Text.WordWrap
                     lineHeight: 1.25
                 }
-            }
-
-            Rectangle {
-                visible: index < backend.whatsNew.length - 1
-                width: parent.width
-                height: 1
-                color: AppTheme.borderDivider
             }
         }
     }

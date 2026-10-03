@@ -319,6 +319,32 @@ Item {
                                 sourceComponent: Component { PreHolidaySparkle {} }
                             }
 
+                            MouseArea { 
+                                id: dayMouseArea
+                                cursorShape: Qt.PointingHandCursor
+                                anchors.fill: parent
+                                enabled: isValid && dayInfo.is_current_month && !isLocked
+                                hoverEnabled: true
+                                acceptedButtons: Qt.LeftButton | Qt.RightButton
+                                
+                                onContainsMouseChanged: {
+                                    if (containsMouse) dayKeyCatcher.forceActiveFocus()
+                                }
+                                
+                                // ЛКМ и ПКМ — открываем меню дня (как контекстное меню).
+                                onClicked: (mouse) => { 
+                                    if (!isValid) return
+                                    dayMenu.openFromCell(
+                                        dayCell,
+                                        dayInfo.date_str,
+                                        dayInfo.is_weekend,
+                                        dayInfo.is_holiday,
+                                        dayInfo.duties.length > 0,
+                                        dayInfo.has_comp
+                                    )
+                                }
+                            }
+
                             Column {
                                 id: rightPanel
                                 anchors.top: parent.top
@@ -354,6 +380,18 @@ Item {
                                         font.pixelSize: AppTheme.sizeMicro
                                         font.weight: AppTheme.weightBold
                                         color: AppTheme.accentTeal
+                                    }
+                                    // Нажатие на метку — окно правок компенсации этого дня
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: {
+                                            if (!isValid || isLocked || !dayInfo.is_current_month) return
+                                            backend.loadDayDetails(dayInfo.date_str)
+                                            if (backend.dayComps.length > 0)
+                                                dayCompDialog.openForCompEdit(backend.dayComps[0], dayInfo.date_str, parent, parent.width / 2, parent.height)
+                                        }
                                     }
                                 }
                                 
@@ -440,6 +478,27 @@ Item {
                                                        ? AppTheme.accentBrand
                                                        : AppTheme.textPrimary
                                             }
+
+                                            // Нажатие на карточку — окно правок именно
+                                            // этого дежурства (полные данные — из базы)
+                                            MouseArea {
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: {
+                                                    if (!isValid || isLocked || !dayInfo.is_current_month) return
+                                                    backend.loadDayDetails(dayInfo.date_str)
+                                                    let full = null
+                                                    for (let i = 0; i < backend.dayDuties.length; ++i) {
+                                                        if (backend.dayDuties[i].id === modelData.id) {
+                                                            full = backend.dayDuties[i]
+                                                            break
+                                                        }
+                                                    }
+                                                    if (full !== null)
+                                                        dayDutyDialog.openForDutyEdit(full, dayInfo.date_str, parent, parent.width / 2, parent.height)
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -515,31 +574,6 @@ Item {
                                 }
                             }
 
-                            MouseArea { 
-                                id: dayMouseArea
-                                cursorShape: Qt.PointingHandCursor
-                                anchors.fill: parent
-                                enabled: isValid && dayInfo.is_current_month && !isLocked
-                                hoverEnabled: true
-                                acceptedButtons: Qt.LeftButton | Qt.RightButton
-                                
-                                onContainsMouseChanged: {
-                                    if (containsMouse) dayKeyCatcher.forceActiveFocus()
-                                }
-                                
-                                // ЛКМ и ПКМ — открываем меню дня (как контекстное меню).
-                                onClicked: (mouse) => { 
-                                    if (!isValid) return
-                                    dayMenu.openFromCell(
-                                        dayCell,
-                                        dayInfo.date_str,
-                                        dayInfo.is_weekend,
-                                        dayInfo.is_holiday,
-                                        dayInfo.duties.length > 0,
-                                        dayInfo.has_comp
-                                    )
-                                }
-                            }
                         }
                     }
                 }

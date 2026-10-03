@@ -1597,6 +1597,25 @@ def _bullets(items: list[str]) -> str:
     return "<br>".join("• " + _md_inline(x) for x in items if x)
 
 
+def merge_changelog_blocks(blocks: list[dict]) -> dict:
+    """Сводный блок из записей нескольких сборок.
+
+    Окно «Что нового» показывает одно объединённое описание обновления:
+    все записи интервала в четырёх разделах, без разбивки по сборкам.
+    """
+    merged = {"version": "", "build_num": 0, "date": "",
+              "added": [], "changed": [], "fixed": [], "removed": [], "build": []}
+    for b in blocks or []:
+        for key in ("added", "changed", "fixed", "removed"):
+            merged[key].extend(b.get(key) or [])
+    return merged
+
+
+def whats_new_qml(blocks: list[dict]) -> list[dict]:
+    """Окно «Что нового»: одна порция на всё обновление разом."""
+    return changelog_for_qml([merge_changelog_blocks(blocks)])
+
+
 def changelog_for_qml(blocks: list[dict]) -> list[dict]:
     """Плоские словари для QML Repeater."""
     out = []
