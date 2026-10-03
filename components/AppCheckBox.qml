@@ -12,6 +12,8 @@ CheckBox {
     
     implicitHeight: 36 
     focusPolicy: Qt.StrongFocus
+    // Курсор «рука» над кнопкой — как в обычных программах
+    HoverHandler { cursorShape: control.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor }
 
     // Физика (Прозрачность и Вжатие)
     opacity: control.enabled ? 1.0 : AppTheme.alphaDisabled

@@ -517,6 +517,7 @@ Item {
 
                             MouseArea { 
                                 id: dayMouseArea
+                                cursorShape: Qt.PointingHandCursor
                                 anchors.fill: parent
                                 enabled: isValid && dayInfo.is_current_month && !isLocked
                                 hoverEnabled: true
@@ -768,6 +769,7 @@ Item {
                                     
                                     MouseArea { 
                                         id: yearMouseArea
+                                        cursorShape: Qt.PointingHandCursor
                                         anchors.fill: parent
                                         hoverEnabled: true
                                         

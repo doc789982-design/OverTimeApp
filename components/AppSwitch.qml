@@ -13,6 +13,8 @@ import QtQuick.Controls
 // ============================================================
 Switch {
     id: control
+    // Курсор «рука» над кнопкой — как в обычных программах
+    HoverHandler { cursorShape: control.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor }
 
     implicitHeight: 36
     padding: 0

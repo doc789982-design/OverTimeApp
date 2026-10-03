@@ -18,6 +18,8 @@ Button {
 
     // Отключаем системный фокус Qt, рисуем свой
     focusPolicy: Qt.StrongFocus
+    // Курсор «рука» над кнопкой — как в обычных программах
+    HoverHandler { cursorShape: control.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor }
 
     // ==========================================
     // 1. АНИМАЦИЯ ВЖАТИЯ (Scale Physics)

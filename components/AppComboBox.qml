@@ -6,6 +6,8 @@ import QtQuick.Controls.impl
 
 ComboBox {
     id: control
+    // Курсор «рука» над кнопкой — как в обычных программах
+    HoverHandler { cursorShape: control.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor }
     Layout.fillWidth: true
     implicitHeight: 44 
 

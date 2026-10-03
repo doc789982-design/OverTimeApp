@@ -236,6 +236,7 @@ ApplicationWindow {
                         }
                         MouseArea {
                             id: minHov
+                            cursorShape: Qt.PointingHandCursor
                             anchors.fill: parent
                             hoverEnabled: true
                             onClicked: mainWindow.showMinimized()
@@ -255,6 +256,7 @@ ApplicationWindow {
                         }
                         MouseArea {
                             id: maxHov
+                            cursorShape: Qt.PointingHandCursor
                             anchors.fill: parent
                             hoverEnabled: true
                             onClicked: {
@@ -280,6 +282,7 @@ ApplicationWindow {
                         }
                         MouseArea {
                             id: closeHov
+                            cursorShape: Qt.PointingHandCursor
                             anchors.fill: parent
                             hoverEnabled: true
                             onClicked: minimizeToTray()
@@ -515,6 +518,7 @@ ApplicationWindow {
                             }
                             MouseArea {
                                 id: folderHov
+                                cursorShape: Qt.PointingHandCursor
                                 anchors.fill: parent
                                 hoverEnabled: true
                                 onClicked: backend.openDbFolder(modelData.path)
