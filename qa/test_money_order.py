@@ -11,9 +11,11 @@
      получателя с общим номером и датой; ошибка (не хватает остатка)
      возвращает виновника поимённо и НЕ трогает базу;
   C. Журнал приказов: группировка по номеру+дате (×N), суммы,
-     удаление приказа целиком;
-  D. Структура QML: окно-ведомость с тряской и подсветкой строк,
-     журнал, кнопки, старое одиночное окно удалено.
+     удаление приказа целиком; страховки бэкенда (пустой номер,
+     битая дата, пустой список получателей);
+  D. Структура QML: окно-ведомость (галочка «все», одиночный
+     режим из карточки, обязательные №/дата, карточки-строки,
+     «сверх.» всегда в «Доступно», журнал), старое окно удалено.
 
 Запуск:
     python3 qa/test_money_order.py             # из корня репозитория
@@ -86,10 +88,23 @@ def part_bc_order_and_journal() -> None:
     db = fresh_db()
     b = make_backend(db)
 
-    # ── успешный приказ «по табелю»: каждому сколько есть ──
+    # ── страховки: пустой номер, битая дата, пустой список ──
     emps = b.moneyOrderEmployees()
     rows = [{"id": e["id"], "hours": e["hours"], "overtime": 0,
              "days": e["days"]} for e in emps]
+    bad = b.saveMoneyOrder(json.dumps(rows), "  ", "2026-10-12", "")
+    assert bad["ok"] is False and "номер" in bad["errors"][0]["message"], bad
+    bad = b.saveMoneyOrder(json.dumps(rows), "245", "12.10.2026", "")
+    assert bad["ok"] is False and "дату" in bad["errors"][0]["message"], bad
+    bad = b.saveMoneyOrder("[]", "245", "2026-10-12", "")
+    assert bad["ok"] is False and "суммы" in bad["errors"][0]["message"], bad
+    bad = b.saveMoneyOrder(
+        json.dumps([{"id": emps[0]["id"], "hours": 0, "overtime": 0, "days": 0}]),
+        "245", "2026-10-12", "")
+    assert bad["ok"] is False, "нулевые суммы не должны проводиться"
+    print("B0: пустой №/дата/список отклоняются бэкендом ✓")
+
+    # ── успешный приказ «по табелю»: каждому сколько есть ──
     bal = {e["id"]: e["hours"] for e in emps}
     res = b.saveMoneyOrder(json.dumps(rows), "245", "2026-10-12", "За октябрь")
     assert res["ok"] is True, res
@@ -162,6 +177,18 @@ def part_d_structure() -> None:
     assert "RowLayout" not in dlg and "ColumnLayout" not in dlg, \
         "Layout-и растягивают поля — подписи разъезжаются"
     assert "Repeater" in dlg and "colNum" in dlg
+    # сборка 259: галочка «все», одиночный режим, обязательные №/дата
+    assert "openForEmployee" in dlg and "singleMode" in dlg
+    assert "toggleRow" in dlg, "переключение строки живёт в корне (не в делегате)"
+    assert "Выбрать всех или снять выделение" in dlg
+    assert "Укажите номер и дату приказа" in dlg and "hasError" in dlg
+    assert "Журнал приказов" in dlg and "requestJournal" in dlg
+    # «Доступно»: сверхурочные видны ВСЕГДА (без условия >0)
+    assert "сверх." in dlg and "balOvertime > 0" not in dlg
+    # строки — карточки как числа месяца, без наведения
+    assert "AppTheme.bgCell" in dlg
+    # required index у делегата (иначе root.rows[index] падает)
+    assert "required property int index" in dlg
     insp = open(os.path.join(ROOT, "components", "MoneyInspector.qml"),
                 encoding="utf-8").read()
     assert "backend.moneyOrders" in insp
@@ -172,9 +199,11 @@ def part_d_structure() -> None:
     assert "moneyOrderDialog.openNew()" in left, "нет кнопки приказа в панели"
     main = open(os.path.join(ROOT, "main.qml"), encoding="utf-8").read()
     assert "MoneyOrderDialog" in main and "repeatMoneyOrder" in main
+    assert "onRequestJournal" in main, "журнал не подключён к ведомости"
     summ = open(os.path.join(ROOT, "components", "AppSummaryPanel.qml"),
                 encoding="utf-8").read()
-    assert "loadMoneyOrders" in summ, "кнопка «Деньгами» не открывает журнал"
+    assert "openForEmployee" in summ, \
+        "кнопка «Деньгами» в карточке не открывает приказ этому сотруднику"
     # старое одиночное окно удалено
     assert not os.path.exists(os.path.join(ROOT, "components", "MoneyDialog.qml"))
     backend_src = open(os.path.join(ROOT, "Main.py"), encoding="utf-8").read()

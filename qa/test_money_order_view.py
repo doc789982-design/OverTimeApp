@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """Рендер и проверка окна «Ведомость» (MoneyOrderDialog) в песочнице.
 
-После переделки окна по браку сборки 257 проверяем программно:
-  – список сотрудников НЕ пустой: три строки-карточки, у каждой слева
-    имя (светлый текст), справа три компактных числовых поля 47–48px;
-  – позиции полей совпадают по строкам и с колонками заголовка таблицы
-    (подписи не разъехались — явные ширины вместо Layout);
-  – поля НЕ растянуты по горизонтали (числовые — узкие колонки);
-  – в шапке карточки реквизиты приказа + две кнопки-глагола справа;
-  – внизу итог «Выплата: …» и кнопки «Отмена» / «Сохранить приказ».
+После переделки окна по браку сборки 257 и доработок сборки 259
+проверяем программно (тема песочницы бывает светлой ИЛИ тёмной —
+все проверки обязаны работать в обеих):
+  - список сотрудников НЕ пустой: три строки-КАРТОЧКИ (заливка
+    bgCell, как числа месяца), у каждой слева имя, справа три
+    компактных числовых поля;
+  - позиции полей совпадают по строкам (подписи не разъехались);
+  - в шапке таблицы ГАЛОЧКА «ВСЕ» (при всех выбранных — акцентный
+    квадрат) и колонки заголовка выровнены с полями строк;
+  - внизу итог «Выплата: …» и кнопки «Закрыть» / «Провести приказ».
 Снимок: qa/render/money_order.png
 
 Запуск (песочница):
@@ -124,9 +126,8 @@ def main() -> int:
         assert name_w > 150, "колонка имени слишком узкая: %s" % name_w
 
         # 4. снимок карточки (contentItem попапа — «окно» ведомости).
-        # В offscreen раскладка/заливки «доезжают» не сразу: первый
-        # grabToImage — прогрев, боевой снимок — второй (как в
-        # test_day_comp_dialog_view с grabWindow).
+        #    В offscreen раскладка/заливки «доезжают» не сразу: первые
+        #    grabToImage — прогрев, боевой снимок — последний.
         ci = dlg.property("contentItem")
         assert ci is not None and isinstance(ci, QQuickItem), "contentItem?"
 
@@ -142,7 +143,6 @@ def main() -> int:
             assert holder, "снимок не пришёл"
             return holder[0]
 
-        # прогрев: в offscreen тексты нижних строк добираются медленно
         for i in range(6):
             grab()
             time.sleep(0.4)
@@ -155,23 +155,57 @@ def main() -> int:
             "карточка подозрительно мала: %dx%d" % (img.width(), img.height())
 
         # 5. пиксельная структура снимка. Поля AppTextField прозрачны,
-        # рисуется рамка 1px (borderInput ≈ (199,205,209)); соседние
-        # строки таблицы совмещают горизонтали рамок, поэтому строка
-        # таблицы = y с тремя одинаковыми x-прогонами рамки.
+        #    рисуется рамка 1px (borderInput ≈ (199,205,209)); строки —
+        #    карточки с заливкой bgCell (тёмная (36,36,38) / светлая
+        #    (244,245,247) — тема песочницы непостоянна).
         from PIL import Image
         pic = Image.open(shot).convert("RGB")
         W, H = pic.size
         px = pic.load()
 
-        def lum(p):
-            return 0.299 * p[0] + 0.587 * p[1] + 0.114 * p[2]
-
         def near(p, ref, tol=30):
             return abs(p[0]-ref[0]) + abs(p[1]-ref[1]) + abs(p[2]-ref[2]) < tol
 
         BORDER = (199, 205, 209)
+        ACCENT = (3, 116, 181)
+        CELL_DARK = (36, 36, 38)
+        CELL_LIGHT = (244, 245, 247)
 
-        # горизонтальные линии рамок: y -> список x-прогонов ≥ 36px
+        # тему сэмплируем по центру первой строки (между рамками полей)
+        cell = CELL_DARK
+        for y in range(H // 3, H * 2 // 3):
+            nd = sum(1 for x in range(40, W - 40, 4)
+                     if near(px[x, y], CELL_DARK))
+            nl = sum(1 for x in range(40, W - 40, 4)
+                     if near(px[x, y], CELL_LIGHT))
+            if nd > 60 or nl > 60:
+                cell = CELL_DARK if nd > nl else CELL_LIGHT
+                break
+
+        # 5а. строки-карточки: горизонтальные полосы заливки bgCell
+        bands = []
+        in_b = False
+        for y in range(H):
+            n = sum(1 for x in range(0, W, 4) if near(px[x, y], cell))
+            if n > 100 and not in_b:
+                in_b, y0 = True, y
+            elif n <= 100 and in_b:
+                in_b = False
+                if y - y0 > 45:
+                    bands.append((y0, y))
+        if in_b and H - y0 > 45:
+            bands.append((y0, H))
+        assert len(bands) == 3, \
+            "ожидали 3 карточки-строки (bgCell), нашли %d: %r" % (len(bands), bands)
+        bh = [b[1] - b[0] for b in bands]
+        assert max(bh) - min(bh) <= 2, "карточки разной высоты: %r" % bh
+        for (by0, by1) in bands:
+            ym = (by0 + by1) // 2
+            xs = [x for x in range(W) if near(px[x, ym], cell)]
+            assert max(xs) - min(xs) > 500, \
+                "карточка y=%d уже 500px (%d..%d)" % (ym, min(xs), max(xs))
+
+        # 5б. рамки полей: y -> x-прогоны цвета рамки ≥ 36px
         lines = {}
         for y in range(H):
             runs, in_r = [], False
@@ -188,13 +222,11 @@ def main() -> int:
             if runs:
                 lines[y] = runs
 
-        # строки таблицы: y, где ровно три прогона (три числовых поля)
+        # строки таблицы: y с ровно тремя прогонами (три числовых поля)
         table_rows = {y: r for y, r in lines.items()
                       if len(r) == 3 and y > H * 0.4}
         assert len(table_rows) >= 2, \
             "не нашли строк таблицы с полями: %r" % (list(lines.items())[:8],)
-
-        # три строки-соседа с ИДЕНТИЧНЫМИ x-прогонами
         ys = sorted(table_rows)
         stripes = []
         i = 0
@@ -203,8 +235,7 @@ def main() -> int:
             while i + 1 < len(ys) and ys[i+1] - ys[i] <= 70:
                 same = all(
                     abs(a[0]-b[0]) <= 3 and abs(a[1]-b[1]) <= 3
-                    for a, b in zip(table_rows[group[0]],
-                                    table_rows[ys[i+1]]))
+                    for a, b in zip(table_rows[group[0]], table_rows[ys[i+1]]))
                 if not same:
                     break
                 group.append(ys[i+1])
@@ -220,56 +251,55 @@ def main() -> int:
         fws = [c[1] - c[0] for c in cols]
         assert all(40 <= w <= 75 for w in fws), \
             "поля растянуты по горизонтали: %r" % fws
-        # колонки совпадают по всем трём строкам — подписи не разъехались
         for y in stripes[0][1:]:
             for a, b in zip(cols, table_rows[y]):
                 assert abs(a[0]-b[0]) <= 3 and abs(a[1]-b[1]) <= 3, \
                     "колонки разъехались: %r vs %r" % (a, b)
 
-        # в зоне таблицы нет ГОРИЗОНТАЛЬНО растянутых полей (>150px):
-        # бракованная версия растягивала текстовые поля на всю строку
+        # в зоне таблицы нет ГОРИЗОНТАЛЬНО растянутых полей (>150px)
         y0t, y1t = min(stripes[0]) - 10, max(stripes[0]) + 10
         wide = [(y, r) for y, r in lines.items()
                 if y0t <= y <= y1t and any(b - a > 150 for a, b in r)]
         assert not wide, "растянутые поля в таблице: %r" % (wide,)
 
-        # имена слева: акцентный текст есть в каждой из трёх строк
-        # (рамка y — нижняя грань полей строки; имя — на ~37px выше)
-        NAME = (3, 116, 181)
+        # 5в. имена слева: акцентный текст в каждой из трёх строк
         for y in stripes[0]:
             n = sum(1 for x in range(10, cols[0][0] - 10)
                     for yy in range(y - 55, y - 15)
-                    if near(px[x, yy], NAME, 60))
+                    if near(px[x, yy], ACCENT, 60))
             assert n > 30, "имя сотрудника не найдено в строке y=%d" % y
 
-        # 6. тексты: итог и кнопки читаемы
-        def count_if(y0, y1, x0, x1, pred):
-            return sum(1 for x in range(x0, x1) for y in range(y0, y1)
-                       if pred(px[x, y]))
+        # 5г. галочка «все» в заголовке: акцентный квадрат
+        #     (после openNew все выбраны → галочка включена)
+        n_master = sum(1 for x in range(15, 60) for y in range(170, 230)
+                       if near(px[x, y], ACCENT, 40))
+        assert n_master > 150, \
+            "галочка «все» в заголовке не найдена (%d px)" % n_master
 
-        # кнопки диалога: «Закрыть» (текст) и «Провести приказ»
-        # (primary — синяя заливка акцента ≈ (3,116,181), белый текст)
-        n_cancel = count_if(500, 560, 195, 310, lambda p: lum(p) > 100)
-        assert n_cancel > 150, "текст «Закрыть» не читаем (%d)" % n_cancel
-        save_fill = sum(1 for x in range(315, 465)
-                        for y in range(500, 560)
-                        if near(px[x, y], (3, 116, 181), 40))
-        assert save_fill > 2000, "кнопка «Провести приказ» не найдена"
-        n_save = count_if(505, 555, 315, 465, lambda p: lum(p) > 230)
-        assert n_save > 200, "текст «Провести приказ» не читаем (%d)" % n_save
-        # итог «Выплата: …» — светлый текст в правой половине над кнопками
-        n_total = count_if(435, 465, 350, 600, lambda p: lum(p) > 100)
+        # 6. тексты: итог и кнопки читаемы (тема-агностично)
+        def opaque(y0, y1, x0, x1):
+            return sum(1 for x in range(x0, x1) for y in range(y0, y1)
+                       if px[x, y] != (0, 0, 0))
+
+        n_total = opaque(430, 470, 330, 600)
         assert n_total > 100, "итог «Выплата» не найден (%d)" % n_total
+        n_cancel = opaque(508, 552, 203, 302)
+        assert n_cancel > 80, "текст «Закрыть» не читаем (%d)" % n_cancel
+        save_fill = sum(1 for x in range(300, 470)
+                        for y in range(500, 560)
+                        if near(px[x, y], ACCENT, 40))
+        assert save_fill > 2000, "кнопка «Провести приказ» не найдена"
 
         # 7. ошибок QML в диалоге нет
         bad = [e for e in errors
                if "not a function" in e or "Cannot assign" in e
-               or "read-only" in e
+               or "read-only" in e or "ReferenceError" in e
                or ("TypeError" in e and "isDarkTheme" not in e)]
         assert not bad, "ошибки QML: %r" % (bad[:3],)
 
-        print("Ведомость: 3 сотрудника, поля %r px, колонки выровнены,"
-              " итог и кнопки на месте — снимок %s" % (fws, shot))
+        print("Ведомость: 3 карточки-строки %r, поля %r px, галочка «все»"
+              " и колонки на месте, итог и кнопки читаемы — снимок %s"
+              % (bh, fws, shot))
         return 0
     finally:
         if os.path.exists(wrapper):

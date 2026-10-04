@@ -879,7 +879,11 @@ ApplicationWindow {
     AppUI.EmpDialog         { id: empDialog }
     AppUI.EndStatusDialog   { id: endStatusDialog }
     AppUI.TransferDialog    { id: transferDialog }
-    AppUI.MoneyOrderDialog  { id: moneyOrderDialog }
+    AppUI.MoneyOrderDialog  {
+        id: moneyOrderDialog
+        // «Журнал приказов» из ведомости — история приказов
+        onRequestJournal: { backend.loadMoneyOrders(); moneyInspector.show() }
+    }
 
     AppUI.AppConfirmDialog  {
         id: confirmDialog

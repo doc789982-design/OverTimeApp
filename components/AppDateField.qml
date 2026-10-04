@@ -11,7 +11,8 @@ TextField {
     property string selectedDate: "" 
     property color cutoutColor: AppTheme.bgModal
     
-    property bool isFormField: true   // автофокус диалога ищет такие
+    property bool isFormField: true   // автофокус диалога ищет такие
+    property bool hasError: false     // true = рамка ошибки (accentDanger)
         property bool isFloated: root.text.length > 0 || root.activeFocus || calendarDialog.opened
 
     property int currentMonth: new Date().getMonth()
@@ -100,10 +101,11 @@ TextField {
         radius: AppTheme.radiusMedium
         
         border.color: !root.enabled ? AppTheme.borderDisabled :
+                      (root.hasError ? AppTheme.accentDanger :
                       (root.activeFocus || calendarDialog.opened ? AppTheme.borderFocus : 
-                      (root.hovered ? AppTheme.textSecondary : AppTheme.borderInput))
+                      (root.hovered ? AppTheme.textSecondary : AppTheme.borderInput)))
         
-        border.width: (root.activeFocus || calendarDialog.opened) ? AppTheme.focusWidth : 1
+        border.width: (root.activeFocus || calendarDialog.opened || root.hasError) ? AppTheme.focusWidth : 1
         Behavior on border.color { ColorAnimation { duration: AppTheme.durMicro } }
     }
 

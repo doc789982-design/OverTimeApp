@@ -2413,11 +2413,20 @@ class Backend(QObject):
         """
         if not self.active_db:
             return {"ok": False, "errors": []}
+        # номер и дата приказа обязательны (окно проверяет само,
+        # но база не должна принять пустой приказ даже «в обход»)
+        if not (order_no or "").strip():
+            return {"ok": False, "errors": [{"id": 0, "name": "",
+                                             "message": "укажите номер приказа"}]}
+        try:
+            order_date = d_parse(order_date_str or "")
+        except Exception:
+            return {"ok": False, "errors": [{"id": 0, "name": "",
+                                             "message": "укажите дату приказа"}]}
         try:
             rows = json.loads(rows_json or "[]")
         except Exception:
             return {"ok": False, "errors": []}
-        order_date = d_parse(order_date_str)
 
         # 1. Проверяем каждого: остатков должно хватить
         errors = []
@@ -2450,6 +2459,9 @@ class Backend(QObject):
 
         if errors:
             return {"ok": False, "errors": errors}
+        if not checked:
+            return {"ok": False, "errors": [{"id": 0, "name": "",
+                                             "message": "отметьте сотрудников и укажите суммы"}]}
 
         # 2. Сохраняем одной транзакцией
         try:

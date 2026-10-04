@@ -6,19 +6,31 @@ import "../icons"
 // ============================================================
 // ВЕДОМОСТЬ: один денежный приказ — всему подразделению сразу.
 //
-// Шапка приказа (номер, дата, комментарий) вводится один раз.
-// Ниже — список сотрудников: у каждого галочка и СВОИ суммы
-// (часы, сверхурочные, дни), которые можно править построчно.
-// Заполнение: «По табелю» (каждому его переработку) или
-// «Одинаково всем…». При ошибке окно трясётся (штатная тряска
-// AppDialog), а строка сотрудника, у которого не хватает
-// остатка, подсвечивается красным с пояснением.
+// Из левой панели («₽ Приказ всем») — ведомость на ВСЕХ: шапка
+// приказа вводится один раз, у каждого сотрудника галочка и
+// СВОИ суммы (часы, сверхурочные, дни). Заполнение: «По табелю»
+// (каждому его переработку) или «Одинаково всем…»; галочка в
+// заголовке таблицы выбирает и снимает всех сразу.
+// Из карточки сотрудника («Деньгами») — тот же приказ, но
+// ТОЛЬКО для него: без галочек и без «одинаково всем».
+// Номер и дата приказа обязательны. При ошибке окно трясётся
+// (штатная тряска AppDialog), а строка сотрудника, у которого
+// не хватает остатка, подсвечивается красным с пояснением.
 // ============================================================
 AppDialog {
     id: root
     width: 640
 
-    title: "Приказ о денежной компенсации"
+    // одиночный режим: приказ только для одного сотрудника
+    // (открывается кнопкой «Деньгами» из его карточки)
+    property bool singleMode: false
+
+    // «Журнал приказов» — история приказов подразделения
+    signal requestJournal()
+
+    title: root.singleMode && root.rows.length === 1
+           ? "Денежная компенсация — " + root.shortName(root.rows[0].name)
+           : "Приказ о денежной компенсации"
     acceptText: "Провести приказ"
     acceptVariant: "primary"
     rejectText: "Закрыть"
@@ -52,16 +64,61 @@ AppDialog {
         return res
     }
 
-    function openNew() {
-        root.rows = _fromBackend()
+    function _resetHead() {
         root.rowErrors = ({})
         root.topError = ""
         root.showEqual = false
         orderNoInput.text = ""
+        orderNoInput.hasError = false
         orderCommentInput.text = ""
         orderDateInput.selectedDate = new Date().toISOString().split("T")[0]
+        orderDateInput.hasError = false
+    }
+
+    function openNew() {
+        root.singleMode = false
+        root.rows = _fromBackend()
+        _resetHead()
         recalcTotals()
         root.showCentered()
+    }
+
+    // Приказ только для одного сотрудника — из его карточки
+    function openForEmployee(empId) {
+        let all = _fromBackend()
+        let only = []
+        for (let i = 0; i < all.length; i++)
+            if (all[i].id === empId) { only.push(all[i]); break }
+        root.singleMode = true
+        root.rows = only
+        _resetHead()
+        recalcTotals()
+        root.showCentered()
+    }
+
+    // «Иванов Иван Иванович» → «Иванов И.» — для заголовка окна
+    function shortName(fio) {
+        let p = String(fio || "").trim().split(/\s+/)
+        if (p.length > 1 && p[1].length > 0)
+            return p[0] + " " + p[1][0] + "."
+        return p[0] || ""
+    }
+
+    // Все ли строки отмечены (галочка «все» в заголовке таблицы)
+    function _allChecked() {
+        if (root.rows.length === 0) return false
+        for (let i = 0; i < root.rows.length; i++)
+            if (!root.rows[i].checked) return false
+        return true
+    }
+
+    // Переключение галочки строки: вызывается из делегата, но живёт
+    // в контексте окна — пересоздание делегата ей не страшно
+    function toggleRow(i, on) {
+        if (i < 0 || i >= root.rows.length) return
+        root.rows[i].checked = on
+        root.rows = root.rows.slice()
+        root.recalcTotals()
     }
 
     // «Повторить приказ»: получатели и суммы — как в прошлый раз
@@ -69,6 +126,7 @@ AppDialog {
     function layoutInfo() { return empTable.layoutInfo() }
 
     function prefillFromOrder(order) {
+        root.singleMode = false
         let current = _fromBackend()
         for (let i = 0; i < current.length; i++) {
             let row = current[i]
@@ -115,12 +173,36 @@ AppDialog {
     }
 
     onAccepted: {
+        // номер и дата приказа обязательны
+        orderNoInput.hasError = orderNoInput.text.trim() === ""
+        orderDateInput.hasError = !(orderDateInput.selectedDate !== ""
+                                     && /^(\d{2})\.(\d{2})\.(\d{4})$/.test(orderDateInput.text.trim()))
+        if (orderNoInput.hasError || orderDateInput.hasError) {
+            root.rowErrors = ({})
+            root.topError = "Укажите номер и дату приказа"
+            root.shake()
+            return
+        }
+
         let payload = []
         for (let i = 0; i < rows.length; i++) {
             let r = rows[i]
             if (!r.checked) continue
+            if (r.hours <= 0 && r.overtime <= 0 && r.days <= 0) continue
             payload.push({ id: r.id, hours: r.hours, overtime: r.overtime, days: r.days })
         }
+        if (payload.length === 0) {
+            let anyChecked = false
+            for (let i = 0; i < rows.length; i++)
+                if (rows[i].checked) { anyChecked = true; break }
+            root.rowErrors = ({})
+            root.topError = anyChecked
+                    ? "Укажите, сколько выплатить: часы, сверхурочные или дни отдыха"
+                    : "Отметьте сотрудников галочками и укажите суммы"
+            root.shake()
+            return
+        }
+
         let result = backend.saveMoneyOrder(
             JSON.stringify(payload),
             orderNoInput.text.trim(),
@@ -158,11 +240,13 @@ AppDialog {
             label: "№ приказа"
             placeholderText: "245"
             maximumLength: 20
+            onTextEdited: hasError = false
         }
         AppDateField {
             id: orderDateInput
             width: 190
             label: "Дата приказа"
+            onSelectedDateChanged: hasError = false
         }
         AppTextField {
             id: orderCommentInput
@@ -172,12 +256,14 @@ AppDialog {
         }
     }
 
-    // ── Заполнение: две понятные кнопки ──
+    // ── Заполнение: понятные кнопки-глаголы ──
     Row {
+        id: fillRow
         width: parent.width
         spacing: AppTheme.spaceS
 
         AppButton {
+            id: btnBySheet
             text: "По табелю"
             iconSource: "../icons/edit.svg"
             variant: "secondary"
@@ -200,6 +286,8 @@ AppDialog {
             }
         }
         AppButton {
+            id: btnEqual
+            visible: !root.singleMode
             text: root.showEqual ? "Скрыть" : "Одинаково всем…"
             iconSource: "../icons/money.svg"
             variant: "secondary"
@@ -209,6 +297,27 @@ AppDialog {
                 anchors.horizontalCenter: parent.horizontalCenter
                 anchors.top: parent.bottom; anchors.topMargin: AppTheme.spaceXXS
                 text: "Одна и та же сумма каждому выбранному"
+                isVisible: parent.hovered
+            }
+        }
+        // распорка: «Журнал приказов» прижимается к правому краю
+        Item {
+            height: 1
+            width: parent.width - btnBySheet.width - btnJournal.width
+                     - parent.spacing * 2
+                     - (btnEqual.visible ? btnEqual.width + parent.spacing : 0)
+        }
+        AppButton {
+            id: btnJournal
+            text: "Журнал приказов"
+            iconSource: "../icons/clock.svg"
+            variant: "secondary"
+            height: 40
+            onClicked: { root.close(); root.requestJournal() }
+            AppToolTip {
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.top: parent.bottom; anchors.topMargin: AppTheme.spaceXXS
+                text: "Все прошлые приказы подразделения"
                 isVisible: parent.hovered
             }
         }
@@ -270,7 +379,27 @@ AppDialog {
         leftPadding: 8
         rightPadding: 8
 
-        Item { width: 28; height: 1 }
+        // галочка «выбрать всех / снять со всех»
+        Item {
+            width: 28; height: 16
+            visible: !root.singleMode && root.rows.length > 0
+            AppCheckBox {
+                anchors.centerIn: parent
+                checked: root._allChecked()
+                onToggled: {
+                    for (let i = 0; i < root.rows.length; i++)
+                        root.rows[i].checked = checked
+                    root.rows = root.rows.slice()
+                    root.recalcTotals()
+                }
+                AppToolTip {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    anchors.bottom: parent.top; anchors.bottomMargin: AppTheme.spaceXXS
+                    text: "Выбрать всех или снять выделение"
+                    isVisible: parent.hovered
+                }
+            }
+        }
         Text {
             width: root.nameWidth
             text: "СОТРУДНИК"
@@ -328,11 +457,12 @@ AppDialog {
                 id: rowRect
                 width: parent.width
                 required property var modelData
+                required property int index
                 readonly property var rowData: modelData
                 readonly property string errText: root.rowErrors[rowData.id] || ""
                 height: errText !== "" ? 86 : 66
-                radius: AppTheme.radiusSmall
-                color: errText !== "" ? AppTheme.bgDangerSoft : "transparent"
+                radius: AppTheme.radiusMedium
+                color: errText !== "" ? AppTheme.bgDangerSoft : AppTheme.bgCell
                 border.width: errText !== "" ? 1 : 0
                 border.color: AppTheme.accentDanger
                 clip: true
@@ -347,13 +477,11 @@ AppDialog {
 
                     AppCheckBox {
                         id: rowCheck
+                        visible: !root.singleMode
                         checked: rowRect.rowData.checked
                         anchors.verticalCenter: parent.verticalCenter
                         width: 28
-                        onToggled: {
-                            root.rows[index].checked = checked
-                            root.recalcTotals()
-                        }
+                        onToggled: root.toggleRow(index, checked)
                     }
 
                     Column {
@@ -443,7 +571,6 @@ AppDialog {
                         Text {
                             width: parent.width
                             horizontalAlignment: Text.AlignHCenter
-                            visible: rowRect.rowData.balOvertime > 0
                             text: "сверх. " + rowRect.rowData.balOvertime + " ч"
                             color: AppTheme.textTertiary
                             font.family: AppTheme.fontFamily

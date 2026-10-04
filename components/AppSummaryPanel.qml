@@ -329,13 +329,13 @@ Item {
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: { backend.loadMoneyOrders(); moneyInspector.show() }
+                        onClicked: moneyOrderDialog.openForEmployee(backend.selectedEmployeeId)
                     }
                     AppToolTip {
                         anchors.horizontalCenter: parent.horizontalCenter
                         anchors.bottom: parent.top; anchors.bottomMargin: AppTheme.spaceXXS
                         isVisible: moneyPillArea.containsMouse
-                        text: "Посмотреть денежные компенсации"
+                        text: "Денежная компенсация этому сотруднику"
                     }
                 }
 
