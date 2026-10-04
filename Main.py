@@ -2383,9 +2383,34 @@ class Backend(QObject):
             "days": max(0, summ["start_days"] + summ["acc_days"]),
         }
 
+    def _money_prev_balances(self, emp_id):
+        """Заначка прошлого года, доступная прямо сейчас: остаток
+        прошлого года минус всё, что уже списали из неё (в этом и
+        прошлых месяцах). Считается так же, как в панели балансов и
+        в проверке лимитов — единый источник истины."""
+        from logic import compute_month_summary as _cms
+        summ = _cms(self.active_db, emp_id, self.current_year, self.current_month)
+        return {
+            "hours": max(0, summ["prev_h_end"] // 60),
+            "overtime": max(0, summ["prev_o_end"] // 60),
+            "days": max(0, summ["prev_d_end"]),
+        }
+
+    def _money_balances_for(self, emp_id, source_mode):
+        """Остатки по режиму: 0 — текущий год, 1 — заначка прошлого
+        года, 2 — оба года вместе."""
+        cur = self._money_balances(emp_id)
+        if source_mode == 1:
+            return self._money_prev_balances(emp_id)
+        if source_mode == 2:
+            prev = self._money_prev_balances(emp_id)
+            return {k: cur[k] + prev[k] for k in cur}
+        return cur
+
     @Slot(result="QVariant")
     def moneyOrderEmployees(self):
-        """Список сотрудников подразделения с остатками для ведомости."""
+        """Список сотрудников подразделения с остатками для ведомости
+        (текущий год + заначка прошлого года)."""
         if not self.active_db:
             return []
         emps = self.active_db.list_employees_for_month(
@@ -2394,21 +2419,118 @@ class Backend(QObject):
         for e in emps:
             eid = int(e["id"])
             b = self._money_balances(eid)
+            pv = self._money_prev_balances(eid)
             fio = f"{e['last_name']} {e['first_name']} {e['middle_name'] or ''}".strip()
             sub = " — ".join([x for x in [(e["rank"] or "").strip(),
                                           (e["position"] or "").strip()] if x])
             res.append({
                 "id": eid, "name": fio, "subtitle": sub,
                 "hours": b["hours"], "overtime": b["overtime"], "days": b["days"],
+                "prevHours": pv["hours"], "prevOvertime": pv["overtime"],
+                "prevDays": pv["days"],
             })
         return res
 
     @Slot(str, str, str, str, result="QVariant")
-    def saveMoneyOrder(self, rows_json, order_no, order_date_str, comment):
+    def _money_add(self, eid, unit, amount, order_no, order_date, comment,
+                   from_prev):
+        """Одна денежная запись; from_prev=True помечает её списанием
+        из заначки прошлого года (event_date='1900-01-01')."""
+        if unit == "days":
+            self.active_db.add_compensation_money(
+                eid, unit, None, amount, order_no, order_date, comment)
+        else:
+            self.active_db.add_compensation_money(
+                eid, unit, amount * 60, None, order_no, order_date, comment)
+        if from_prev:
+            last_id = self.active_db.conn.execute(
+                "SELECT last_insert_rowid()").fetchone()[0]
+            self.active_db.conn.execute(
+                "UPDATE compensation SET event_date='1900-01-01' WHERE id=?",
+                (last_id,))
+
+    def _money_order_write(self, rows, order_no, order_date, comment,
+                           source_mode):
+        """Проверка остатков и запись строк приказа. Вызывается ВНУТРИ
+        транзакции вызывающего. Возвращает (checked, errors): при
+        ошибках записей нет, транзакцию откатывает вызывающий.
+
+        source_mode: 0 — текущий год, 1 — заначка прошлого года,
+        2 — оба года: сначала списывается текущий год, остаток —
+        из заначки (двумя записями)."""
+        errors = []
+        checked = []
+        for r in rows:
+            eid = int(r.get("id") or 0)
+            hours = max(0, int(r.get("hours") or 0))
+            overtime = max(0, int(r.get("overtime") or 0))
+            days = max(0, int(r.get("days") or 0))
+            if eid <= 0 or (hours + overtime + days) <= 0:
+                continue
+            emp = self.active_db.get_employee(eid)
+            if emp is None:
+                continue
+            b = self._money_balances_for(eid, source_mode)
+            fio = f"{emp['last_name']} {emp['first_name']}".strip()
+            ok = True
+            if hours > b["hours"]:
+                errors.append({"id": eid, "name": fio,
+                               "message": f"не хватает часов: доступно {b['hours']}, запрошено {hours}"})
+                ok = False
+            if overtime > b["overtime"]:
+                errors.append({"id": eid, "name": fio,
+                               "message": f"не хватает сверхурочных: доступно {b['overtime']}, запрошено {overtime}"})
+                ok = False
+            if days > b["days"]:
+                errors.append({"id": eid, "name": fio,
+                               "message": f"не хватает дней: доступно {b['days']}, запрошено {days}"})
+                ok = False
+            if ok:
+                checked.append((eid, hours, overtime, days))
+
+        if errors:
+            return checked, errors
+        if not checked:
+            return [], [{"id": 0, "name": "",
+                         "message": "отметьте сотрудников и укажите суммы"}]
+
+        for eid, hours, overtime, days in checked:
+            cur = self._money_balances(eid) if source_mode == 2 else None
+            for unit, amount in (("hours", hours),
+                                 ("overtime", overtime), ("days", days)):
+                if amount <= 0:
+                    continue
+                if source_mode == 2:
+                    # оба года: сначала текущий, остаток — из заначки
+                    take_cur = min(amount, cur[unit])
+                    take_prev = amount - take_cur
+                    if take_cur > 0:
+                        self._money_add(eid, unit, take_cur, order_no,
+                                        order_date, comment, False)
+                    if take_prev > 0:
+                        self._money_add(eid, unit, take_prev, order_no,
+                                        order_date, comment, True)
+                else:
+                    self._money_add(eid, unit, amount, order_no, order_date,
+                                    comment, source_mode == 1)
+            is_valid, err = validate_non_negative_over_year(
+                self.active_db, eid, self.current_year)
+            if not is_valid:
+                raise Exception(err)
+        return checked, []
+
+    @staticmethod
+    def _norm_source_mode(source_mode):
+        return 1 if source_mode == 1 else (2 if source_mode == 2 else 0)
+
+    @Slot(str, str, str, str, int, result="QVariant")
+    def saveMoneyOrder(self, rows_json, order_no, order_date_str, comment,
+                       source_mode):
         """Проводит один приказ сразу нескольким сотрудникам.
 
         rows_json: [{id, hours, overtime, days}] — суммы компенсации
-        каждому. Всё или ничего: при любой ошибке база не трогается,
+        каждому. source_mode: 0 — текущий год, 1 — прошлый, 2 — оба.
+        Всё или ничего: при любой ошибке база не трогается,
         а окну возвращается список ошибок по сотрудникам.
         """
         if not self.active_db:
@@ -2427,59 +2549,16 @@ class Backend(QObject):
             rows = json.loads(rows_json or "[]")
         except Exception:
             return {"ok": False, "errors": []}
+        source_mode = self._norm_source_mode(source_mode)
 
-        # 1. Проверяем каждого: остатков должно хватить
-        errors = []
-        checked = []
-        for r in rows:
-            eid = int(r.get("id") or 0)
-            hours = max(0, int(r.get("hours") or 0))
-            overtime = max(0, int(r.get("overtime") or 0))
-            days = max(0, int(r.get("days") or 0))
-            if eid <= 0 or (hours + overtime + days) <= 0:
-                continue
-            emp = self.active_db.get_employee(eid)
-            if emp is None:
-                continue
-            b = self._money_balances(eid)
-            fio = f"{emp['last_name']} {emp['first_name']}".strip()
-            if hours > b["hours"]:
-                errors.append({"id": eid, "name": fio,
-                               "message": f"не хватает часов: есть {b['hours']}, запрошено {hours}"})
-                continue
-            if overtime > b["overtime"]:
-                errors.append({"id": eid, "name": fio,
-                               "message": f"не хватает сверхурочных: есть {b['overtime']}, запрошено {overtime}"})
-                continue
-            if days > b["days"]:
-                errors.append({"id": eid, "name": fio,
-                               "message": f"не хватает дней: есть {b['days']}, запрошено {days}"})
-                continue
-            checked.append((eid, hours, overtime, days))
-
-        if errors:
-            return {"ok": False, "errors": errors}
-        if not checked:
-            return {"ok": False, "errors": [{"id": 0, "name": "",
-                                             "message": "отметьте сотрудников и укажите суммы"}]}
-
-        # 2. Сохраняем одной транзакцией
+        # одной транзакцией: проверка остатков, потом запись
         try:
             self.active_db.begin()
-            for eid, hours, overtime, days in checked:
-                if hours > 0:
-                    self.active_db.add_compensation_money(
-                        eid, "hours", hours * 60, None, order_no, order_date, comment)
-                if overtime > 0:
-                    self.active_db.add_compensation_money(
-                        eid, "overtime", overtime * 60, None, order_no, order_date, comment)
-                if days > 0:
-                    self.active_db.add_compensation_money(
-                        eid, "days", None, days, order_no, order_date, comment)
-                is_valid, err = validate_non_negative_over_year(
-                    self.active_db, eid, self.current_year)
-                if not is_valid:
-                    raise Exception(err)
+            checked, errors = self._money_order_write(
+                rows, order_no, order_date, comment, source_mode)
+            if errors:
+                self.active_db.conn.execute("ROLLBACK;")
+                return {"ok": False, "errors": errors}
             self.active_db.conn.execute("COMMIT;")
         except Exception as e:
             if self.active_db:
@@ -2496,6 +2575,56 @@ class Backend(QObject):
             "success")
         return {"ok": True, "count": len(checked)}
 
+    @Slot(str, str, str, str, str, str, int, result="QVariant")
+    def updateMoneyOrder(self, orig_no, orig_date_str, rows_json, order_no,
+                         order_date_str, comment, source_mode):
+        """Редактирование приказа: старые записи приказа УДАЛЯЮТСЯ и
+        заменяются новыми (именно замена, не прибавление). Валидация
+        остатков идёт уже без старых записей — сотруднику в этом же
+        приказе можно поменять сумму на большую. При любой ошибке
+        приказ остаётся нетронутым (откат)."""
+        if not self.active_db:
+            return {"ok": False, "errors": []}
+        if not (order_no or "").strip():
+            return {"ok": False, "errors": [{"id": 0, "name": "",
+                                             "message": "укажите номер приказа"}]}
+        try:
+            order_date = d_parse(order_date_str or "")
+        except Exception:
+            return {"ok": False, "errors": [{"id": 0, "name": "",
+                                             "message": "укажите дату приказа"}]}
+        try:
+            rows = json.loads(rows_json or "[]")
+        except Exception:
+            return {"ok": False, "errors": []}
+        source_mode = self._norm_source_mode(source_mode)
+
+        try:
+            self.active_db.begin()
+            self.active_db.conn.execute(
+                "DELETE FROM compensation WHERE method='money' "
+                "AND order_no IS ? AND order_date IS ?",
+                (orig_no or None, orig_date_str or None))
+            checked, errors = self._money_order_write(
+                rows, order_no, order_date, comment, source_mode)
+            if errors:
+                self.active_db.conn.execute("ROLLBACK;")
+                return {"ok": False, "errors": errors}
+            self.active_db.conn.execute("COMMIT;")
+        except Exception as e:
+            if self.active_db:
+                self.active_db.conn.execute("ROLLBACK;")
+            return {"ok": False, "errors": [{"id": 0, "name": "",
+                                             "message": str(e)}]}
+
+        self.refresh_calendar()
+        self.refresh_employees()
+        self._defer_year_refresh()
+        self.loadMoneyOrders()
+        self.showToast.emit(
+            f"Приказ № {order_no} изменён: {len(checked)} сотр.", "success")
+        return {"ok": True, "count": len(checked)}
+
     @Slot()
     def loadMoneyOrders(self):
         """Журнал приказов месяца: приказ = один номер и дата,
@@ -2508,7 +2637,7 @@ class Backend(QObject):
         rows = self.active_db.conn.execute(
             """
             SELECT c.employee_id, c.unit, c.amount_minutes, c.amount_days,
-                   c.order_no, c.order_date, c.comment,
+                   c.order_no, c.order_date, c.comment, c.event_date,
                    e.last_name, e.first_name, e.middle_name
             FROM compensation c
             LEFT JOIN employee e ON e.id = c.employee_id
@@ -2529,9 +2658,14 @@ class Backend(QObject):
                     "order_date": r["order_date"] or "",
                     "comment": r["comment"] or "",
                     "employees": {},
+                    "prev": 0, "cur": 0,
                 }
                 order.append(key)
             g = groups[key]
+            if (r["event_date"] or "") == "1900-01-01":
+                g["prev"] += 1
+            else:
+                g["cur"] += 1
             eid = int(r["employee_id"])
             if eid not in g["employees"]:
                 fio = f"{r['last_name'] or ''} {r['first_name'] or ''} {r['middle_name'] or ''}".strip()
@@ -2549,11 +2683,15 @@ class Backend(QObject):
         for key in order:
             g = groups[key]
             emps = list(g["employees"].values())
+            # режим приказа: только заначка → 1, вперемешку → 2, иначе 0
+            source_mode = 1 if g["prev"] > 0 and g["cur"] == 0 else (
+                2 if g["prev"] > 0 else 0)
             res.append({
                 "order_no": g["order_no"],
                 "order_date": g["order_date"],
                 "date": fmt_date_iso(g["order_date"]),
                 "comment": g["comment"],
+                "source_mode": source_mode,
                 "count": len(emps),
                 "hours": sum(e["hours"] for e in emps),
                 "overtime": sum(e["overtime"] for e in emps),

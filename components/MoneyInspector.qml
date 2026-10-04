@@ -201,21 +201,21 @@ AppDialog {
                     anchors.verticalCenter: parent.verticalCenter
                     spacing: AppTheme.spaceXS
 
-                    // Повторить приказ
+                    // Редактировать приказ
                     Rectangle {
                         width: 32; height: 32; radius: AppTheme.radiusSmall
                         color: repHover.pressed ? AppTheme.statePress : (repHover.containsMouse ? AppTheme.stateHover : "transparent")
                         Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
-                        IconImage { anchors.centerIn: parent; source: "../icons/rest.svg"; width: AppTheme.iconMedium; height: AppTheme.iconMedium; color: repHover.containsMouse ? AppTheme.textPrimary : AppTheme.textTertiary }
+                        IconImage { anchors.centerIn: parent; source: "../icons/edit.svg"; width: AppTheme.iconMedium; height: AppTheme.iconMedium; color: repHover.containsMouse ? AppTheme.textPrimary : AppTheme.textTertiary }
                         HoverHandler { cursorShape: Qt.PointingHandCursor }
                         MouseArea {
                             id: repHover; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                            onClicked: { root.close(); mainWindow.repeatMoneyOrder(modelData) }
+                            onClicked: { root.close(); mainWindow.editMoneyOrder(modelData) }
                         }
                         AppToolTip {
                             anchors.horizontalCenter: parent.horizontalCenter
                             anchors.bottom: parent.top; anchors.bottomMargin: AppTheme.spaceXXS
-                            text: "Повторить приказ"; isVisible: repHover.containsMouse
+                            text: "Редактировать приказ"; isVisible: repHover.containsMouse
                         }
                     }
 

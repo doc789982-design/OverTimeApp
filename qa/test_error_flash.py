@@ -61,8 +61,8 @@ class StubBackend(QObject):
     def moneyOrderEmployees(self):
         return EMPS
 
-    @Slot(str, str, str, str, result="QVariant")
-    def saveMoneyOrder(self, payload, no, dt, comment):
+    @Slot(str, str, str, str, int, result="QVariant")
+    def saveMoneyOrder(self, payload, no, dt, comment, source_mode):
         return {"ok": True, "count": 1}
 
 
@@ -174,7 +174,7 @@ def main() -> int:
         settle(0.4)
         fields = [o for o in dlg.findChildren(QObject)
                   if o.metaObject().className().startswith("AppTextField")
-                  and o.property("label") == "№ приказа"]
+                  and o.property("label") == "Номер приказа"]
         dates = [o for o in dlg.findChildren(QObject)
                  if o.metaObject().className().startswith("AppDateField")]
         assert fields and dates

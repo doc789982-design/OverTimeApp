@@ -1,54 +1,62 @@
 import QtQuick
 import QtQuick.Controls
 import "."
-import "../icons"
 
 // ============================================================
 // ВЕДОМОСТЬ: один денежный приказ — всему подразделению сразу.
 //
-// Из левой панели («₽ Приказ всем») — ведомость на ВСЕХ: шапка
-// приказа вводится один раз, у каждого сотрудника галочка и
-// СВОИ суммы (часы, сверхурочные, дни). Заполнение: «По табелю»
-// (каждому его переработку) или «Одинаково всем…»; галочка в
-// заголовке таблицы выбирает и снимает всех сразу.
-// Из карточки сотрудника («Деньгами») — тот же приказ, но
-// ТОЛЬКО для него: без галочек и без «одинаково всем».
-// Номер и дата приказа обязательны. При ошибке окно трясётся
-// (штатная тряска AppDialog), а строка сотрудника, у которого
-// не хватает остатка, подсвечивается красным с пояснением.
+// Слева, сверху вниз: дата приказа, номер, комментарий.
+// Справа от полей: «Журнал приказов», выбор года компенсации
+// (текущий / предыдущий / оба) и «Компенсировать всё».
+// Ниже — список сотрудников: галочка, имя и три суммы
+// (часы, дни, сверхурочные). При ошибке окно трясётся (штатная
+// тряска AppDialog), поля с ошибкой вспыхивают красной рамкой,
+// а строка виновника подсвечивается с пояснением.
+//
+// Режимы:
+//   всем      — «₽ Приказ всем» из левой панели;
+//   одному    — «Деньгами» из карточки сотрудника (без галочек);
+//   правка    — «Редактировать» из журнала: записи приказа
+//               ЗАМЕНЯЮТСЯ, а не прибавляются.
 // ============================================================
 AppDialog {
     id: root
     width: 640
 
-    // одиночный режим: приказ только для одного сотрудника
-    // (открывается кнопкой «Деньгами» из его карточки)
     property bool singleMode: false
+    property bool editMode: false
+    property string origOrderNo: ""
+    property string origOrderDate: ""
+
+    // За какой год компенсация: 0 — текущий, 1 — предыдущий
+    // (заначка), 2 — оба года
+    property int sourceMode: 0
 
     // «Журнал приказов» — история приказов подразделения
     signal requestJournal()
 
-    title: root.singleMode && root.rows.length === 1
-           ? "Денежная компенсация — " + root.shortName(root.rows[0].name)
-           : "Приказ о денежной компенсации"
-    acceptText: "Провести приказ"
+    title: root.editMode ? "Редактирование приказа"
+           : root.singleMode && root.rows.length === 1
+             ? "Денежная компенсация — " + root.shortName(root.rows[0].name)
+             : "Приказ о денежной компенсации"
+    acceptText: root.editMode ? "Сохранить приказ" : "Провести приказ"
     acceptVariant: "primary"
     rejectText: "Закрыть"
 
-    // [{id, name, subtitle, checked, hours, overtime, days, balHours, balOvertime, balDays}]
+    // [{id, name, subtitle, checked, hours, overtime, days,
+    //    balHours, balOvertime, balDays, prevHours, prevOvertime, prevDays}]
     property var rows: []
     property var rowErrors: ({})     // id сотрудника → текст ошибки
     property string topError: ""
     property bool showEqual: false   // панель «одинаково всем»
-    property int totalEmp: 0
-    property int totalHours: 0
-    property int totalDays: 0
 
     // ширины колонок таблицы (одинаково в шапке и строках)
     readonly property int colNum: 56
-    readonly property int colBal: 96
+    readonly property int headLeft: 300     // колонка реквизитов
+    readonly property int headRight: width - AppTheme.spaceL * 2
+                                     - headLeft - AppTheme.spaceL
     readonly property int nameWidth: width - AppTheme.spaceL * 2 - 28
-                                     - colNum * 3 - colBal - 8 * 5 - 16
+                                     - colNum * 3 - 8 * 4 - 16
 
     function _fromBackend() {
         let list = backend.moneyOrderEmployees()
@@ -59,15 +67,29 @@ AppDialog {
                 id: e.id, name: e.name, subtitle: e.subtitle,
                 checked: true, hours: 0, overtime: 0, days: 0,
                 balHours: e.hours, balOvertime: e.overtime, balDays: e.days,
+                prevHours: e.prevHours, prevOvertime: e.prevOvertime,
+                prevDays: e.prevDays,
             })
         }
         return res
+    }
+
+    // Остатки строки по выбранному году
+    function avail(row) {
+        if (root.sourceMode === 1)
+            return { h: row.prevHours, o: row.prevOvertime, d: row.prevDays }
+        if (root.sourceMode === 2)
+            return { h: row.balHours + row.prevHours,
+                     o: row.balOvertime + row.prevOvertime,
+                     d: row.balDays + row.prevDays }
+        return { h: row.balHours, o: row.balOvertime, d: row.balDays }
     }
 
     function _resetHead() {
         root.rowErrors = ({})
         root.topError = ""
         root.showEqual = false
+        root.sourceMode = 0
         orderNoInput.text = ""
         orderNoInput.hasError = false
         orderCommentInput.text = ""
@@ -77,9 +99,9 @@ AppDialog {
 
     function openNew() {
         root.singleMode = false
+        root.editMode = false
         root.rows = _fromBackend()
         _resetHead()
-        recalcTotals()
         root.showCentered()
     }
 
@@ -90,18 +112,54 @@ AppDialog {
         for (let i = 0; i < all.length; i++)
             if (all[i].id === empId) { only.push(all[i]); break }
         root.singleMode = true
+        root.editMode = false
         root.rows = only
         _resetHead()
-        recalcTotals()
         root.showCentered()
     }
 
-    // «Иванов Иван Иванович» → «Иванов И.» — для заголовка окна
+    // Редактирование приказа из журнала: суммы как в приказе,
+    // сохранение ЗАМЕНИТ записи этого приказа
+    function editFromOrder(order) {
+        let current = _fromBackend()
+        for (let i = 0; i < current.length; i++) {
+            let row = current[i]
+            row.checked = false
+            for (let j = 0; j < order.employees.length; j++) {
+                let e = order.employees[j]
+                if (e.id === row.id) {
+                    row.checked = true
+                    row.hours = e.hours
+                    row.overtime = e.overtime
+                    row.days = e.days
+                    break
+                }
+            }
+        }
+        root.singleMode = false
+        root.editMode = true
+        root.origOrderNo = order.order_no
+        root.origOrderDate = order.order_date
+        root.rows = current
+        root.rowErrors = ({})
+        root.topError = ""
+        root.showEqual = false
+        root.sourceMode = order.source_mode !== undefined ? order.source_mode : 0
+        orderNoInput.text = order.order_no
+        orderNoInput.hasError = false
+        orderCommentInput.text = order.comment
+        orderDateInput.selectedDate = order.order_date
+        orderDateInput.hasError = false
+        root.showCentered()
+    }
+
+    // «Иванов Иван Андреевич» → «Иванов И.А.»
     function shortName(fio) {
         let p = String(fio || "").trim().split(/\s+/)
-        if (p.length > 1 && p[1].length > 0)
-            return p[0] + " " + p[1][0] + "."
-        return p[0] || ""
+        let out = p[0] || ""
+        for (let i = 1; i < p.length; i++)
+            if (p[i].length > 0) out += " " + p[i][0] + "."
+        return out
     }
 
     // Все ли строки отмечены (галочка «все» в заголовке таблицы)
@@ -118,53 +176,6 @@ AppDialog {
         if (i < 0 || i >= root.rows.length) return
         root.rows[i].checked = on
         root.rows = root.rows.slice()
-        root.recalcTotals()
-    }
-
-    // «Повторить приказ»: получатели и суммы — как в прошлый раз
-    // Для проверок в песочнице: геометрия отрисованных строк
-    function layoutInfo() { return empTable.layoutInfo() }
-
-    function prefillFromOrder(order) {
-        root.singleMode = false
-        let current = _fromBackend()
-        for (let i = 0; i < current.length; i++) {
-            let row = current[i]
-            row.checked = false
-            for (let j = 0; j < order.employees.length; j++) {
-                let e = order.employees[j]
-                if (e.id === row.id) {
-                    row.checked = true
-                    row.hours = e.hours
-                    row.overtime = e.overtime
-                    row.days = e.days
-                    break
-                }
-            }
-        }
-        root.rows = current
-        root.rowErrors = ({})
-        root.topError = ""
-        root.showEqual = false
-        orderNoInput.text = order.order_no
-        orderCommentInput.text = order.comment
-        orderDateInput.selectedDate = new Date().toISOString().split("T")[0]
-        recalcTotals()
-        root.showCentered()
-    }
-
-    function recalcTotals() {
-        let n = 0, h = 0, d = 0
-        for (let i = 0; i < rows.length; i++) {
-            let r = rows[i]
-            if (!r.checked) continue
-            if (r.hours > 0 || r.overtime > 0 || r.days > 0) n++
-            h += r.hours + r.overtime
-            d += r.days
-        }
-        totalEmp = n
-        totalHours = h
-        totalDays = d
     }
 
     function _toInt(s) {
@@ -172,11 +183,14 @@ AppDialog {
         return isNaN(v) ? 0 : Math.max(0, v)
     }
 
+    // Для проверок в песочнице: геометрия отрисованных строк
+    function layoutInfo() { return empTable.layoutInfo() }
+
     onAccepted: {
         // номер и дата приказа обязательны: вспышка красной рамки
         let noBad = orderNoInput.text.trim() === ""
         let dateBad = !(orderDateInput.selectedDate !== ""
-                        && /^(\d{2})\.(\d{2})\.(\d{4})$/.test(orderDateInput.text.trim()))
+                        && /^\d{2}\.\d{2}\.\d{4}$/.test(orderDateInput.text.trim()))
         if (noBad) orderNoInput.flashError()
         if (dateBad) orderDateInput.flashError()
         if (noBad || dateBad) {
@@ -199,18 +213,29 @@ AppDialog {
                 if (rows[i].checked) { anyChecked = true; break }
             root.rowErrors = ({})
             root.topError = anyChecked
-                    ? "Укажите, сколько выплатить: часы, сверхурочные или дни отдыха"
+                    ? "Укажите, сколько выплатить: часы, дни или сверхурочные"
                     : "Отметьте сотрудников галочками и укажите суммы"
             root.shake()
             return
         }
 
-        let result = backend.saveMoneyOrder(
-            JSON.stringify(payload),
-            orderNoInput.text.trim(),
-            orderDateInput.selectedDate,
-            orderCommentInput.text.trim()
-        )
+        let result
+        if (root.editMode) {
+            result = backend.updateMoneyOrder(
+                root.origOrderNo, root.origOrderDate,
+                JSON.stringify(payload),
+                orderNoInput.text.trim(),
+                orderDateInput.selectedDate,
+                orderCommentInput.text.trim(),
+                root.sourceMode)
+        } else {
+            result = backend.saveMoneyOrder(
+                JSON.stringify(payload),
+                orderNoInput.text.trim(),
+                orderDateInput.selectedDate,
+                orderCommentInput.text.trim(),
+                root.sourceMode)
+        }
         if (result && result.ok) {
             root.close()
             return
@@ -231,96 +256,110 @@ AppDialog {
         root.scrollToBottom()
     }
 
-    // ── Шапка приказа ──
+    // ── Шапка: слева реквизиты приказа (сверху вниз),
+    //    справа — журнал, год компенсации, «Компенсировать всё» ──
     Row {
         width: parent.width
-        spacing: AppTheme.spaceS
+        spacing: AppTheme.spaceL
 
-        AppTextField {
-            id: orderNoInput
-            width: 150
-            label: "№ приказа"
-            placeholderText: "245"
-            maximumLength: 20
-            onTextEdited: hasError = false
-        }
-        AppDateField {
-            id: orderDateInput
-            width: 190
-            label: "Дата приказа"
-            onSelectedDateChanged: hasError = false
-        }
-        AppTextField {
-            id: orderCommentInput
-            width: parent.width - 150 - 190 - AppTheme.spaceS * 2
-            label: "Комментарий"
-            placeholderText: "За октябрь"
-        }
-    }
+        Column {
+            width: root.headLeft
+            spacing: AppTheme.spaceS
 
-    // ── Заполнение: понятные кнопки-глаголы ──
-    Row {
-        id: fillRow
-        width: parent.width
-        spacing: AppTheme.spaceS
+            AppDateField {
+                id: orderDateInput
+                width: parent.width
+                label: "Дата приказа"
+            }
+            AppTextField {
+                id: orderNoInput
+                width: parent.width
+                label: "Номер приказа"
+                placeholderText: "123 л/с"
+                maximumLength: 20
+            }
+            AppTextField {
+                id: orderCommentInput
+                width: parent.width
+                label: "Комментарий"
+                placeholderText: "Например: за октябрь"
+            }
+        }
 
-        AppButton {
-            id: btnBySheet
-            text: "По табелю"
-            iconSource: "../icons/edit.svg"
-            variant: "secondary"
-            height: 40
-            onClicked: {
-                for (let i = 0; i < root.rows.length; i++) {
-                    if (!root.rows[i].checked) continue
-                    root.rows[i].hours = root.rows[i].balHours
-                    root.rows[i].overtime = root.rows[i].balOvertime
-                    root.rows[i].days = root.rows[i].balDays
+        Column {
+            width: root.headRight
+            spacing: AppTheme.spaceXS
+
+            AppButton {
+                id: btnJournal
+                text: "Журнал приказов"
+                iconSource: "../icons/clock.svg"
+                variant: "secondary"
+                height: 36
+                onClicked: { root.close(); root.requestJournal() }
+                AppToolTip {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    anchors.top: parent.bottom; anchors.topMargin: AppTheme.spaceXXS
+                    text: "Все прошлые приказы подразделения"
+                    isVisible: parent.hovered
                 }
-                root.rows = root.rows.slice()
-                root.recalcTotals()
             }
-            AppToolTip {
-                anchors.horizontalCenter: parent.horizontalCenter
-                anchors.top: parent.bottom; anchors.topMargin: AppTheme.spaceXXS
-                text: "Подставить каждому выбранному его переработку за месяц"
-                isVisible: parent.hovered
+
+            // За какой год компенсация
+            AppRadioButton {
+                text: "Текущий год"
+                checked: root.sourceMode === 0
+                onToggled: root.sourceMode = 0
             }
-        }
-        AppButton {
-            id: btnEqual
-            visible: !root.singleMode
-            text: root.showEqual ? "Скрыть" : "Одинаково всем…"
-            iconSource: "../icons/money.svg"
-            variant: "secondary"
-            height: 40
-            onClicked: root.showEqual = !root.showEqual
-            AppToolTip {
-                anchors.horizontalCenter: parent.horizontalCenter
-                anchors.top: parent.bottom; anchors.topMargin: AppTheme.spaceXXS
-                text: "Одна и та же сумма каждому выбранному"
-                isVisible: parent.hovered
+            AppRadioButton {
+                text: "Предыдущий год"
+                checked: root.sourceMode === 1
+                onToggled: root.sourceMode = 1
             }
-        }
-        // распорка: «Журнал приказов» прижимается к правому краю
-        Item {
-            height: 1
-            width: parent.width - btnBySheet.width - btnJournal.width
-                     - parent.spacing * 2
-                     - (btnEqual.visible ? btnEqual.width + parent.spacing : 0)
-        }
-        AppButton {
-            id: btnJournal
-            text: "Журнал приказов"
-            iconSource: "../icons/clock.svg"
-            variant: "secondary"
-            height: 40
-            onClicked: { root.close(); root.requestJournal() }
-            AppToolTip {
-                anchors.horizontalCenter: parent.horizontalCenter
-                anchors.top: parent.bottom; anchors.topMargin: AppTheme.spaceXXS
-                text: "Все прошлые приказы подразделения"
-                isVisible: parent.hovered
+            AppRadioButton {
+                text: "Оба года"
+                checked: root.sourceMode === 2
+                onToggled: root.sourceMode = 2
+            }
+
+            AppButton {
+                id: btnFillAll
+                text: "Компенсировать всё"
+                iconSource: "../icons/edit.svg"
+                variant: "secondary"
+                height: 36
+                onClicked: {
+                    for (let i = 0; i < root.rows.length; i++) {
+                        if (!root.rows[i].checked) continue
+                        let a = root.avail(root.rows[i])
+                        root.rows[i].hours = a.h
+                        root.rows[i].overtime = a.o
+                        root.rows[i].days = a.d
+                    }
+                    root.rows = root.rows.slice()
+                }
+                AppToolTip {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    anchors.top: parent.bottom; anchors.topMargin: AppTheme.spaceXXS
+                    text: "Подставить каждому выбранному весь его остаток за выбранный год"
+                    isVisible: parent.hovered
+                }
+            }
+
+            AppButton {
+                id: btnEqual
+                visible: !root.singleMode
+                text: root.showEqual ? "Скрыть" : "Одинаково всем…"
+                iconSource: "../icons/money.svg"
+                variant: "secondary"
+                height: 36
+                onClicked: root.showEqual = !root.showEqual
+                AppToolTip {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    anchors.top: parent.bottom; anchors.topMargin: AppTheme.spaceXXS
+                    text: "Одна и та же сумма каждому выбранному"
+                    isVisible: parent.hovered
+                }
             }
         }
     }
@@ -368,7 +407,6 @@ AppDialog {
                     root.rows[i].days = d
                 }
                 root.rows = root.rows.slice()
-                root.recalcTotals()
             }
         }
     }
@@ -392,7 +430,6 @@ AppDialog {
                     for (let i = 0; i < root.rows.length; i++)
                         root.rows[i].checked = checked
                     root.rows = root.rows.slice()
-                    root.recalcTotals()
                 }
                 AppToolTip {
                     anchors.horizontalCenter: parent.horizontalCenter
@@ -412,9 +449,8 @@ AppDialog {
             font.letterSpacing: 1.2
         }
         Text { width: root.colNum; horizontalAlignment: Text.AlignHCenter; text: "ЧАСЫ"; color: AppTheme.textTertiary; font.family: AppTheme.fontFamily; font.pixelSize: AppTheme.sizeMicro; font.weight: AppTheme.weightBold; font.letterSpacing: 1.2 }
-        Text { width: root.colNum; horizontalAlignment: Text.AlignHCenter; text: "СВЕРХ."; color: AppTheme.textTertiary; font.family: AppTheme.fontFamily; font.pixelSize: AppTheme.sizeMicro; font.weight: AppTheme.weightBold; font.letterSpacing: 1.2 }
         Text { width: root.colNum; horizontalAlignment: Text.AlignHCenter; text: "ДНИ"; color: AppTheme.textTertiary; font.family: AppTheme.fontFamily; font.pixelSize: AppTheme.sizeMicro; font.weight: AppTheme.weightBold; font.letterSpacing: 1.2 }
-        Text { width: root.colBal; horizontalAlignment: Text.AlignHCenter; text: "ДОСТУПНО"; color: AppTheme.textTertiary; font.family: AppTheme.fontFamily; font.pixelSize: AppTheme.sizeMicro; font.weight: AppTheme.weightBold; font.letterSpacing: 1.2 }
+        Text { width: root.colNum; horizontalAlignment: Text.AlignHCenter; text: "СВЕРХ."; color: AppTheme.textTertiary; font.family: AppTheme.fontFamily; font.pixelSize: AppTheme.sizeMicro; font.weight: AppTheme.weightBold; font.letterSpacing: 1.2 }
     }
 
     // ── Строки сотрудников ──
@@ -465,8 +501,6 @@ AppDialog {
                 height: errText !== "" ? 86 : 66
                 radius: AppTheme.radiusMedium
                 color: errText !== "" ? AppTheme.bgDangerSoft : AppTheme.bgCell
-                border.width: errText !== "" ? 1 : 0
-                border.color: AppTheme.accentDanger
                 clip: true
                 Behavior on height { NumberAnimation { duration: AppTheme.durFast; easing.type: AppTheme.easeStandard } }
                 Behavior on color { ColorAnimation { duration: AppTheme.durFast } }
@@ -530,19 +564,7 @@ AppDialog {
                         horizontalAlignment: TextInput.AlignHCenter
                         onEditingFinished: {
                             root.rows[index].hours = root._toInt(text)
-                            root.recalcTotals()
-                        }
-                    }
-                    AppTextField {
-                        width: root.colNum
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: rowRect.rowData.overtime
-                        enabled: rowRect.rowData.checked
-                        numericOnly: true
-                        horizontalAlignment: TextInput.AlignHCenter
-                        onEditingFinished: {
-                            root.rows[index].overtime = root._toInt(text)
-                            root.recalcTotals()
+                            root.rows = root.rows.slice()
                         }
                     }
                     AppTextField {
@@ -554,29 +576,19 @@ AppDialog {
                         horizontalAlignment: TextInput.AlignHCenter
                         onEditingFinished: {
                             root.rows[index].days = root._toInt(text)
-                            root.recalcTotals()
+                            root.rows = root.rows.slice()
                         }
                     }
-
-                    Column {
-                        width: root.colBal
+                    AppTextField {
+                        width: root.colNum
                         anchors.verticalCenter: parent.verticalCenter
-                        spacing: 0
-                        Text {
-                            width: parent.width
-                            horizontalAlignment: Text.AlignHCenter
-                            text: rowRect.rowData.balHours + " ч · " + rowRect.rowData.balDays + " д"
-                            color: AppTheme.textSecondary
-                            font.family: AppTheme.fontFamily
-                            font.pixelSize: AppTheme.sizeSmall
-                        }
-                        Text {
-                            width: parent.width
-                            horizontalAlignment: Text.AlignHCenter
-                            text: "сверх. " + rowRect.rowData.balOvertime + " ч"
-                            color: AppTheme.textTertiary
-                            font.family: AppTheme.fontFamily
-                            font.pixelSize: AppTheme.sizeSmall
+                        text: rowRect.rowData.overtime
+                        enabled: rowRect.rowData.checked
+                        numericOnly: true
+                        horizontalAlignment: TextInput.AlignHCenter
+                        onEditingFinished: {
+                            root.rows[index].overtime = root._toInt(text)
+                            root.rows = root.rows.slice()
                         }
                     }
                 }
@@ -593,18 +605,6 @@ AppDialog {
         font.pixelSize: AppTheme.sizeBody
         horizontalAlignment: Text.AlignHCenter
         topPadding: AppTheme.spaceL
-    }
-
-    // ── Итог ──
-    Text {
-        width: parent.width
-        text: "Выплата: " + root.totalEmp + " сотр. · всего " +
-              root.totalHours + " ч · " + root.totalDays + " д"
-        color: AppTheme.textSecondary
-        font.family: AppTheme.fontFamily
-        font.pixelSize: AppTheme.sizeBody
-        font.weight: AppTheme.weightBold
-        horizontalAlignment: Text.AlignRight
     }
 
     // ── Ошибка (кто именно и что не хватает) ──

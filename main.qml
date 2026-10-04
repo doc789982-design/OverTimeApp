@@ -747,8 +747,8 @@ ApplicationWindow {
 
     // Повтор приказа о денежной компенсации: ведомость заполняется
     // как в прошлый раз (получатели и суммы), дата — сегодняшний день
-    function repeatMoneyOrder(order) {
-        moneyOrderDialog.prefillFromOrder(order)
+    function editMoneyOrder(order) {
+        moneyOrderDialog.editFromOrder(order)
     }
 
     // ==========================================

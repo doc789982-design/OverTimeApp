@@ -42,11 +42,14 @@ ApplicationWindow {
 
 EMPS = [
     {"id": 1, "name": "Иванов Иван", "subtitle": "капитан — инженер",
-     "hours": 8, "overtime": 4, "days": 2},
+     "hours": 8, "overtime": 4, "days": 2,
+     "prevHours": 5, "prevOvertime": 1, "prevDays": 1},
     {"id": 2, "name": "Петров Пётр Петрович", "subtitle": "лейтенант — инженер",
-     "hours": 4, "overtime": 0, "days": 0},
+     "hours": 4, "overtime": 0, "days": 0,
+     "prevHours": 2, "prevOvertime": 0, "prevDays": 0},
     {"id": 3, "name": "Сидоров Сидор", "subtitle": "",
-     "hours": 0, "overtime": 0, "days": 1},
+     "hours": 0, "overtime": 0, "days": 1,
+     "prevHours": 0, "prevOvertime": 0, "prevDays": 0},
 ]
 
 
@@ -64,8 +67,9 @@ class StubBackend(QObject):
     def moneyOrderEmployees(self):
         return EMPS
 
-    @Slot(str, str, str, str, result="QVariant")
-    def saveMoneyOrder(self, payload, order_no, order_date_iso, comment):
+    @Slot(str, str, str, str, int, result="QVariant")
+    def saveMoneyOrder(self, payload, order_no, order_date_iso, comment,
+                       source_mode):
         return {"ok": True, "count": 1}
 
 
@@ -124,6 +128,43 @@ def main() -> int:
         # 3. ширина колонки имени достаточна (поля не отжали имя)
         name_w = float(dlg.property("nameWidth"))
         assert name_w > 150, "колонка имени слишком узкая: %s" % name_w
+
+        # 3б. структура окна: радио годов, журнал, поля слева,
+        #     «Доступно» и «Выплата» убраны
+        radios = [o for o in dlg.findChildren(QObject)
+                  if o.metaObject().className().startswith("AppRadioButton")
+                  and o.property("visible")]
+        assert len(radios) == 3, "ожидали 3 радио-кнопки года: %d" % len(radios)
+        rtexts = sorted(str(r.property("text")) for r in radios)
+        assert rtexts == ["Оба года", "Предыдущий год", "Текущий год"], rtexts
+        journal_btns = [o for o in dlg.findChildren(QObject)
+                        if o.property("text") == "Журнал приказов"
+                        and o.property("visible")]
+        assert journal_btns, "нет кнопки «Журнал приказов»"
+        # реквизиты приказа: дата → номер → комментарий, вертикально слева
+        fields = [o for o in dlg.findChildren(QObject)
+                  if o.metaObject().className().startswith(("AppTextField",
+                                                            "AppDateField"))]
+        head = [f for f in fields
+                if str(f.property("label") or "") in
+                ("Дата приказа", "Номер приказа", "Комментарий")]
+        assert len(head) == 3, "нет трёх полей реквизитов: %d" % len(head)
+        for f in head:
+            assert float(f.property("x") or 0) < 40, \
+                "поле не у левого края: %s x=%s" % (
+                    f.property("label"), f.property("x"))
+        ys = sorted((float(f.property("y") or 0),
+                     str(f.property("label"))) for f in head)
+        assert [t for _, t in ys] == ["Дата приказа", "Номер приказа",
+                                      "Комментарий"], ys
+        # «Доступно» и «Выплата» больше нет
+        texts = []
+        for o in dlg.findChildren(QObject):
+            t = o.property("text")
+            if t and o.property("visible"):
+                texts.append(str(t))
+        assert not any("Доступно" in t for t in texts), "«Доступно» не убрано"
+        assert not any("Выплата" in t for t in texts), "«Выплата» не убрано"
 
         # 4. снимок карточки (contentItem попапа — «окно» ведомости).
         #    В offscreen раскладка/заливки «доезжают» не сразу: первые
@@ -269,24 +310,28 @@ def main() -> int:
                     if near(px[x, yy], ACCENT, 60))
             assert n > 30, "имя сотрудника не найдено в строке y=%d" % y
 
-        # 5г. галочка «все» в заголовке: акцентный квадрат
+        # 5г. галочка «все» в заголовке таблицы: акцентный квадрат
         #     (после openNew все выбраны → галочка включена)
-        n_master = sum(1 for x in range(15, 60) for y in range(170, 230)
+        n_master = sum(1 for x in range(15, 60) for y in range(335, 380)
                        if near(px[x, y], ACCENT, 40))
         assert n_master > 150, \
             "галочка «все» в заголовке не найдена (%d px)" % n_master
 
-        # 6. тексты: итог и кнопки читаемы (тема-агностично)
+        # 5д. радио «Текущий год» отмечено: акцентная точка-индикатор
+        #     в правой колонке шапки
+        n_radio = sum(1 for x in range(335, 385) for y in range(115, 165)
+                      if near(px[x, y], ACCENT, 40))
+        assert n_radio > 40, "радио года не найдено (%d px)" % n_radio
+
+        # 6. кнопки читаемы (тема-агностично; итог «Выплата» убран)
         def opaque(y0, y1, x0, x1):
             return sum(1 for x in range(x0, x1) for y in range(y0, y1)
                        if px[x, y] != (0, 0, 0))
 
-        n_total = opaque(430, 470, 330, 600)
-        assert n_total > 100, "итог «Выплата» не найден (%d)" % n_total
-        n_cancel = opaque(508, 552, 203, 302)
+        n_cancel = opaque(628, 685, 195, 310)
         assert n_cancel > 80, "текст «Закрыть» не читаем (%d)" % n_cancel
-        save_fill = sum(1 for x in range(300, 470)
-                        for y in range(500, 560)
+        save_fill = sum(1 for x in range(290, 460)
+                        for y in range(628, 685)
                         if near(px[x, y], ACCENT, 40))
         assert save_fill > 2000, "кнопка «Провести приказ» не найдена"
 
@@ -297,9 +342,9 @@ def main() -> int:
                or ("TypeError" in e and "isDarkTheme" not in e)]
         assert not bad, "ошибки QML: %r" % (bad[:3],)
 
-        print("Ведомость: 3 карточки-строки %r, поля %r px, галочка «все»"
-              " и колонки на месте, итог и кнопки читаемы — снимок %s"
-              % (bh, fws, shot))
+        print("Ведомость: поля слева вертикально, радио года и галочка «все»"
+              " на месте, 3 карточки-строки %r, поля %r px, кнопки читаемы"
+              " — снимок %s" % (bh, fws, shot))
         return 0
     finally:
         if os.path.exists(wrapper):

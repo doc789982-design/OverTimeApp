@@ -13,6 +13,8 @@
   C. Журнал приказов: группировка по номеру+дате (×N), суммы,
      удаление приказа целиком; страховки бэкенда (пустой номер,
      битая дата, пустой список получателей);
+     «оба года» (разделение на два пула) и редактирование
+     приказа (записи ЗАМЕНЯЮТСЯ, а не прибавляются);
   D. Структура QML: окно-ведомость (галочка «все», одиночный
      режим из карточки, обязательные №/дата, карточки-строки,
      «сверх.» всегда в «Доступно», журнал), старое окно удалено.
@@ -46,10 +48,12 @@ def fresh_db():
     if os.path.exists(path):
         os.remove(path)
     db = DB(path)
+    # год приёма = текущий: заначка «Предыдущий год» из карточки
+    # действует (в следующие годы заначкой становится остаток года)
     db.add_employee("Иванов", "Иван", "", "капитан", "инженер",
-                    "2020-01", 0, 0, 0, 0, 0, 0)
+                    "2026-01", 0, 0, 0, 10 * 60, 6 * 60, 3)
     db.add_employee("Петров", "Пётр", "", "лейтенант", "инженер",
-                    "2020-01", 0, 0, 0, 0, 0, 0)
+                    "2026-01", 0, 0, 0, 10 * 60, 6 * 60, 3)
     # ночные часы появляются из дежурств: 20:00–08:00 на будний день
     db.add_duty(1, datetime(2026, 10, 7, 20, 0), datetime(2026, 10, 8, 8, 0), "")
     db.add_duty(2, datetime(2026, 10, 7, 20, 0), datetime(2026, 10, 8, 8, 0), "")
@@ -92,21 +96,21 @@ def part_bc_order_and_journal() -> None:
     emps = b.moneyOrderEmployees()
     rows = [{"id": e["id"], "hours": e["hours"], "overtime": 0,
              "days": e["days"]} for e in emps]
-    bad = b.saveMoneyOrder(json.dumps(rows), "  ", "2026-10-12", "")
+    bad = b.saveMoneyOrder(json.dumps(rows), "  ", "2026-10-12", "", 0)
     assert bad["ok"] is False and "номер" in bad["errors"][0]["message"], bad
-    bad = b.saveMoneyOrder(json.dumps(rows), "245", "12.10.2026", "")
+    bad = b.saveMoneyOrder(json.dumps(rows), "245", "12.10.2026", "", 0)
     assert bad["ok"] is False and "дату" in bad["errors"][0]["message"], bad
-    bad = b.saveMoneyOrder("[]", "245", "2026-10-12", "")
+    bad = b.saveMoneyOrder("[]", "245", "2026-10-12", "", 0)
     assert bad["ok"] is False and "суммы" in bad["errors"][0]["message"], bad
     bad = b.saveMoneyOrder(
         json.dumps([{"id": emps[0]["id"], "hours": 0, "overtime": 0, "days": 0}]),
-        "245", "2026-10-12", "")
+        "245", "2026-10-12", "", 0)
     assert bad["ok"] is False, "нулевые суммы не должны проводиться"
     print("B0: пустой №/дата/список отклоняются бэкендом ✓")
 
     # ── успешный приказ «по табелю»: каждому сколько есть ──
     bal = {e["id"]: e["hours"] for e in emps}
-    res = b.saveMoneyOrder(json.dumps(rows), "245", "2026-10-12", "За октябрь")
+    res = b.saveMoneyOrder(json.dumps(rows), "245", "2026-10-12", "За октябрь", 0)
     assert res["ok"] is True, res
     assert res["count"] == 2, res
     n = db.conn.execute(
@@ -135,7 +139,7 @@ def part_bc_order_and_journal() -> None:
         {"id": 1, "hours": 1, "overtime": 0, "days": 0},
         {"id": 2, "hours": bal[2] + 100, "overtime": 0, "days": 0},  # больше, чем есть
     ]
-    res = b.saveMoneyOrder(json.dumps(rows), "246", "2026-10-13", "")
+    res = b.saveMoneyOrder(json.dumps(rows), "246", "2026-10-13", "", 0)
     assert res["ok"] is False, res
     assert len(res["errors"]) == 1, res
     err = res["errors"][0]
@@ -145,25 +149,105 @@ def part_bc_order_and_journal() -> None:
         "SELECT COUNT(*) c FROM compensation WHERE method='money'").fetchone()["c"]
     assert before == after, "при ошибке база изменилась"
 
-    # ── удаление приказа целиком ──
-    b.deleteMoneyOrder("245", "2026-10-12")
+    # ── прошлый год: списание из заначки (event_date='1900-01-01') ──
+    res = b.saveMoneyOrder(
+        json.dumps([{"id": 1, "hours": 5, "overtime": 0, "days": 0}]),
+        "247", "2026-10-14", "", 1)
+    assert res["ok"] is True, res
+    r = db.conn.execute(
+        "SELECT event_date FROM compensation WHERE method='money' AND order_no='247'"
+    ).fetchone()
+    assert r["event_date"] == "1900-01-01", r
+    # остаток заначки уменьшился: 10 − 5 = 5
+    emps2 = b.moneyOrderEmployees()
+    e1 = [e for e in emps2 if e["id"] == 1][0]
+    assert e1["prevHours"] == 5, e1
+    print("B1: прошлый год — списание из заначки с меткой 1900-01-01 ✓")
+
+    # ── удаление приказов целиком ──
+    for no, d in (("245", "2026-10-12"), ("247", "2026-10-14")):
+        b.deleteMoneyOrder(no, d)
     n = db.conn.execute(
         "SELECT COUNT(*) c FROM compensation WHERE method='money'").fetchone()["c"]
     assert n == 0, n
     b.loadMoneyOrders()
     assert b._money_orders == [], b._money_orders
-    print("B: приказ по двум сотрудникам одной транзакцией; ошибка — поимённо, "
-          "база не тронута; удаление приказа целиком ✓")
+    print("B: приказ одной транзакцией; ошибка — поимённо, база не тронута; "
+          "прошлый год; удаление целиком ✓")
+
+
+def part_b2_modes() -> None:
+    """«Оба года» (разделение на два пула) и редактирование приказа."""
+    db = fresh_db()
+    b = make_backend(db)
+
+    # ── оба года: 8 текущих + 5 из заначки = двумя записями ──
+    res = b.saveMoneyOrder(
+        json.dumps([{"id": 1, "hours": 8 + 5, "overtime": 0, "days": 0}]),
+        "248", "2026-10-15", "", 2)
+    assert res["ok"] is True, res
+    rows_248 = db.conn.execute(
+        "SELECT amount_minutes, event_date FROM compensation"
+        " WHERE method='money' AND order_no='248' ORDER BY id").fetchall()
+    assert len(rows_248) == 2, rows_248
+    cur_row = [r for r in rows_248 if r["event_date"] != "1900-01-01"][0]
+    prev_row = [r for r in rows_248 if r["event_date"] == "1900-01-01"][0]
+    assert cur_row["amount_minutes"] // 60 == 8, dict(cur_row)
+    assert prev_row["amount_minutes"] // 60 == 5, dict(prev_row)
+    b.loadMoneyOrders()
+    o = [x for x in b._money_orders if x["order_no"] == "248"][0]
+    assert o["hours"] == 13 and o["source_mode"] == 2, o
+    print("B2: оба года — 8 ч текущим годом + 5 ч из заначки; журнал видит ×2 ✓")
+
+    # ── редактирование: записи приказа ЗАМЕНЯЮТСЯ, не прибавляются ──
+    # было 13 (8 тек. + 5 заначка); меняем на 12 (7 тек. + 5 заначка)
+    res = b.updateMoneyOrder(
+        "248", "2026-10-15",
+        json.dumps([{"id": 1, "hours": 12, "overtime": 0, "days": 0}]),
+        "248", "2026-10-15", "Правка", 2)
+    assert res["ok"] is True, res
+    n248 = db.conn.execute(
+        "SELECT COUNT(*) c, COALESCE(SUM(amount_minutes), 0) s FROM compensation"
+        " WHERE method='money' AND order_no='248'").fetchone()
+    assert n248["c"] == 2 and n248["s"] == 12 * 60, dict(n248)
+    b.loadMoneyOrders()
+    o = [x for x in b._money_orders if x["order_no"] == "248"][0]
+    assert o["hours"] == 12 and o["count"] == 1, o
+
+    # ошибка правки не трогает приказ
+    res = b.updateMoneyOrder(
+        "248", "2026-10-15",
+        json.dumps([{"id": 1, "hours": 9999, "overtime": 0, "days": 0}]),
+        "248", "2026-10-15", "", 2)
+    assert res["ok"] is False, res
+    n248b = db.conn.execute(
+        "SELECT COUNT(*) c, COALESCE(SUM(amount_minutes), 0) s FROM compensation"
+        " WHERE method='money' AND order_no='248'").fetchone()
+    assert n248b["c"] == 2 and n248b["s"] == 12 * 60, dict(n248b)
+    print("B3: редактирование заменило записи (не прибавило); ошибка не тронула ✓")
 
 
 def part_d_structure() -> None:
     dlg = open(os.path.join(ROOT, "components", "MoneyOrderDialog.qml"),
                encoding="utf-8").read()
-    # построчное редактирование: часы/сверхурочные/дни у каждого
+    # построчное редактирование: часы/дни/сверхурочные у каждого
     assert "root.rows[index].hours" in dlg and "root.rows[index].days" in dlg
+    assert "root.rows[index].overtime" in dlg
     # быстрое заполнение: кнопки-глаголы
-    assert "По табелю" in dlg and "Одинаково всем" in dlg
+    assert "Компенсировать всё" in dlg and "Одинаково всем" in dlg
     assert "Раздать выбранным" in dlg
+    # порядок полей: дата → номер → комментарий, вертикально слева
+    assert (dlg.index('label: "Дата приказа"')
+            < dlg.index('label: "Номер приказа"')
+            < dlg.index('label: "Комментарий"')), "порядок полей"
+    # год компенсации: радио-кнопки как в окне дневной компенсации
+    assert "Текущий год" in dlg and "Предыдущий год" in dlg and "Оба года" in dlg
+    assert "AppRadioButton" in dlg and "sourceMode" in dlg
+    # «Доступно» и итог убраны
+    assert "Доступно" not in dlg and "Выплата:" not in dlg
+    # редактирование из журнала
+    assert "editFromOrder" in dlg and "editMode" in dlg
+    assert "updateMoneyOrder" in dlg
     # тряска — ШТАТНАЯ AppDialog.shake(), не самописная анимация
     assert "root.shake()" in dlg and "shakeAnim" not in dlg
     assert "root.scrollToBottom()" in dlg
@@ -177,14 +261,14 @@ def part_d_structure() -> None:
     assert "RowLayout" not in dlg and "ColumnLayout" not in dlg, \
         "Layout-и растягивают поля — подписи разъезжаются"
     assert "Repeater" in dlg and "colNum" in dlg
-    # сборка 259: галочка «все», одиночный режим, обязательные №/дата
+    # галочка «все», одиночный режим, обязательные №/дата
     assert "openForEmployee" in dlg and "singleMode" in dlg
     assert "toggleRow" in dlg, "переключение строки живёт в корне (не в делегате)"
     assert "Выбрать всех или снять выделение" in dlg
-    assert "Укажите номер и дату приказа" in dlg and "hasError" in dlg
+    assert "Укажите номер и дату приказа" in dlg and "flashError" in dlg
     assert "Журнал приказов" in dlg and "requestJournal" in dlg
-    # «Доступно»: сверхурочные видны ВСЕГДА (без условия >0)
-    assert "сверх." in dlg and "balOvertime > 0" not in dlg
+    # инициалы в заголовке одиночного режима: Иванов И.А.
+    assert "shortName" in dlg
     # строки — карточки как числа месяца, без наведения
     assert "AppTheme.bgCell" in dlg
     # required index у делегата (иначе root.rows[index] падает)
@@ -192,13 +276,16 @@ def part_d_structure() -> None:
     insp = open(os.path.join(ROOT, "components", "MoneyInspector.qml"),
                 encoding="utf-8").read()
     assert "backend.moneyOrders" in insp
-    assert "deleteMoneyOrder" in insp and "repeatMoneyOrder" in insp
+    assert "deleteMoneyOrder" in insp and "editMoneyOrder" in insp
+    # кнопка правки: иконка-карандаш, не «чашечка»
+    assert "edit.svg" in insp and "rest.svg" not in insp
     assert "×" in insp, "нет бейджа с числом получателей"
     left = open(os.path.join(ROOT, "components", "LeftControlPanel.qml"),
                 encoding="utf-8").read()
     assert "moneyOrderDialog.openNew()" in left, "нет кнопки приказа в панели"
     main = open(os.path.join(ROOT, "main.qml"), encoding="utf-8").read()
-    assert "MoneyOrderDialog" in main and "repeatMoneyOrder" in main
+    assert "MoneyOrderDialog" in main and "editMoneyOrder" in main
+    assert "editFromOrder" in main, "правка приказа не подключена"
     assert "onRequestJournal" in main, "журнал не подключён к ведомости"
     summ = open(os.path.join(ROOT, "components", "AppSummaryPanel.qml"),
                 encoding="utf-8").read()
@@ -216,6 +303,7 @@ def part_d_structure() -> None:
 def main() -> int:
     part_a_employees()
     part_bc_order_and_journal()
+    part_b2_modes()
     part_d_structure()
     print("═══ ВЕДОМОСТЬ: ОДИН ПРИКАЗ — ВСЕМ СОТРУДНИКАМ СРАЗУ ═══")
     return 0
