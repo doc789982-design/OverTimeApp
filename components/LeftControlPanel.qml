@@ -193,6 +193,15 @@ Item {
                     }
                 }
 
+                AppButton {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 36
+                    variant: "secondary"
+                    text: "₽ Приказ всем"
+                    iconSource: "../icons/money.svg"
+                    onClicked: moneyOrderDialog.openNew()
+                }
+
 
 
 

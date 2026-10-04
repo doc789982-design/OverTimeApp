@@ -458,7 +458,7 @@ class Backend(QObject):
     yearlyDataChanged = Signal()
     dayDetailsChanged = Signal()
     dayCompsChanged = Signal()
-    moneyCompsChanged = Signal()
+    moneyOrdersChanged = Signal()
     showToast = Signal(str, str)    
     startupUpdateEnabledChanged = Signal()
     timeInputModeChanged = Signal()    
@@ -495,7 +495,7 @@ class Backend(QObject):
         self._hotkeys_list = []
         self._day_duties = []
         self._day_comps = []  
-        self._money_comps = []
+        self._money_orders = []
         self._yearly_data = []
         self._month_pulse = {} # {1: True, 5: True} - значит в январе и мае есть данные        
         self._year_list = []
@@ -957,8 +957,8 @@ class Backend(QObject):
     @Property(list, notify=dayCompsChanged)
     def dayComps(self): return self._day_comps
 
-    @Property(list, notify=moneyCompsChanged)
-    def moneyComps(self): return self._money_comps
+    @Property(list, notify=moneyOrdersChanged)
+    def moneyOrders(self): return self._money_orders
 
     @Property(dict, notify=departmentDataChanged)
     def departmentData(self): return self._department_data    
@@ -1434,43 +1434,6 @@ class Backend(QObject):
             "overtime": max(0, (summ["start_overtime"] + summ["acc_overtime"]) // 60),
             "days": max(0, summ["start_days"] + summ["acc_days"])
         }
-
-    @Slot(str, str, str, str)
-    def saveMoneyCompList(self, comps_json, order_no, order_date_str, comment):
-        if not self.active_db or self._selected_employee_id == 0: return
-        try:
-            order_date = d_parse(order_date_str)
-            comps = json.loads(comps_json)
-            with self.active_db.transaction():
-                for c in comps:
-                    unit, amount = c["unit"], int(c["amount"])
-                    is_prev = c.get("usePrevYear", False)
-                    
-                    if is_prev:
-                        # ПРОВЕРКА ЭТАЛОНА
-                        balances = self.getAvailableBalances(self.current_year - 1)
-                        max_val = balances[unit]
-                        if amount > max_val:
-                            raise Exception(f"Ошибка: Недостаточно средств в остатках прошлого года. Доступно: {max_val}")
-
-                    # Сохранение
-                    if unit in ("hours", "overtime"):
-                        self.active_db.add_compensation_money(self._selected_employee_id, unit, amount * 60, None, order_no, order_date, comment)
-                    else:
-                        self.active_db.add_compensation_money(self._selected_employee_id, unit, None, amount, order_no, order_date, comment)
-                    
-                    if is_prev:
-                        last_id = self.active_db.conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-                        self.active_db.conn.execute("UPDATE compensation SET event_date='1900-01-01' WHERE id=?", (last_id,))
-                
-                # Общая проверка на минусы в течение года
-                is_valid, err = validate_non_negative_over_year(self.active_db, self._selected_employee_id, self.current_year)
-                if not is_valid: raise Exception(err)
-                
-            self.refresh_calendar(); self.refresh_employees(); self._defer_year_refresh(); self.loadMoneyComps()
-            self.showToast.emit("Приказ сохранен", "success")
-        except Exception as e:
-            self.showToast.emit(str(e), "error")
 
     @Slot(str)
     def loadDayDetails(self, date_str):
@@ -2406,66 +2369,212 @@ class Backend(QObject):
             self.active_db.conn.execute("ROLLBACK;")
             print(f"ОШИБКА отмены увольнения: {e}")
 
+    # ============================================================
+    # ВЕДОМОСТЬ: один приказ — всем сотрудникам сразу
+    # ============================================================
+    def _money_balances(self, emp_id):
+        """Доступные к денежной компенсации часы/сверхурочные/дни
+        сотрудника на текущий месяц (как в панели балансов)."""
+        from logic import compute_month_summary as _cms
+        summ = _cms(self.active_db, emp_id, self.current_year, self.current_month)
+        return {
+            "hours": max(0, (summ["start_hours"] + summ["acc_hours"]) // 60),
+            "overtime": max(0, (summ["start_overtime"] + summ["acc_overtime"]) // 60),
+            "days": max(0, summ["start_days"] + summ["acc_days"]),
+        }
+
+    @Slot(result="QVariant")
+    def moneyOrderEmployees(self):
+        """Список сотрудников подразделения с остатками для ведомости."""
+        if not self.active_db:
+            return []
+        emps = self.active_db.list_employees_for_month(
+            self.current_year, self.current_month, True, "")
+        res = []
+        for e in emps:
+            eid = int(e["id"])
+            b = self._money_balances(eid)
+            fio = f"{e['last_name']} {e['first_name']} {e['middle_name'] or ''}".strip()
+            sub = " — ".join([x for x in [(e["rank"] or "").strip(),
+                                          (e["position"] or "").strip()] if x])
+            res.append({
+                "id": eid, "name": fio, "subtitle": sub,
+                "hours": b["hours"], "overtime": b["overtime"], "days": b["days"],
+            })
+        return res
+
+    @Slot(str, str, str, str, result="QVariant")
+    def saveMoneyOrder(self, rows_json, order_no, order_date_str, comment):
+        """Проводит один приказ сразу нескольким сотрудникам.
+
+        rows_json: [{id, hours, overtime, days}] — суммы компенсации
+        каждому. Всё или ничего: при любой ошибке база не трогается,
+        а окну возвращается список ошибок по сотрудникам.
+        """
+        if not self.active_db:
+            return {"ok": False, "errors": []}
+        try:
+            rows = json.loads(rows_json or "[]")
+        except Exception:
+            return {"ok": False, "errors": []}
+        order_date = d_parse(order_date_str)
+
+        # 1. Проверяем каждого: остатков должно хватить
+        errors = []
+        checked = []
+        for r in rows:
+            eid = int(r.get("id") or 0)
+            hours = max(0, int(r.get("hours") or 0))
+            overtime = max(0, int(r.get("overtime") or 0))
+            days = max(0, int(r.get("days") or 0))
+            if eid <= 0 or (hours + overtime + days) <= 0:
+                continue
+            emp = self.active_db.get_employee(eid)
+            if emp is None:
+                continue
+            b = self._money_balances(eid)
+            fio = f"{emp['last_name']} {emp['first_name']}".strip()
+            if hours > b["hours"]:
+                errors.append({"id": eid, "name": fio,
+                               "message": f"не хватает часов: есть {b['hours']}, запрошено {hours}"})
+                continue
+            if overtime > b["overtime"]:
+                errors.append({"id": eid, "name": fio,
+                               "message": f"не хватает сверхурочных: есть {b['overtime']}, запрошено {overtime}"})
+                continue
+            if days > b["days"]:
+                errors.append({"id": eid, "name": fio,
+                               "message": f"не хватает дней: есть {b['days']}, запрошено {days}"})
+                continue
+            checked.append((eid, hours, overtime, days))
+
+        if errors:
+            return {"ok": False, "errors": errors}
+
+        # 2. Сохраняем одной транзакцией
+        try:
+            self.active_db.begin()
+            for eid, hours, overtime, days in checked:
+                if hours > 0:
+                    self.active_db.add_compensation_money(
+                        eid, "hours", hours * 60, None, order_no, order_date, comment)
+                if overtime > 0:
+                    self.active_db.add_compensation_money(
+                        eid, "overtime", overtime * 60, None, order_no, order_date, comment)
+                if days > 0:
+                    self.active_db.add_compensation_money(
+                        eid, "days", None, days, order_no, order_date, comment)
+                is_valid, err = validate_non_negative_over_year(
+                    self.active_db, eid, self.current_year)
+                if not is_valid:
+                    raise Exception(err)
+            self.active_db.conn.execute("COMMIT;")
+        except Exception as e:
+            if self.active_db:
+                self.active_db.conn.execute("ROLLBACK;")
+            return {"ok": False, "errors": [{"id": 0, "name": "",
+                                             "message": str(e)}]}
+
+        self.refresh_calendar()
+        self.refresh_employees()
+        self._defer_year_refresh()
+        self.loadMoneyOrders()
+        self.showToast.emit(
+            f"Приказ № {order_no} проведён: {len(checked)} сотр. Отменить: Ctrl+Z",
+            "success")
+        return {"ok": True, "count": len(checked)}
+
     @Slot()
-    def loadMoneyComps(self):
-        if not self.active_db or self._selected_employee_id == 0: return
-        
-        # Ищем по order_date (визуальной дате приказа)
+    def loadMoneyOrders(self):
+        """Журнал приказов месяца: приказ = один номер и дата,
+        сколько бы сотрудников он ни охватывал."""
+        self._money_orders = []
+        if not self.active_db:
+            self.moneyOrdersChanged.emit()
+            return
         current_month_str = f"{self.current_year:04d}-{self.current_month:02d}"
-        
         rows = self.active_db.conn.execute(
             """
-            SELECT id, unit, order_no, order_date, event_date, amount_minutes, amount_days, comment 
-            FROM compensation 
-            WHERE employee_id=? 
-              AND method='money' 
-              AND substr(order_date, 1, 7) = ?
-            ORDER BY order_date, id
+            SELECT c.employee_id, c.unit, c.amount_minutes, c.amount_days,
+                   c.order_no, c.order_date, c.comment,
+                   e.last_name, e.first_name, e.middle_name
+            FROM compensation c
+            LEFT JOIN employee e ON e.id = c.employee_id
+            WHERE c.method='money'
+              AND substr(c.order_date, 1, 7) = ?
+            ORDER BY c.order_date, c.order_no, c.id
             """,
-            (self._selected_employee_id, current_month_str)
+            (current_month_str,)
         ).fetchall()
-        
-        res = []
-        for r in rows:
-            u = r["unit"]
-            # Определяем, был ли это "Прошлый год" по технической дате 1900
-            is_prev = (r["event_date"] and r["event_date"].startswith("1900"))
-            
-            suffix = " (прошлый год)" if is_prev else ""
-            
-            if u == "hours": 
-                typ, amt = "Часы (в ночное время)" + suffix, fmt_minutes_ru_words(int(r["amount_minutes"] or 0))
-                raw_amt = int(r["amount_minutes"] or 0) // 60
-            elif u == "overtime": 
-                typ, amt = "Сверхурочно" + suffix, fmt_minutes_ru_words(int(r["amount_minutes"] or 0))
-                raw_amt = int(r["amount_minutes"] or 0) // 60
-            else: 
-                typ, amt = "Дни отдыха" + suffix, f"{int(r['amount_days'] or 0)} дн."
-                raw_amt = int(r["amount_days"] or 0)
-            
-            res.append({
-                "id": int(r["id"]),
-                "date": fmt_date_iso(r["order_date"]),
-                "type": typ,
-                "unit": u,
-                "raw_amount": raw_amt,
-                "amount": amt,
-                "order_no": r["order_no"] or "",
-                "comment": r["comment"] or ""
-            })
-        self._money_comps = res
-        self.moneyCompsChanged.emit()
 
-    @Slot(int)
-    def deleteMoneyComp(self, comp_id):
-        if not self.active_db: return
+        groups = {}
+        order = []
+        for r in rows:
+            key = (r["order_no"] or "", r["order_date"] or "")
+            if key not in groups:
+                groups[key] = {
+                    "order_no": r["order_no"] or "",
+                    "order_date": r["order_date"] or "",
+                    "comment": r["comment"] or "",
+                    "employees": {},
+                }
+                order.append(key)
+            g = groups[key]
+            eid = int(r["employee_id"])
+            if eid not in g["employees"]:
+                fio = f"{r['last_name'] or ''} {r['first_name'] or ''} {r['middle_name'] or ''}".strip()
+                g["employees"][eid] = {"id": eid, "name": fio,
+                                       "hours": 0, "overtime": 0, "days": 0}
+            emp = g["employees"][eid]
+            if r["unit"] == "hours":
+                emp["hours"] += int(r["amount_minutes"] or 0) // 60
+            elif r["unit"] == "overtime":
+                emp["overtime"] += int(r["amount_minutes"] or 0) // 60
+            else:
+                emp["days"] += int(r["amount_days"] or 0)
+
+        res = []
+        for key in order:
+            g = groups[key]
+            emps = list(g["employees"].values())
+            res.append({
+                "order_no": g["order_no"],
+                "order_date": g["order_date"],
+                "date": fmt_date_iso(g["order_date"]),
+                "comment": g["comment"],
+                "count": len(emps),
+                "hours": sum(e["hours"] for e in emps),
+                "overtime": sum(e["overtime"] for e in emps),
+                "days": sum(e["days"] for e in emps),
+                "employees": emps,
+            })
+        self._money_orders = res
+        self.moneyOrdersChanged.emit()
+
+    @Slot(str, str)
+    def deleteMoneyOrder(self, order_no, order_date_str):
+        """Удаляет приказ целиком — у всех получателей сразу."""
+        if not self.active_db:
+            return
         try:
-            with self.active_db.transaction():
-                self.active_db.delete_compensation(comp_id)
-            self.refresh_calendar(); self.refresh_employees(); self._defer_year_refresh(); self.loadMoneyComps()
-            self.showToast.emit("Выплата удалена", "success")
+            self.active_db.begin()
+            cur = self.active_db.conn.execute(
+                "DELETE FROM compensation WHERE method='money' AND order_no IS ? AND order_date IS ?",
+                (order_no or None, order_date_str or None))
+            removed = int(cur.rowcount or 0)
+            self.active_db.conn.execute("COMMIT;")
+            if removed == 0:
+                return
+            self.refresh_calendar()
+            self.refresh_employees()
+            self._defer_year_refresh()
+            self.loadMoneyOrders()
+            self.showToast.emit(
+                f"Приказ удалён ({removed} записей). Отменить: Ctrl+Z", "success")
         except Exception as e:
-            self.showToast.emit(f"Ошибка: {e}", "error")
+            if self.active_db:
+                self.active_db.conn.execute("ROLLBACK;")
+            self.showToast.emit(f"Ошибка удаления: {e}", "error")
 
     @Slot()
     def loadDepartmentData(self):
@@ -3527,140 +3636,6 @@ class Backend(QObject):
             self.loadDayDetails(date_str)
         except Exception as e:
             self.showToast.emit(str(e), "error")
-
-    @Slot(int, result="QVariant")
-    def getMoneyOrderGroup(self, comp_id):
-        """Все записи одного приказа о выплате (та же дата и номер).
-
-        Возвращает список для окна редактирования: id записи (dbId),
-        вид, сумма, «прошлый год». Нужно, чтобы при редактировании
-        приказа видеть и править все его строки, а не только ту,
-        по которой кликнули.
-        """
-        try:
-            anchor = self.active_db.conn.execute(
-                "SELECT * FROM compensation WHERE id=?", (int(comp_id),)).fetchone()
-            if not anchor:
-                return []
-            if int(anchor["employee_id"]) != self._selected_employee_id:
-                return []
-            if (anchor["order_no"] or "") == "":
-                rows = [anchor]
-            else:
-                rows = self.active_db.conn.execute(
-                    """SELECT * FROM compensation
-                       WHERE employee_id=? AND method='money'
-                         AND order_no=? AND order_date=?
-                       ORDER BY id""",
-                    (self._selected_employee_id, anchor["order_no"],
-                     anchor["order_date"])).fetchall()
-            labels = {"hours": "В ночное время (ч)", "overtime": "Сверхурочно (ч)", "days": "Дни отдыха"}
-            out = []
-            for r in rows:
-                is_prev = bool(r["event_date"] and str(r["event_date"]).startswith("1900"))
-                amount = (int(r["amount_minutes"] or 0) // 60
-                          if r["unit"] in ("hours", "overtime")
-                          else int(r["amount_days"] or 0))
-                out.append({
-                    "dbId": int(r["id"]),
-                    "unit": r["unit"],
-                    "label": labels.get(r["unit"], r["unit"]),
-                    "amount": amount,
-                    "usePrevYear": is_prev,
-                })
-            return out
-        except Exception:
-            return []
-
-    @Slot(int, str, str, str, str)
-    def updateMoneyCompList(self, anchor_comp_id, comps_json, order_no, order_date_str, comment):
-        """Полное редактирование приказа о денежной выплате.
-
-        Правит все записи приказа сразу: обновляет суммы и реквизиты
-        (включая ДАТУ приказа — запись переезжает в месяц издания),
-        добавляет новые виды и удаляет убранные из списка.
-        comps_json: [{dbId, unit, amount, usePrevYear}, ...]
-        """
-        if not self.active_db or self._selected_employee_id == 0: return
-        try:
-            order_date = d_parse(order_date_str)
-            comps = json.loads(comps_json)
-            anchor = self.active_db.conn.execute(
-                "SELECT * FROM compensation WHERE id=?", (int(anchor_comp_id),)).fetchone()
-            if not anchor or int(anchor["employee_id"]) != self._selected_employee_id:
-                raise Exception("Запись не найдена")
-            old_order_date = d_parse(anchor["order_date"])
-            old_year = old_order_date.year
-
-            # Все записи этого приказа (старые реквизиты)
-            if (anchor["order_no"] or "") == "":
-                group_rows = [anchor]
-            else:
-                group_rows = self.active_db.conn.execute(
-                    """SELECT id FROM compensation
-                       WHERE employee_id=? AND method='money'
-                         AND order_no=? AND order_date=?""",
-                    (self._selected_employee_id, anchor["order_no"],
-                     anchor["order_date"])).fetchall()
-            group_ids = {int(r["id"]) for r in group_rows}
-
-            incoming_ids = set()
-            for c in comps:
-                db_id = int(c.get("dbId") or 0)
-                if db_id > 0:
-                    if db_id not in group_ids:
-                        raise Exception("Запись не из этого приказа")
-                    incoming_ids.add(db_id)
-
-            with self.active_db.transaction():
-                for c in comps:
-                    unit, amount = c["unit"], int(c["amount"])
-                    is_prev = bool(c.get("usePrevYear", False))
-                    db_id = int(c.get("dbId") or 0)
-                    # Сентинел прошлого года остаётся при записи, обычные
-                    # записи переезжают вместе с датой приказа.
-                    event_date = "1900-01-01" if is_prev else d_iso(order_date)
-                    if unit in ("hours", "overtime"):
-                        mins, days = amount * 60, None
-                    else:
-                        mins, days = None, amount
-
-                    if db_id > 0:
-                        self.active_db.conn.execute(
-                            """UPDATE compensation
-                               SET unit=?, amount_minutes=?, amount_days=?,
-                                   order_no=?, order_date=?, event_date=?, comment=?
-                               WHERE id=?""",
-                            (unit, mins, days, order_no, d_iso(order_date),
-                             event_date, comment or None, db_id))
-                    else:
-                        self.active_db.conn.execute(
-                            """INSERT INTO compensation
-                               (employee_id,unit,method,event_date,amount_minutes,
-                                amount_days,order_no,order_date,comment)
-                               VALUES (?,?,?,?,?,?,?,?,?)""",
-                            (self._selected_employee_id, unit, "money", event_date,
-                             mins, days, order_no, d_iso(order_date), comment or None))
-
-                # Записи, убранные из списка, удаляем
-                for gid in (group_ids - incoming_ids):
-                    self.active_db.delete_compensation(gid)
-
-                # Проверяем и старый год (после переезда/удалений), и новый
-                for year in {old_year, order_date.year}:
-                    is_valid, error_msg = validate_non_negative_over_year(
-                        self.active_db, self._selected_employee_id, year)
-                    if not is_valid:
-                        raise Exception(error_msg)
-
-            self.refresh_calendar()
-            self.refresh_employees()
-            self._defer_year_refresh()
-            self.loadMoneyComps()
-            self.showToast.emit("Приказ обновлен", "success")
-        except Exception as e:
-            _msg = str(e)
-            self.showToast.emit(_msg if _msg.startswith("Ошибка") else f"Ошибка: {_msg}", "error")
 
     @Slot(str)
     def openDbFolder(self, path):

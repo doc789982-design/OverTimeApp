@@ -329,7 +329,7 @@ Item {
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: { backend.loadMoneyComps(); moneyInspector.show() }
+                        onClicked: { backend.loadMoneyOrders(); moneyInspector.show() }
                     }
                     AppToolTip {
                         anchors.horizontalCenter: parent.horizontalCenter

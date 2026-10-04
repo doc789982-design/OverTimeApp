@@ -745,6 +745,12 @@ ApplicationWindow {
         }
     }
 
+    // Повтор приказа о денежной компенсации: ведомость заполняется
+    // как в прошлый раз (получатели и суммы), дата — сегодняшний день
+    function repeatMoneyOrder(order) {
+        moneyOrderDialog.prefillFromOrder(order)
+    }
+
     // ==========================================
     // ОВЕРЕИ И ЭФФЕКТЫ
     // ==========================================
@@ -866,14 +872,14 @@ ApplicationWindow {
     AppUI.DayInspector      { id: dayInspector }
     AppUI.MoneyInspector    { 
         id: moneyInspector
-        onRequestAddMoneyDialog: moneyDialog.openNew(moneyInspector.contentItem, 20, 20) 
+        onRequestNewOrder: moneyOrderDialog.openNew()
     }
     AppUI.DayDutyDialog     { id: dayDutyDialog }
     AppUI.DayCompDialog     { id: dayCompDialog }
     AppUI.EmpDialog         { id: empDialog }
     AppUI.EndStatusDialog   { id: endStatusDialog }
     AppUI.TransferDialog    { id: transferDialog }
-    AppUI.MoneyDialog       { id: moneyDialog }
+    AppUI.MoneyOrderDialog  { id: moneyOrderDialog }
 
     AppUI.AppConfirmDialog  {
         id: confirmDialog
