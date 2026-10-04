@@ -436,9 +436,12 @@ Item {
                                 onReleased: (mouse) => {
                                     if (mouse.button !== Qt.LeftButton) return
                                     if (dragSelecting && root.multiSelectDates.length > 1) {
-                                        // Отпустили протяжку — меню на все выделенные дни
+                                        // Отпустили протяжку — меню на все выделенные дни,
+                                        // открываем у ПОСЛЕДНЕЙ ячейки (где отпустили кнопку)
+                                        let pt = mapToItem(calendarGrid, mouse.x, mouse.y)
+                                        let lastCell = root.dayCellAt(pt.x, pt.y)
                                         dayMenu.openFromCell(
-                                            dayCell,
+                                            lastCell !== null ? lastCell : dayCell,
                                             dayInfo.date_str,
                                             dayInfo.is_weekend,
                                             dayInfo.is_holiday,

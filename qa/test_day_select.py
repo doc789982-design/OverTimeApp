@@ -307,6 +307,8 @@ def part_c_menu_checks() -> None:
                encoding="utf-8").read()
     assert "beginDaySelection" in cal and "extendDaySelection" in cal
     assert "multiSelectDates" in cal
+    # меню после протяжки открывается у последней ячейки, не у якоря
+    assert "lastCell !== null ? lastCell : dayCell" in cal
     # выделение подсвечивается плёнкой наведения, без отдельной рамки
     assert "isMultiSelected" in cal \
         and "border.color: AppTheme.accentBrand\n                                border.width: 2" not in cal
