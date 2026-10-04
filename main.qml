@@ -868,6 +868,7 @@ ApplicationWindow {
         id: helpDialog
         onRequestReco: function() { recoDialog.openReco() }
         onRequestCalendar: function(year) { prodCalendarDialog.openYear(year) }
+        onRequestWhatsNew: whatsNewDialog.showChangelog()
     }
     AppUI.DayInspector      { id: dayInspector }
     AppUI.MoneyInspector    { 
@@ -879,11 +880,7 @@ ApplicationWindow {
     AppUI.EmpDialog         { id: empDialog }
     AppUI.EndStatusDialog   { id: endStatusDialog }
     AppUI.TransferDialog    { id: transferDialog }
-    AppUI.MoneyOrderDialog  {
-        id: moneyOrderDialog
-        // «Журнал приказов» из ведомости — история приказов
-        onRequestJournal: { backend.loadMoneyOrders(); moneyInspector.show() }
-    }
+    AppUI.MoneyOrderDialog  { id: moneyOrderDialog }
 
     AppUI.AppConfirmDialog  {
         id: confirmDialog

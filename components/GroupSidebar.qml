@@ -55,7 +55,10 @@ Rectangle {
                 anchors.fill: parent
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
-                onClicked: function(mouse) { addGroupDialog.showAt(parent, mouse.x, mouse.y) }
+                onClicked: function(mouse) {
+                    addGroupDialog.editGroupId = 0
+                    addGroupDialog.showAt(parent, mouse.x, mouse.y)
+                }
             }
         }
     }
@@ -164,9 +167,11 @@ Rectangle {
                         id: groupMenu
                         AppMenuItem {
                             visible: modelData.id !== 0
-                            text: modelData.shifted_weekends ? "Обычные выходные" : "Смещённые выходные"
-                            iconSource: "../icons/calendar.svg"
-                            onClicked: backend.setGroupShiftedWeekends(modelData.id, !modelData.shifted_weekends)
+                            text: "Редактировать группу"
+                            iconSource: "../icons/edit.svg"
+                            onClicked: addGroupDialog.editGroup(
+                                modelData.id, modelData.name,
+                                modelData.is_shift, modelData.shifted_weekends)
                         }
                         AppMenuSeparator { visible: modelData.id !== 0 }
                         AppMenuItem {

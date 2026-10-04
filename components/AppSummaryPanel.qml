@@ -288,58 +288,26 @@ Item {
                 // Распорка: прижимает «Деньги» и «Всего дней» к правому краю строки
                 Item { Layout.fillWidth: true }
 
-                // Кнопка «Деньги» — открывает просмотр денежных компенсаций месяца
-                Rectangle {
+                // «Деньгами» — кнопка-стадион, как все кнопки программы.
+                // Открывает журнал приказов о денежной компенсации.
+                AppButton {
                     visible: !root.isYearView
-                    height: 28
-                    width: moneyPillText.implicitWidth + AppTheme.spaceL + 6
-                    radius: AppTheme.radiusSmall
+                    objectName: "moneyOrderBtn"
+                    text: "Деньгами"
+                    iconSource: "../icons/ruble.svg"
+                    variant: "secondary"
+                    height: 32
                     Layout.alignment: Qt.AlignVCenter
-
-                    color: moneyPillArea.pressed ? AppTheme.statePress
-                         : moneyPillArea.containsMouse ? AppTheme.bgBrandSoft
-                         : "transparent"
-                    border.color: moneyPillArea.containsMouse ? AppTheme.accentBrand : AppTheme.borderInput
-                    border.width: 1
-                    Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
-                    Behavior on border.color { ColorAnimation { duration: AppTheme.durMicro } }
-
-                    Row {
-                        id: moneyPillText
-                        anchors.centerIn: parent
-                        spacing: AppTheme.spaceXXS
-                        Text {
-                            text: "₽"
-                            color: moneyPillArea.containsMouse ? AppTheme.accentBrand : AppTheme.textSecondary
-                            font.family: AppTheme.fontFamily
-                            font.pixelSize: AppTheme.sizeSmall
-                            font.weight: AppTheme.weightBold
-                        }
-                        Text {
-                            text: "Деньгами"
-                            color: moneyPillArea.containsMouse ? AppTheme.accentBrand : AppTheme.textSecondary
-                            font.family: AppTheme.fontFamily
-                            font.pixelSize: AppTheme.sizeSmall
-                            font.weight: AppTheme.weightBold
-                        }
-                    }
-                    HoverHandler { cursorShape: Qt.PointingHandCursor }
-                    MouseArea {
-                        id: moneyPillArea
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: moneyOrderDialog.openForEmployee(backend.selectedEmployeeId)
-                    }
+                    onClicked: { backend.loadMoneyOrders(); moneyInspector.show() }
                     AppToolTip {
                         anchors.horizontalCenter: parent.horizontalCenter
                         anchors.bottom: parent.top; anchors.bottomMargin: AppTheme.spaceXXS
-                        isVisible: moneyPillArea.containsMouse
-                        text: "Денежная компенсация этому сотруднику"
+                        isVisible: parent.hovered
+                        text: "Приказы о денежной компенсации"
                     }
                 }
 
-                // «Всего дней» — переработка сотрудника в днях (справа в шапке).
+// «Всего дней» — переработка сотрудника в днях (справа в шапке).
                 // Один элемент на оба вида: число берётся из текущего набора итогов.
                 // Шрифт числа — как у даты в шапке меню дня (fontCondensed, sizeH4, bold).
                 RowLayout {

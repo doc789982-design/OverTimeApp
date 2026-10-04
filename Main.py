@@ -478,6 +478,7 @@ class Backend(QObject):
     updateUrlChanged = Signal()
     appVersionChanged = Signal()
     whatsNewChanged = Signal()
+    whatsNewAllChanged = Signal()
     remoteUpdateAvailableChanged = Signal()   # есть ли новая версия на сайте
     remoteDownloadingChanged = Signal()       # идёт ли скачивание
     remoteDownloadProgressChanged = Signal()  # прогресс скачивания (0..100)
@@ -3052,6 +3053,28 @@ class Backend(QObject):
             self.active_db.conn.execute("ROLLBACK;")
             self.showToast.emit(f"Ошибка: {e}", "error")
 
+    @Slot(int, str, bool, bool)
+    def updateGroup(self, group_id, name, is_shift, shifted_weekends):
+        """Редактирование группы из окна «Редактировать группу»:
+        меняет имя, график сменности и смещённые выходные разом."""
+        if not self.active_db or not name.strip() or not group_id:
+            return
+        try:
+            self.active_db.begin()
+            self.active_db.conn.execute(
+                "UPDATE employee_group SET name=?, is_shift=?, shifted_weekends=? WHERE id=?",
+                (name.strip(), 1 if is_shift else 0,
+                 1 if shifted_weekends else 0, group_id))
+            self.active_db.conn.execute("COMMIT;")
+            self.refresh_groups()
+            self.refresh_employees()
+            self.refresh_calendar()
+            self._defer_year_refresh()
+            self.showToast.emit("Группа сохранена", "success")
+        except Exception as e:
+            self.active_db.conn.execute("ROLLBACK;")
+            self.showToast.emit(f"Ошибка: {e}", "error")
+
     @Slot(int, bool)
     def setGroupShiftedWeekends(self, group_id, enabled):
         if not self.active_db or not group_id:
@@ -4077,6 +4100,18 @@ class Backend(QObject):
     @Property(list, notify=whatsNewChanged)
     def whatsNew(self):
         return self._whats_new
+
+    @Property(list, notify=whatsNewAllChanged)
+    def whatsNewAll(self):
+        """Весь список изменений текущей версии — для кнопки в справке.
+        Показывает всё, что отмечено пометками сборок, без привязки
+        к «что уже видели»."""
+        cur_build = int(self._app_build or 0)
+        text = self._read_changelog_text()
+        if not cur_build or not text:
+            return []
+        blocks = app_update.changelog_for_builds(text, 0, cur_build)
+        return app_update.whats_new_qml(blocks)
 
     @Property(int, notify=updateReadyChanged)
     def updateChromeExtra(self):

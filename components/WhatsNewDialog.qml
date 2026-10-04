@@ -13,15 +13,24 @@ AppDialog {
     closePolicy: Popup.CloseOnEscape
 
     onAccepted: root.close()
-    onClosed: backend.ackWhatsNew()
+    onClosed: { backend.ackWhatsNew(); root.showAll = false }
 
     function showIfNeeded() {
         if (backend.whatsNew && backend.whatsNew.length > 0)
             root.showCentered()
     }
 
+    // Из справки: показать ВЕСЬ список изменений версии, даже если
+    // «что нового» после обновления уже видели (память освежить)
+    function showChangelog() {
+        root.showAll = true
+        root.showCentered()
+    }
+
+    property bool showAll: false
+
     Repeater {
-        model: backend.whatsNew
+        model: root.showAll ? backend.whatsNewAll : backend.whatsNew
 
         Column {
             width: root.width - AppTheme.spaceL * 2

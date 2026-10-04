@@ -266,7 +266,9 @@ def part_d_structure() -> None:
     assert "toggleRow" in dlg, "переключение строки живёт в корне (не в делегате)"
     assert "Выбрать всех или снять выделение" in dlg
     assert "Укажите номер и дату приказа" in dlg and "flashError" in dlg
-    assert "Журнал приказов" in dlg and "requestJournal" in dlg
+    # журнал приказов из ведомости убран (сборка 267): он теперь
+    # открывается кнопкой «Деньгами» в карточке сотрудника
+    assert "Журнал приказов" not in dlg and "requestJournal" not in dlg
     # инициалы в заголовке одиночного режима: Иванов И.А.
     assert "shortName" in dlg
     # строки — карточки как числа месяца, без наведения
@@ -286,11 +288,12 @@ def part_d_structure() -> None:
     main = open(os.path.join(ROOT, "main.qml"), encoding="utf-8").read()
     assert "MoneyOrderDialog" in main and "editMoneyOrder" in main
     assert "editFromOrder" in main, "правка приказа не подключена"
-    assert "onRequestJournal" in main, "журнал не подключён к ведомости"
-    summ = open(os.path.join(ROOT, "components", "AppSummaryPanel.qml"),
-                encoding="utf-8").read()
-    assert "openForEmployee" in summ, \
-        "кнопка «Деньгами» в карточке не открывает приказ этому сотруднику"
+    # «Деньгами» в карточке сотрудника открывает журнал приказов
+    panel = open(os.path.join(ROOT, "components", "AppSummaryPanel.qml"),
+                 encoding="utf-8").read()
+    assert "moneyInspector.show()" in panel, "«Деньгами» не открывает журнал"
+    assert "moneyOrderDialog.openForEmployee" not in panel, \
+        "«Деньгами» всё ещё открывает ведомость на одного"
     # старое одиночное окно удалено
     assert not os.path.exists(os.path.join(ROOT, "components", "MoneyDialog.qml"))
     backend_src = open(os.path.join(ROOT, "Main.py"), encoding="utf-8").read()

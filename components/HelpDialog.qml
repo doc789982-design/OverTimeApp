@@ -11,6 +11,8 @@ AppSidePanel {
 
     // Открыть окно методических рекомендаций (подключается в main.qml).
     signal requestReco()
+    // Открыть список изменений версии — «Что нового» (подключается в main.qml).
+    signal requestWhatsNew()
     // Открыть производственный календарь года (подключается в main.qml).
     signal requestCalendar(int year)
 
@@ -302,6 +304,39 @@ AppSidePanel {
                 }
             }
 
+        }
+
+        // ==========================================
+        // ЧТО НОВОГО — СПИСОК ИЗМЕНЕНИЙ ВЕРСИИ
+        // ==========================================
+        Column {
+            width: parent.width
+            spacing: AppTheme.spaceXS
+
+            Text {
+                width: parent.width
+                text: "Что нового"
+                color: AppTheme.textPrimary
+                font.family: AppTheme.fontFamily
+                font.pixelSize: AppTheme.sizeBodyLarge
+                font.weight: AppTheme.weightBold
+                wrapMode: Text.WordWrap
+            }
+            Text {
+                width: parent.width
+                text: "Список изменений программы: что добавили и что починили. Это же окно открывается само после обновления — здесь его можно перечитать в любой момент."
+                color: AppTheme.textSecondary
+                font.family: AppTheme.fontFamily
+                font.pixelSize: AppTheme.sizeBody
+                wrapMode: Text.WordWrap
+            }
+            AppButton {
+                objectName: "whatsNewButton"
+                text: "Открыть список изменений"
+                iconSource: "../icons/sparkle.svg"
+                variant: "secondary"
+                onClicked: root.requestWhatsNew()
+            }
         }
 
         // ==========================================

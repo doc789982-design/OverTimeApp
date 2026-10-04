@@ -138,9 +138,9 @@ def main() -> int:
         rtexts = sorted(str(r.property("text")) for r in radios)
         assert rtexts == ["Оба года", "Предыдущий год", "Текущий год"], rtexts
         journal_btns = [o for o in dlg.findChildren(QObject)
-                        if o.property("text") == "Журнал приказов"
-                        and o.property("visible")]
-        assert journal_btns, "нет кнопки «Журнал приказов»"
+                        if o.property("text") == "Журнал приказов"]
+        assert not journal_btns, \
+            "кнопка «Журнал приказов» не вырезана из ведомости"
         # реквизиты приказа: дата → номер → комментарий, вертикально слева
         fields = [o for o in dlg.findChildren(QObject)
                   if o.metaObject().className().startswith(("AppTextField",
@@ -357,14 +357,14 @@ def main() -> int:
 
         # 5г. галочка «все» в заголовке таблицы: акцентный квадрат
         #     (после openNew все выбраны → галочка включена)
-        n_master = sum(1 for x in range(15, 60) for y in range(335, 380)
+        n_master = sum(1 for x in range(15, 60) for y in range(290, 335)
                        if near(px[x, y], ACCENT, 40))
         assert n_master > 150, \
             "галочка «все» в заголовке не найдена (%d px)" % n_master
 
         # 5д. радио «Текущий год» отмечено: акцентная точка-индикатор
         #     в правой колонке шапки
-        n_radio = sum(1 for x in range(255, 305) for y in range(115, 165)
+        n_radio = sum(1 for x in range(255, 305) for y in range(70, 115)
                       if near(px[x, y], ACCENT, 40))
         assert n_radio > 40, "радио года не найдено (%d px)" % n_radio
 
@@ -373,10 +373,10 @@ def main() -> int:
             return sum(1 for x in range(x0, x1) for y in range(y0, y1)
                        if px[x, y] != (0, 0, 0))
 
-        n_cancel = opaque(628, 685, 195, 310)
+        n_cancel = opaque(584, 644, 195, 310)
         assert n_cancel > 80, "текст «Закрыть» не читаем (%d)" % n_cancel
         save_fill = sum(1 for x in range(290, 460)
-                        for y in range(628, 685)
+                        for y in range(584, 644)
                         if near(px[x, y], ACCENT, 40))
         assert save_fill > 2000, "кнопка «Провести приказ» не найдена"
 
