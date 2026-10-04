@@ -1,22 +1,29 @@
 import QtQuick
 
 // ============================================================
-// ПЕРЕКЛЮЧАТЕЛЬ-ПИЛЮЛЯ (вместо AppSwitch) — по CSS-образцу:
-// волна-круг растёт и закрывает пилюлю, вторая мгновенно
-// сжимается в ножку, фон держит прошлый цвет до 80% анимации.
+// ПЕРЕКЛЮЧАТЕЛЬ-ПИЛЮЛЯ (вместо AppSwitch) — по CSS-образцу.
 //
-// Механика образца (600 мс):
-//   - «Волна» — круг в ножке; включаясь, РАСТЁТ (scale 1 →
-//     coverScale) за 600 мс и закрывает всю пилюлю;
-//   - волна второй стороны в этот же момент МГНОВЕННО
-//     сжимается в круг — становится новой ножкой;
-//   - фон пилюли держит прошлый цвет 480 мс (80% анимации),
-//     чтобы у растущего круга не было видно швов по краям;
-//   - ножка всегда над волной.
+// Хореография образца (главное, что видно глазу):
+//   КРУЖОК РАСШИРЯЕТСЯ. Ножка старого состояния сама становится
+//   волной: круг РАСТЁТ от своего места (600 мс) и заливает
+//   пилюлю цветом нового состояния. Прежнее поле в этот же
+//   миг мгновенно сжимается в кружок — но оно ПОД волной и
+//   проявляется как новая ножка только В КОНЦЕ анимации,
+//   когда z-порядок меняется (в образце — transition
+//   z-index 0s .6s: смена слоя с задержкой 600 мс).
+//
+// Фон пилюли держит прошлый цвет до 80% анимации (480 мс),
+// чтобы у растущего круга не было видно швов по краям
+// (keyframes changeColor 80%/80.01% образца).
+//
+// Пропорции образца 252×126 (2:1): ножка 80/126 высоты,
+// отступ 23/126. По умолчанию пилюля 64×32 — те же пропорции,
+// «округлая», как в образце. Анимации включаются только после
+// постройки компонента: при открытии окна свитч встаёт в своё
+// состояние мгновенно, без холостого «разгона» волны.
 //
 // Совместим со старым AppSwitch: text (подпись справа),
-// checked, сигнал toggled() (только от клика человека),
-// размеры трека 52×32 по умолчанию — вёрстка не ломается.
+// checked, сигнал toggled() (только от клика человека).
 // Цвета фиксированы палитрой темы: чернильный #2D3B45 и
 // #FFFFFF — переключатель сам показывает «тёмное/светлое».
 // ============================================================
@@ -29,7 +36,7 @@ Item {
     property string text: ""
 
     // Размер пилюли (трека); подпись добавляет ширину сама
-    property real pillWidth: 52
+    property real pillWidth: 64
     property real pillHeight: 32
 
     // Цвета сторон (палитра темы; переключатель показывает
@@ -45,9 +52,21 @@ Item {
     // пропорции образца 252×126)
     readonly property real knobD: pillHeight * 80 / 126
     readonly property real knobM: pillHeight * 23 / 126
-    // Во сколько раз волна закрывает пилюлю: с запасом, как в
-    // образце (80 × 4.8 = 384 при пилюле 252 — рост «с перехлёстом»)
+    // Во сколько раз волна закрывает пилюлю: с перехлёстом,
+    // как в образце (80 × 4.8 = 384 при пилюле 252)
     readonly property real coverScale: Math.max(pillWidth, pillHeight) / knobD * 1.5
+
+    // Волна в полёте: растущий круг СВЕРХУ, ножка ПОД ним и
+    // проявляется в конце (см. шапку)
+    property bool waveRunning: false
+
+    // «Водители» масштабов волн: растущий круг анимируется
+    // императивно (NumberAnimation), сжимающийся прыгает
+    // мгновенно. Behavior тут НЕ подходит: длительность
+    // перевязывается в тот же тик, что и цель — поведение
+    // зависит от порядка вычисления связей (гонка)
+    property real darkScale: 1
+    property real lightScale: 1
 
     implicitWidth: pillWidth
                    + (text !== "" ? AppTheme.spaceM + label.implicitWidth : 0)
@@ -85,16 +104,13 @@ Item {
             height: root.knobD
             radius: width / 2
             color: root.darkColor
-            z: root.checked ? 2 : 1
-            scale: root.checked ? 1 : root.coverScale
-            // растёт 600 мс, сжимается мгновенно (transition
-            // transform 0s образца)
-            Behavior on scale {
-                NumberAnimation {
-                    duration: root.checked ? 0 : 600
-                    easing.type: Easing.InOutQuad
-                }
-            }
+            // покой: выкл — поле (под ножкой), вкл — ножка (над волной);
+            // в полёте: растущая волна всегда сверху
+            z: root.checked ? (root.waveRunning ? 1 : 2)
+                            : (root.waveRunning ? 2 : 1)
+            // сжавшийся круг уходит ПОД волну (мгновенность —
+            // в драйвере, см. darkScale/lightScale)
+            scale: root.darkScale
         }
 
         // Светлая волна (ножка справа)
@@ -106,14 +122,9 @@ Item {
             height: root.knobD
             radius: width / 2
             color: root.lightColor
-            z: root.checked ? 1 : 2
-            scale: root.checked ? root.coverScale : 1
-            Behavior on scale {
-                NumberAnimation {
-                    duration: root.checked ? 600 : 0
-                    easing.type: Easing.InOutQuad
-                }
-            }
+            z: root.checked ? (root.waveRunning ? 2 : 1)
+                            : (root.waveRunning ? 1 : 2)
+            scale: root.lightScale
         }
     }
 
@@ -133,21 +144,64 @@ Item {
 
     // Фон пилюли: при включении мгновенно тёмный и ОСТАЁТСЯ им
     // до 80% анимации (480 мс), затем светлеет; при выключении —
-    // сразу светлый (keyframes changeColor 80%/80.01% образца).
-    // Внутренняя реакция — через Connections на ребёнке: прямой
-    // onCheckedChanged экземпляра её бы затёр.
+    // сразу светлый. Внутренняя реакция — через Connections на
+    // ребёнке: прямой onCheckedChanged экземпляра её бы затёр.
     Timer {
         id: bgHold
         interval: 480
         onTriggered: pill.color = root.lightColor
     }
+    // Смена слоёв — в КОНЦЕ полёта волны (transition z-index 0s .6s)
+    Timer {
+        id: zFlip
+        interval: 600
+        onTriggered: root.waveRunning = false
+    }
+    // Рост волны — 600 мс (transition .6s ease образца)
+    NumberAnimation {
+        id: growDark
+        target: root
+        property: "darkScale"
+        from: 1
+        to: root.coverScale
+        duration: 600
+        easing.type: Easing.InOutQuad
+    }
+    NumberAnimation {
+        id: growLight
+        target: root
+        property: "lightScale"
+        from: 1
+        to: root.coverScale
+        duration: 600
+        easing.type: Easing.InOutQuad
+    }
+    // Начальное состояние — мгновенно, без анимации (checked мог
+    // прийти с бэкенда уже true)
+    Component.onCompleted: {
+        if (root.checked) {
+            root.darkScale = 1
+            root.lightScale = root.coverScale
+        } else {
+            root.darkScale = root.coverScale
+            root.lightScale = 1
+        }
+    }
     Connections {
         target: root
         function onCheckedChanged() {
+            root.waveRunning = true
+            zFlip.restart()
             if (root.checked) {
+                // тёмная мгновенно в ножку (и под волну),
+                // светлая растёт и заливает пилюлю
+                root.darkScale = 1
+                growLight.restart()
                 pill.color = root.darkColor
                 bgHold.restart()
             } else {
+                root.lightScale = 1
+                growDark.restart()
                 pill.color = root.lightColor
                 bgHold.stop()
             }
