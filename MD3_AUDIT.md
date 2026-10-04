@@ -375,6 +375,53 @@ Focus-кольцо 2px с 50% brand — свежие MD3-спеки тоже т�
 > начинаться с https://, иначе скрипт отказывается публиковать
 > (проверено: код 1 + понятное сообщение). ЗАПОМНИТЬ при каждом
 > релизе: version.json → url = полный URL на ассет.
+> Батч 84 (сборка 267) — ЧЕТЫРЕ ЗАМЕТКИ ЮЗЕРА. (1) ЧЕЙНДЛОГ
+> В СПРАВКЕ: карточка «Что нового» + AppButton «Открыть список
+> изменений» (sparkle.svg) → сигнал requestWhatsNew → main.qml →
+> WhatsNewDialog.showChangelog(). НОВОЕ в Backend:
+> Property whatsNewAll = changelog_for_builds(text, 0, cur_build)
+> → whats_new_qml — ВЕСЬ список версии, без «что видели»;
+> WhatsNewDialog: property showAll, model = showAll ?
+> backend.whatsNewAll : backend.whatsNew, onClosed сбрасывает
+> showAll (ackWhatsNew остался). Автопоказ после обновления —
+> как был (whatsNewTimer → showIfNeeded). (2) «ДЕНЬГАМИ» В
+> КАРТОЧКЕ СОТРУДНИКА (AppSummaryPanel): была самописная
+> «пилюля» (Rectangle radiusSmall + MouseArea) — стала ШТАТНЫМ
+> AppButton (стадион radiusPill, ruble.svg, secondary, 32px,
+> visible: !root.isYearView как у пилюли), открывает ЖУРНАЛ
+> ПРИКАЗОВ: backend.loadMoneyOrders(); moneyInspector.show().
+> openForEmployee (ведомость на одного) осталась в коде
+> ведомости, но из карточки больше не зовётся. (3) ИЗ ВЕДОМОСТИ
+> кнопка «Журнал приказов» ВЫРЕЗАНА (btnJournal + сигнал
+> requestJournal + подключение в main.qml); шапка стала короче
+> на ~44px — пиксельные зоны в test_money_order_view
+> пересчитаны (галочка y 290..335, радио-точка y 70..115,
+> кнопки y 584..644; изображение было 688 → 644). (4) ПКМ ПО
+> ГРУППЕ: пункт «Редактировать группу» (edit.svg) →
+> AddGroupDialog.editGroup(id, name, is_shift, shifted):
+> editGroupId>0 → титул «Редактирование группы», кнопка
+> «Сохранить», onAboutToShow НЕ стирает поля при правке
+> (return при editGroupId>0), onClosed сбрасывает editGroupId;
+> сохранение → НОВЫЙ Slot updateGroup(id, name, is_shift,
+> shifted) (UPDATE employee_group разом + refresh groups/
+> employees/calendar/year). Тумблер «Смещённые/Обычные
+> выходные» из меню УБРАН (backend setGroupShiftedWeekends
+> остался, не используется); «+» в сайдбаре сбрасывает
+> editGroupId=0. ГРАБЛИ: (а) invokeMethod с __args__ не
+> поддерживается этим PySide — Q_ARG("QVariant", ...);
+> (б) при запуске теста ФАЙЛОМ rootObjects[0] голый QWindow —
+> item-обход брать от next(topLevelWindows QQuickWindow);
+> (в) делегаты Repeater в попапе видны только через childItems,
+> findChildren(QObject) их НЕ находит; (г) стаб-свойства для
+> QML — Property(list, constant=True), не Slot (биндинг без
+> скобок); (д) при вырезании блока по якорю «width: …» осиротел
+> незакрытый Rectangle — патчить от ОТКРЫВАЮЩЕЙ скобки блока.
+> ТЕСТ qa/test_help_changelog.py (новый): справка-кнопка+сигнал,
+> полный список из whatsNewAll в делегатах, ack при закрытии,
+> editGroup (титул/кнопка/поля/updateGroup) и создание
+> (createGroup), исходники меню и «Деньгами». Батарея 26/26,
+> поведение ведомости 9/9. ЧЕЙНДЛОГ пуст (запрет юзера).
+
 > Батч 83 (сборка 266) — ОТКАТ АНИМАЦИИ ЗАГРУЗКИ по браку юзера
 > («отвратительно, возвращай как было»). Облако→кольцо (батчи
 > 81–82) УДАЛЕНО ПОЛНОСТЬЮ: components/UpdateCloudRing.qml,
