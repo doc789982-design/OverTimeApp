@@ -745,7 +745,15 @@ ApplicationWindow {
     AppUI.ThemeTransition { id: themeTransition; targetItem: visualRoot }
 
     // Меню дня: открывается ЛКМ и ПКМ по ячейке календаря (как контекстное меню)
-    AppUI.AppDayMenu { id: dayMenu }
+    AppUI.AppDayMenu {
+        id: dayMenu
+        // Закрыли меню — снять выделение дней (протяжка ЛКМ)
+        onClosed: {
+            let ws = stackView.currentItem
+            if (ws && ws.calendarPanel && ws.calendarPanel.clearDaySelection)
+                ws.calendarPanel.clearDaySelection()
+        }
+    }
 
     property var pendingBackendCall: null
 

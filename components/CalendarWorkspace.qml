@@ -19,6 +19,71 @@ Item {
     property bool needAnimation: true
 
     // ==========================================
+    // ВЫДЕЛЕНИЕ ДНЕЙ ПРОТЯЖКОЙ (зажатая ЛКМ)
+    // Зажали кнопку на одном дне, провели по числам — выделился
+    // диапазон; отпустили — открывается меню дня, и его действия
+    // применяются ко всем выделенным дням сразу.
+    // ==========================================
+    property var multiSelectDates: []
+    property string multiSelectAnchor: ""
+    property bool multiSelectActive: false
+
+    function clearDaySelection() {
+        multiSelectDates = []
+        multiSelectAnchor = ""
+        multiSelectActive = false
+    }
+
+    function beginDaySelection(dateStr) {
+        multiSelectAnchor = dateStr
+        multiSelectDates = [dateStr]
+        multiSelectActive = false
+    }
+
+    function _dayCellSelectable(cell) {
+        return cell && cell.dayInfo && cell.isValid
+               && cell.dayInfo.is_current_month === true
+               && !cell.isLocked
+    }
+
+    // Какая ячейка дня под точкой (координаты — в системе сетки)
+    function dayCellAt(gridX, gridY) {
+        for (let i = 0; i < calendarGrid.children.length; i++) {
+            let cell = calendarGrid.children[i]
+            if (!cell || cell.dayInfo === undefined) continue
+            if (gridX >= cell.x && gridX < cell.x + cell.width
+                    && gridY >= cell.y && gridY < cell.y + cell.height)
+                return cell
+        }
+        return null
+    }
+
+    // Протянуть выделение до ячейки под курсором (диапазон от якоря)
+    function extendDaySelection(gridX, gridY) {
+        let cell = dayCellAt(gridX, gridY)
+        if (cell === null || !_dayCellSelectable(cell)) return
+        if (!multiSelectAnchor) return
+        let cells = []
+        for (let i = 0; i < calendarGrid.children.length; i++) {
+            let c = calendarGrid.children[i]
+            if (c && c.dayInfo !== undefined) cells.push(c)
+        }
+        let lo = -1, hi = -1
+        for (let i = 0; i < cells.length; i++) {
+            if (cells[i].dayInfo.date_str === multiSelectAnchor || cells[i] === cell) {
+                if (lo < 0) lo = i
+                hi = i
+            }
+        }
+        if (lo < 0) return
+        let dates = []
+        for (let i = lo; i <= hi; i++)
+            if (_dayCellSelectable(cells[i])) dates.push(cells[i].dayInfo.date_str)
+        multiSelectDates = dates
+        multiSelectActive = dates.length > 1
+    }
+
+    // ==========================================
     // ФУНКЦИИ ДЛЯ ЭФФЕКТА ТАНОСА
     // ==========================================
     // Красивая дата для сообщений: "2026-08-24" -> "24.08.2026"
@@ -245,6 +310,10 @@ Item {
                         property bool isValid: dayInfo !== null && dayInfo.date_str !== undefined
                         // Запертые дни: до даты приема или после увольнения/перевода
                         property bool isLocked: isValid && (dayInfo.is_before_hire === true || dayInfo.is_after_end === true)
+                        // Выделен протяжкой ЛКМ (вместе с соседними днями)
+                        property bool isMultiSelected: root.multiSelectActive
+                                                       && dayInfo !== null
+                                                       && root.multiSelectDates.indexOf(dayInfo.date_str) >= 0
                         
                         // Запертые дни (до приема / после увольнения) — серые
                         // неактивные (как вкладки месяцев до приема).
@@ -301,6 +370,16 @@ Item {
                                 }
                             }
 
+                            // Рамка выделения при протяжке ЛКМ по дням
+                            Rectangle {
+                                visible: dayCell.isMultiSelected
+                                anchors.fill: parent
+                                radius: parent.radius
+                                color: Qt.alpha(AppTheme.accentBrand, 0.10)
+                                border.color: AppTheme.accentBrand
+                                border.width: 2
+                            }
+
                             Loader {
                                 anchors.fill: parent
                                 // ОПТИМИЗАЦИЯ: искры только в видимых ячейках текущего
@@ -331,9 +410,60 @@ Item {
                                     if (containsMouse) dayKeyCatcher.forceActiveFocus()
                                 }
                                 
-                                // ЛКМ и ПКМ — открываем меню дня (как контекстное меню).
+                                // Протяжка ЛКМ по дням: выделяем диапазон
+                                property bool dragSelecting: false
+                                property real pressX: 0
+                                property real pressY: 0
+                                
+                                onPressed: (mouse) => {
+                                    if (mouse.button === Qt.LeftButton) {
+                                        dragSelecting = false
+                                        pressX = mouse.x
+                                        pressY = mouse.y
+                                        root.beginDaySelection(dayInfo.date_str)
+                                    }
+                                }
+                                onPositionChanged: (mouse) => {
+                                    if ((pressedButtons & Qt.LeftButton) === 0) return
+                                    if (!dragSelecting
+                                            && Math.abs(mouse.x - pressX) + Math.abs(mouse.y - pressY) > 6)
+                                        dragSelecting = true
+                                    if (dragSelecting) {
+                                        let pt = mapToItem(calendarGrid, mouse.x, mouse.y)
+                                        root.extendDaySelection(pt.x, pt.y)
+                                    }
+                                }
+                                onReleased: (mouse) => {
+                                    if (mouse.button !== Qt.LeftButton) return
+                                    if (dragSelecting && root.multiSelectDates.length > 1) {
+                                        // Отпустили протяжку — меню на все выделенные дни
+                                        dayMenu.openFromCell(
+                                            dayCell,
+                                            dayInfo.date_str,
+                                            dayInfo.is_weekend,
+                                            dayInfo.is_holiday,
+                                            dayInfo.duties.length > 0,
+                                            dayInfo.has_comp,
+                                            root.multiSelectDates
+                                        )
+                                    } else {
+                                        root.clearDaySelection()
+                                        dayMenu.openFromCell(
+                                            dayCell,
+                                            dayInfo.date_str,
+                                            dayInfo.is_weekend,
+                                            dayInfo.is_holiday,
+                                            dayInfo.duties.length > 0,
+                                            dayInfo.has_comp
+                                        )
+                                    }
+                                    dragSelecting = false
+                                }
+                                // ПКМ — меню одного дня (как контекстное меню)
                                 onClicked: (mouse) => { 
+                                    if (mouse.button !== Qt.RightButton) return
                                     if (!isValid) return
+                                    root.clearDaySelection()
                                     dayMenu.openFromCell(
                                         dayCell,
                                         dayInfo.date_str,
@@ -393,6 +523,8 @@ Item {
                                                 dayCompDialog.openForCompEdit(backend.dayComps[0], dayInfo.date_str, parent, parent.width / 2, parent.height)
                                         }
                                     }
+                                    // Курсор «рука»: и через MouseArea, и через HoverHandler
+                                    HoverHandler { cursorShape: Qt.PointingHandCursor }
                                 }
                                 
                                 Rectangle {
@@ -499,6 +631,9 @@ Item {
                                                         dayDutyDialog.openForDutyEdit(full, dayInfo.date_str, parent, parent.width / 2, parent.height)
                                                 }
                                             }
+                                            // Курсор «рука»: и через MouseArea, и через
+                                            // HoverHandler — надёжнее на любой машине
+                                            HoverHandler { cursorShape: Qt.PointingHandCursor }
                                         }
                                     }
                                 }
@@ -509,6 +644,10 @@ Item {
                                 anchors.fill: parent
                                 
                                 Keys.onPressed: (event) => {
+                                    if (event.key === Qt.Key_Escape) {
+                                        root.clearDaySelection()
+                                        return
+                                    }
                                     if (!isValid) return
                                     // Запертые дни: действий нет (ни мышкой, ни с клавиатуры)
                                     if (isLocked) return

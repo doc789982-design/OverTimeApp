@@ -31,6 +31,9 @@ Menu {
 
     // Параметры для открывающего дня
     property string targetDate: ""
+    // Все дни, к которым применится действие (выделение протяжкой);
+    // для одиночного клика — один день
+    property var targetDates: []
     property bool menuIsWeekend: false
     property bool menuIsHoliday: false
     property bool menuHasDuties: false
@@ -96,7 +99,9 @@ Menu {
                 anchors.right: parent.right
                 anchors.rightMargin: 44
                 elide: Text.ElideRight
-                text: root.fmtDate(root.targetDate)
+                text: root.targetDates.length > 1
+                      ? root.fmtRange(root.targetDates)
+                      : root.fmtDate(root.targetDate)
                 color: AppTheme.textPrimary
                 font.family: AppTheme.fontCondensed
                 font.pixelSize: AppTheme.sizeH4
@@ -175,7 +180,10 @@ Menu {
                             onEntered: menuTip.showAt(st, modelData.tool)
                             onExited: menuTip.hideTip()
                             onClicked: {
-                                backend.setDayStatus(root.targetDate, modelData.st)
+                                if (root.targetDates.length > 1)
+                                    backend.setDayStatusBulk(root.targetDates, modelData.st)
+                                else
+                                    backend.setDayStatus(root.targetDate, modelData.st)
                                 root.close()
                             }
                         }
@@ -203,8 +211,12 @@ Menu {
                         onEntered: menuTip.showAt(clearBtn, "Удалить статус")
                         onExited: menuTip.hideTip()
                         onClicked: {
-                            mainWindow.explodeAndDelete(root.targetDate, "status", null,
-                                function() { backend.setDayStatus(root.targetDate, "") })
+                            if (root.targetDates.length > 1) {
+                                backend.setDayStatusBulk(root.targetDates, "")
+                            } else {
+                                mainWindow.explodeAndDelete(root.targetDate, "status", null,
+                                    function() { backend.setDayStatus(root.targetDate, "") })
+                            }
                             root.close()
                         }
                     }
@@ -239,15 +251,24 @@ Menu {
             dayDutyDialog.showCentered()
         }
         onDeleteClicked: {
-            mainWindow.askConfirm(
-                "Удалить все дежурства?",
-                "Будут удалены все дежурства за " + root.fmtDate(root.targetDate) + ".\nЕсли передумаете — нажмите Ctrl+Z.",
-                "Удалить",
-                function() {
-                    mainWindow.explodeAndDelete(root.targetDate, "duty", null,
-                        function() { backend.clearDayDuties(root.targetDate) })
-                }
-            )
+            if (root.targetDates.length > 1) {
+                mainWindow.askConfirm(
+                    "Удалить все дежурства?",
+                    "Будут удалены все дежурства за " + root.fmtRange(root.targetDates) + ".\nЕсли передумаете — нажмите Ctrl+Z.",
+                    "Удалить",
+                    function() { backend.clearDayDutiesBulk(root.targetDates) }
+                )
+            } else {
+                mainWindow.askConfirm(
+                    "Удалить все дежурства?",
+                    "Будут удалены все дежурства за " + root.fmtDate(root.targetDate) + ".\nЕсли передумаете — нажмите Ctrl+Z.",
+                    "Удалить",
+                    function() {
+                        mainWindow.explodeAndDelete(root.targetDate, "duty", null,
+                            function() { backend.clearDayDuties(root.targetDate) })
+                    }
+                )
+            }
             root.close()
         }
     }
@@ -262,15 +283,24 @@ Menu {
             dayCompDialog.showCentered()
         }
         onDeleteClicked: {
-            mainWindow.askConfirm(
-                "Удалить все компенсации?",
-                "Будут удалены все компенсации за " + root.fmtDate(root.targetDate) + ".\nЕсли передумаете — нажмите Ctrl+Z.",
-                "Удалить",
-                function() {
-                    mainWindow.explodeAndDelete(root.targetDate, "comp", null,
-                        function() { backend.clearDayCompensations(root.targetDate) })
-                }
-            )
+            if (root.targetDates.length > 1) {
+                mainWindow.askConfirm(
+                    "Удалить все компенсации?",
+                    "Будут удалены все компенсации за " + root.fmtRange(root.targetDates) + ".\nЕсли передумаете — нажмите Ctrl+Z.",
+                    "Удалить",
+                    function() { backend.clearDayCompensationsBulk(root.targetDates) }
+                )
+            } else {
+                mainWindow.askConfirm(
+                    "Удалить все компенсации?",
+                    "Будут удалены все компенсации за " + root.fmtDate(root.targetDate) + ".\nЕсли передумаете — нажмите Ctrl+Z.",
+                    "Удалить",
+                    function() {
+                        mainWindow.explodeAndDelete(root.targetDate, "comp", null,
+                            function() { backend.clearDayCompensations(root.targetDate) })
+                    }
+                )
+            }
             root.close()
         }
     }
@@ -283,7 +313,10 @@ Menu {
         text: "Сделать рабочим"
         customColor: AppTheme.accentTeal
         onClicked: {
-            backend.setDayType(root.targetDate, "work")
+            if (root.targetDates.length > 1)
+                backend.setDayTypeBulk(root.targetDates, "work")
+            else
+                backend.setDayType(root.targetDate, "work")
             root.close()
         }
     }
@@ -293,7 +326,10 @@ Menu {
         text: "Сделать выходным"
         customColor: AppTheme.accentDanger
         onClicked: {
-            backend.setDayType(root.targetDate, "weekend")
+            if (root.targetDates.length > 1)
+                backend.setDayTypeBulk(root.targetDates, "weekend")
+            else
+                backend.setDayType(root.targetDate, "weekend")
             root.close()
         }
     }
@@ -303,7 +339,10 @@ Menu {
         text: "Сделать нерабочим праздничным"
         customColor: AppTheme.accentPurple
         onClicked: {
-            backend.setDayType(root.targetDate, "holiday")
+            if (root.targetDates.length > 1)
+                backend.setDayTypeBulk(root.targetDates, "holiday")
+            else
+                backend.setDayType(root.targetDate, "holiday")
             root.close()
         }
     }
@@ -311,12 +350,14 @@ Menu {
     // ============================================================
     // ОТКРЫТИЕ ИЗ ЯЧЕЙКИ ДНЯ
     // ============================================================
-    function openFromCell(cellItem, dateStr, isWeekend, isHoliday, hasDuties, hasComps) {
+    function openFromCell(cellItem, dateStr, isWeekend, isHoliday, hasDuties, hasComps, multiDates) {
         if (dayDutyDialog.opened) dayDutyDialog.close()
         if (dayCompDialog.opened) dayCompDialog.close()
         if (dayInspector.opened) dayInspector.close()
 
         root.targetDate = dateStr
+        root.targetDates = (multiDates !== undefined && multiDates !== null
+                            && multiDates.length > 1) ? multiDates : [dateStr]
         root.menuIsWeekend = isWeekend
         root.menuIsHoliday = isHoliday
         root.menuHasDuties = hasDuties
@@ -324,6 +365,20 @@ Menu {
 
         let pt = cellItem.mapToItem(null, 0, 0)
         root.popup(Math.round(pt.x), Math.round(pt.y))
+    }
+
+    // Красивый диапазон: «12–15 марта 2026 г.» или
+    // «28 февраля — 2 марта 2026 г.»
+    function fmtRange(dates) {
+        if (!dates || dates.length < 2) return fmtDate(root.targetDate)
+        let a = dates[0].split("-")
+        let b = dates[dates.length - 1].split("-")
+        let months = ["января", "февраля", "марта", "апреля", "мая", "июня",
+                      "июля", "августа", "сентября", "октября", "ноября", "декабря"]
+        if (a[1] === b[1] && a[0] === b[0])
+            return parseInt(a[2], 10) + "–" + parseInt(b[2], 10) + " "
+                   + months[parseInt(a[1], 10) - 1] + " " + a[0] + " г."
+        return fmtDate(dates[0]) + " — " + fmtDate(dates[dates.length - 1])
     }
 
     // ============================================================

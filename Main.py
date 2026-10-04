@@ -2264,6 +2264,116 @@ class Backend(QObject):
             self.active_db.conn.execute("ROLLBACK;")
             print(f"ОШИБКА смены типа дня: {e}")
 
+    # ============================================================
+    # МАССОВЫЕ ОПЕРАЦИИ (выделение дней протяжкой в календаре)
+    # ============================================================
+    @Slot(list, str)
+    def setDayStatusBulk(self, dates, status_code):
+        """Статус сразу нескольким дням (выделение протяжкой)."""
+        if not self.active_db or self._selected_employee_id == 0:
+            return
+        try:
+            self.active_db.begin()
+            for date_str in (dates or []):
+                self.active_db.set_day_status(
+                    self._selected_employee_id, d_parse(date_str), status_code)
+            self.active_db.conn.execute("COMMIT;")
+            self.refresh_calendar()
+            self._defer_year_refresh()
+        except Exception:
+            if self.active_db:
+                self.active_db.conn.execute("ROLLBACK;")
+
+    @Slot(list, str)
+    def setDayTypeBulk(self, dates, day_type):
+        """Тип дня ('work'/'weekend'/'holiday') сразу нескольким дням."""
+        if not self.active_db:
+            return
+        try:
+            self.active_db.begin()
+            for date_str in (dates or []):
+                self.active_db.set_calendar_day_type(d_parse(date_str), day_type)
+            self.active_db.conn.execute("COMMIT;")
+            self.refresh_calendar()
+            self._defer_year_refresh()
+        except Exception:
+            if self.active_db:
+                self.active_db.conn.execute("ROLLBACK;")
+
+    @Slot(list)
+    def clearDayDutiesBulk(self, dates):
+        """Удаляет все дежурства в выделенных днях одной операцией."""
+        if not self.active_db or self._selected_employee_id == 0:
+            return
+        try:
+            eid = self._selected_employee_id
+            self.active_db.begin()
+            removed = 0
+            for date_str in (dates or []):
+                d0 = d_parse(date_str)
+                s_dt = datetime.combine(d0, datetime.min.time())
+                e_dt = s_dt + timedelta(days=1)
+                duties = self.active_db.list_duties_for_period(eid, s_dt, e_dt)
+                for d in duties:
+                    self.active_db.delete_duty(int(d["id"]))
+                    removed += 1
+            if removed == 0:
+                self.active_db.conn.execute("ROLLBACK;")
+                return
+            self.active_db.conn.execute("COMMIT;")
+            self.refresh_calendar()
+            self._defer_year_refresh()
+            self.showToast.emit(
+                f"Дежурства удалены ({removed}). Отменить: Ctrl+Z", "success")
+        except Exception as e:
+            if self.active_db:
+                self.active_db.conn.execute("ROLLBACK;")
+            self.showToast.emit(f"Ошибка удаления: {e}", "error")
+
+    @Slot(list)
+    def clearDayCompensationsBulk(self, dates):
+        """Удаляет все компенсации в выделенных днях одной операцией."""
+        if not self.active_db or self._selected_employee_id == 0:
+            return
+        try:
+            eid = self._selected_employee_id
+            self.active_db.begin()
+            removed = 0
+            for date_str in (dates or []):
+                d_iso0 = d_iso(d_parse(date_str))
+                comps = self.active_db.conn.execute("""
+                    SELECT id, unit, event_date FROM compensation 
+                    WHERE employee_id=? AND method<>'money' AND (
+                        (event_date=?) OR 
+                        (order_date=?) OR 
+                        (unit='days' AND method='day_off' AND id IN (SELECT compensation_id FROM comp_day_off_date WHERE employee_id=? AND day_off_date=?))
+                    )
+                """, (eid, d_iso0, d_iso0, eid, d_iso0)).fetchall()
+                for c in comps:
+                    cid = int(c["id"])
+                    if c["unit"] == "days":
+                        c_dates = self.active_db.get_comp_dates(cid)
+                        if len(c_dates) > 1:
+                            self.active_db.replace_comp_dayoff_dates(
+                                cid, eid, [d_parse(x) for x in c_dates if x != d_iso0])
+                        else:
+                            self.active_db.delete_compensation(cid)
+                    else:
+                        self.active_db.delete_compensation(cid)
+                    removed += 1
+            if removed == 0:
+                self.active_db.conn.execute("ROLLBACK;")
+                return
+            self.active_db.conn.execute("COMMIT;")
+            self.refresh_calendar()
+            self._defer_year_refresh()
+            self.showToast.emit(
+                f"Компенсации удалены ({removed}). Отменить: Ctrl+Z", "success")
+        except Exception as e:
+            if self.active_db:
+                self.active_db.conn.execute("ROLLBACK;")
+            self.showToast.emit(f"Ошибка удаления: {e}", "error")
+
     @Slot(str, str, str, str, str, str, int, int, int, int, int, int)
     def saveEmployee(self, last_name, first_name, middle_name, rank, position, start_month, open_mins, open_overtime_mins, open_days, prev_mins, prev_overtime, prev_days):
         if not self.active_db: return

@@ -79,7 +79,8 @@ def main() -> int:
     allv = app_update.changelog_for_builds(text, 0, cur_build)
     assert len(allv) == len(set(builds)), (len(allv), len(set(builds)))
     assert app_update.changelog_for_builds(text, 239, 239) == []
-    assert app_update.changelog_for_builds(text, 250, 260) == []
+    # интервал, где записей точно нет (за пределами всех сборок)
+    assert app_update.changelog_for_builds(text, 400, 500) == []
     print("B: 238→239 один; 230→239 восемь; 224→240 — одиннадцать блоков ✓")
 
     # ── C. Группировка и секции ──
