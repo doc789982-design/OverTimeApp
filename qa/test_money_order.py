@@ -146,11 +146,22 @@ def part_d_structure() -> None:
                encoding="utf-8").read()
     # построчное редактирование: часы/сверхурочные/дни у каждого
     assert "root.rows[index].hours" in dlg and "root.rows[index].days" in dlg
-    # быстрое заполнение
-    assert "Всем" in dlg and "Каждому по табелю" in dlg
-    # тряска окна и подсветка строк с ошибкой
-    assert "shakeAnim" in dlg and "rowErrors" in dlg
-    assert "bgDangerSoft" in dlg and "accentDanger" in dlg
+    # быстрое заполнение: кнопки-глаголы
+    assert "По табелю" in dlg and "Одинаково всем" in dlg
+    assert "Раздать выбранным" in dlg
+    # тряска — ШТАТНАЯ AppDialog.shake(), не самописная анимация
+    assert "root.shake()" in dlg and "shakeAnim" not in dlg
+    assert "root.scrollToBottom()" in dlg
+    # подсветка строк с ошибкой
+    assert "rowErrors" in dlg and "bgDangerSoft" in dlg
+    assert "accentDanger" in dlg
+    # грабли сборки 257: ListView и Layout-и в contentArea AppDialog
+    # дают пустой список и разъехавшиеся подписи — только прямые дети
+    # (Repeater в Column, Row с явными ширинами)
+    assert "ListView" not in dlg, "ListView в AppDialog — список пустой"
+    assert "RowLayout" not in dlg and "ColumnLayout" not in dlg, \
+        "Layout-и растягивают поля — подписи разъезжаются"
+    assert "Repeater" in dlg and "colNum" in dlg
     insp = open(os.path.join(ROOT, "components", "MoneyInspector.qml"),
                 encoding="utf-8").read()
     assert "backend.moneyOrders" in insp
@@ -169,8 +180,8 @@ def part_d_structure() -> None:
     backend_src = open(os.path.join(ROOT, "Main.py"), encoding="utf-8").read()
     assert "saveMoneyCompList" not in backend_src
     assert "loadMoneyComps" not in backend_src and "deleteMoneyComp" not in backend_src
-    print("C: окно-ведомость (построчно + тряска + подсветка), журнал приказов, "
-          "кнопки, старое окно удалено ✓")
+    print("D: окно-ведомость (Repeater + штатная тряска + подсветка), "
+          "журнал приказов, кнопки, старое окно удалено ✓")
 
 
 def main() -> int:

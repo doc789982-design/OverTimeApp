@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Controls
-import QtQuick.Layouts
 import "."
+import "../icons"
 
 // ============================================================
 // ВЕДОМОСТЬ: один денежный приказ — всему подразделению сразу.
@@ -9,26 +9,34 @@ import "."
 // Шапка приказа (номер, дата, комментарий) вводится один раз.
 // Ниже — список сотрудников: у каждого галочка и СВОИ суммы
 // (часы, сверхурочные, дни), которые можно править построчно.
-// Заполнение: «всем одинаково» или «каждому по табелю».
-// При ошибке окно трясётся, а строка сотрудника, у которого
-// не хватает остатка, подсвечивается красным с пояснением.
+// Заполнение: «По табелю» (каждому его переработку) или
+// «Одинаково всем…». При ошибке окно трясётся (штатная тряска
+// AppDialog), а строка сотрудника, у которого не хватает
+// остатка, подсвечивается красным с пояснением.
 // ============================================================
 AppDialog {
     id: root
-    width: 720
-    heightFraction: 3 / 4
+    width: 640
 
-    title: "Денежная компенсация — приказ по подразделению"
+    title: "Приказ о денежной компенсации"
     acceptText: "Провести приказ"
     acceptVariant: "primary"
     rejectText: "Закрыть"
 
-    property var rows: []            // [{id, name, subtitle, checked, hours, overtime, days, balHours, balOvertime, balDays}]
+    // [{id, name, subtitle, checked, hours, overtime, days, balHours, balOvertime, balDays}]
+    property var rows: []
     property var rowErrors: ({})     // id сотрудника → текст ошибки
     property string topError: ""
+    property bool showEqual: false   // панель «одинаково всем»
     property int totalEmp: 0
     property int totalHours: 0
     property int totalDays: 0
+
+    // ширины колонок таблицы (одинаково в шапке и строках)
+    readonly property int colNum: 56
+    readonly property int colBal: 96
+    readonly property int nameWidth: width - AppTheme.spaceL * 2 - 28
+                                     - colNum * 3 - colBal - 8 * 5 - 16
 
     function _fromBackend() {
         let list = backend.moneyOrderEmployees()
@@ -48,6 +56,7 @@ AppDialog {
         root.rows = _fromBackend()
         root.rowErrors = ({})
         root.topError = ""
+        root.showEqual = false
         orderNoInput.text = ""
         orderCommentInput.text = ""
         orderDateInput.selectedDate = new Date().toISOString().split("T")[0]
@@ -55,7 +64,10 @@ AppDialog {
         root.showCentered()
     }
 
-    // «Повторить приказ»: суммы и получатели — как в прошлый раз
+    // «Повторить приказ»: получатели и суммы — как в прошлый раз
+    // Для проверок в песочнице: геометрия отрисованных строк
+    function layoutInfo() { return empTable.layoutInfo() }
+
     function prefillFromOrder(order) {
         let current = _fromBackend()
         for (let i = 0; i < current.length; i++) {
@@ -75,6 +87,7 @@ AppDialog {
         root.rows = current
         root.rowErrors = ({})
         root.topError = ""
+        root.showEqual = false
         orderNoInput.text = order.order_no
         orderCommentInput.text = order.comment
         orderDateInput.selectedDate = new Date().toISOString().split("T")[0]
@@ -97,12 +110,11 @@ AppDialog {
     }
 
     function _toInt(s) {
-        let v = parseInt(String(s).replace(/[^\d-]/g, ""), 10)
+        let v = parseInt(String(s).replace(/[^\d]/g, ""), 10)
         return isNaN(v) ? 0 : Math.max(0, v)
     }
 
     onAccepted: {
-        // Собираем строки и проводим приказ
         let payload = []
         for (let i = 0; i < rows.length; i++) {
             let r = rows[i]
@@ -119,7 +131,7 @@ AppDialog {
             root.close()
             return
         }
-        // Ошибка: окно трясётся, виновники подсвечиваются
+        // Ошибка: окно трясётся (штатная тряска), виновники подсвечены
         let errs = ({})
         let top = ""
         if (result && result.errors) {
@@ -131,211 +143,260 @@ AppDialog {
         }
         root.rowErrors = errs
         root.topError = top
-        shakeAnim.restart()
+        root.shake()
+        root.scrollToBottom()
     }
 
-    // Тряска окна при ошибке
-    SequentialAnimation {
-        id: shakeAnim
-        alwaysRunToEnd: true
-        NumberAnimation { target: contentCol; property: "x"; to: -10; duration: 55 }
-        NumberAnimation { target: contentCol; property: "x"; to: 10; duration: 55 }
-        NumberAnimation { target: contentCol; property: "x"; to: -7; duration: 50 }
-        NumberAnimation { target: contentCol; property: "x"; to: 7; duration: 50 }
-        NumberAnimation { target: contentCol; property: "x"; to: 0; duration: 45 }
-    }
-
-    onOpened: root.topError = ""
-
-    ColumnLayout {
-        id: contentCol
+    // ── Шапка приказа ──
+    Row {
         width: parent.width
         spacing: AppTheme.spaceS
 
-        // ── Шапка приказа ──
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: AppTheme.spaceS
+        AppTextField {
+            id: orderNoInput
+            width: 150
+            label: "№ приказа"
+            placeholderText: "245"
+            maximumLength: 20
+        }
+        AppDateField {
+            id: orderDateInput
+            width: 190
+            label: "Дата приказа"
+        }
+        AppTextField {
+            id: orderCommentInput
+            width: parent.width - 150 - 190 - AppTheme.spaceS * 2
+            label: "Комментарий"
+            placeholderText: "За октябрь"
+        }
+    }
 
-            AppTextField {
-                Layout.preferredWidth: 110
-                label: "№ приказа"
-                placeholderText: "245"
-                maximumLength: 20
-                id: orderNoInput
+    // ── Заполнение: две понятные кнопки ──
+    Row {
+        width: parent.width
+        spacing: AppTheme.spaceS
+
+        AppButton {
+            text: "По табелю"
+            iconSource: "../icons/edit.svg"
+            variant: "secondary"
+            height: 40
+            onClicked: {
+                for (let i = 0; i < root.rows.length; i++) {
+                    if (!root.rows[i].checked) continue
+                    root.rows[i].hours = root.rows[i].balHours
+                    root.rows[i].overtime = root.rows[i].balOvertime
+                    root.rows[i].days = root.rows[i].balDays
+                }
+                root.rows = root.rows.slice()
+                root.recalcTotals()
             }
-            AppDateField {
-                Layout.preferredWidth: 160
-                label: "Дата"
-                id: orderDateInput
-            }
-            AppTextField {
-                Layout.fillWidth: true
-                label: "Комментарий"
-                placeholderText: "За октябрь"
-                id: orderCommentInput
+            AppToolTip {
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.top: parent.bottom; anchors.topMargin: AppTheme.spaceXXS
+                text: "Подставить каждому выбранному его переработку за месяц"
+                isVisible: parent.hovered
             }
         }
+        AppButton {
+            text: root.showEqual ? "Скрыть" : "Одинаково всем…"
+            iconSource: "../icons/money.svg"
+            variant: "secondary"
+            height: 40
+            onClicked: root.showEqual = !root.showEqual
+            AppToolTip {
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.top: parent.bottom; anchors.topMargin: AppTheme.spaceXXS
+                text: "Одна и та же сумма каждому выбранному"
+                isVisible: parent.hovered
+            }
+        }
+    }
 
-        // ── Быстрое заполнение ──
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: AppTheme.spaceS
+    // ── Панель «одинаково всем» ──
+    Row {
+        visible: root.showEqual
+        width: parent.width
+        spacing: AppTheme.spaceS
 
-            Text {
-                text: "Заполнить:"
-                color: AppTheme.textSecondary
-                font.family: AppTheme.fontFamily
-                font.pixelSize: AppTheme.sizeBody
+        AppTextField {
+            id: equalHours
+            width: 120
+            label: "Часы"
+            numericOnly: true
+            horizontalAlignment: TextInput.AlignHCenter
+        }
+        AppTextField {
+            id: equalOvertime
+            width: 120
+            label: "Сверхурочные"
+            numericOnly: true
+            horizontalAlignment: TextInput.AlignHCenter
+        }
+        AppTextField {
+            id: equalDays
+            width: 120
+            label: "Дни отдыха"
+            numericOnly: true
+            horizontalAlignment: TextInput.AlignHCenter
+        }
+        AppButton {
+            text: "Раздать выбранным"
+            variant: "primary"
+            height: 44
+            anchors.verticalCenter: parent.verticalCenter
+            onClicked: {
+                let h = root._toInt(equalHours.text)
+                let o = root._toInt(equalOvertime.text)
+                let d = root._toInt(equalDays.text)
+                for (let i = 0; i < root.rows.length; i++) {
+                    if (!root.rows[i].checked) continue
+                    root.rows[i].hours = h
+                    root.rows[i].overtime = o
+                    root.rows[i].days = d
+                }
+                root.rows = root.rows.slice()
+                root.recalcTotals()
             }
-            AppTextField {
-                Layout.preferredWidth: 74
-                label: ""
-                placeholderText: "часы"
-                id: fillHours
-                horizontalAlignment: TextInput.AlignHCenter
-            }
-            AppTextField {
-                Layout.preferredWidth: 74
-                label: ""
-                placeholderText: "сверх."
-                id: fillOvertime
-                horizontalAlignment: TextInput.AlignHCenter
-            }
-            AppTextField {
-                Layout.preferredWidth: 74
-                label: ""
-                placeholderText: "дни"
-                id: fillDays
-                horizontalAlignment: TextInput.AlignHCenter
-            }
-            AppButton {
-                text: "Всем"
-                implicitHeight: 36
-                onClicked: {
-                    let h = root._toInt(fillHours.text)
-                    let o = root._toInt(fillOvertime.text)
-                    let d = root._toInt(fillDays.text)
-                    for (let i = 0; i < root.rows.length; i++) {
-                        if (!root.rows[i].checked) continue
-                        root.rows[i].hours = h
-                        root.rows[i].overtime = o
-                        root.rows[i].days = d
-                    }
-                    root.rowsChanged()
-                    root.recalcTotals()
+        }
+    }
+
+    // ── Заголовок таблицы ──
+    Row {
+        id: tableHeader
+        width: parent.width
+        spacing: 8
+        leftPadding: 8
+        rightPadding: 8
+
+        Item { width: 28; height: 1 }
+        Text {
+            width: root.nameWidth
+            text: "СОТРУДНИК"
+            color: AppTheme.textTertiary
+            font.family: AppTheme.fontFamily
+            font.pixelSize: AppTheme.sizeMicro
+            font.weight: AppTheme.weightBold
+            font.letterSpacing: 1.2
+        }
+        Text { width: root.colNum; horizontalAlignment: Text.AlignHCenter; text: "ЧАСЫ"; color: AppTheme.textTertiary; font.family: AppTheme.fontFamily; font.pixelSize: AppTheme.sizeMicro; font.weight: AppTheme.weightBold; font.letterSpacing: 1.2 }
+        Text { width: root.colNum; horizontalAlignment: Text.AlignHCenter; text: "СВЕРХ."; color: AppTheme.textTertiary; font.family: AppTheme.fontFamily; font.pixelSize: AppTheme.sizeMicro; font.weight: AppTheme.weightBold; font.letterSpacing: 1.2 }
+        Text { width: root.colNum; horizontalAlignment: Text.AlignHCenter; text: "ДНИ"; color: AppTheme.textTertiary; font.family: AppTheme.fontFamily; font.pixelSize: AppTheme.sizeMicro; font.weight: AppTheme.weightBold; font.letterSpacing: 1.2 }
+        Text { width: root.colBal; horizontalAlignment: Text.AlignHCenter; text: "ДОСТУПНО"; color: AppTheme.textTertiary; font.family: AppTheme.fontFamily; font.pixelSize: AppTheme.sizeMicro; font.weight: AppTheme.weightBold; font.letterSpacing: 1.2 }
+    }
+
+    // ── Строки сотрудников ──
+    Column {
+        id: empTable
+        width: parent.width
+        spacing: 2
+        visible: root.rows.length > 0
+
+        // Для проверок в песочнице: геометрия отрисованных строк
+        function layoutInfo() {
+            let info = { rows: root.rows.length, heights: [], widths: [],
+                         headerFieldX: -1, rowFieldX: -1, dlgW: root.width }
+            for (let i = 0; i < children.length; i++) {
+                let c = children[i]
+                if (c && c.height !== undefined && c.width !== undefined) {
+                    info.heights.push(c.height)
+                    info.widths.push(c.width)
                 }
             }
-            Item { Layout.fillWidth: true }
-            AppButton {
-                text: "Каждому по табелю"
-                variant: "secondary"
-                implicitHeight: 36
-                onClicked: {
-                    for (let i = 0; i < root.rows.length; i++) {
-                        if (!root.rows[i].checked) continue
-                        root.rows[i].hours = root.rows[i].balHours
-                        root.rows[i].overtime = root.rows[i].balOvertime
-                        root.rows[i].days = root.rows[i].balDays
+            if (children.length > 0) {
+                let row = children[0]
+                if (row.children && row.children.length > 0) {
+                    let inner = row.children[0]
+                    for (let k = 0; k < inner.children.length; k++) {
+                        let ch = inner.children[k]
+                        if (ch.width === root.colNum) { info.rowFieldX = ch.x; break }
                     }
-                    root.rowsChanged()
-                    root.recalcTotals()
                 }
             }
-        }
-
-        // ── Заголовок таблицы ──
-        RowLayout {
-            Layout.fillWidth: true
-            Layout.leftMargin: AppTheme.spaceS
-            Layout.rightMargin: AppTheme.spaceS
-            spacing: AppTheme.spaceS
-
-            Text { text: ""; Layout.preferredWidth: 28 }
-            Text {
-                text: "Сотрудник"
-                color: AppTheme.textTertiary
-                font.family: AppTheme.fontFamily
-                font.pixelSize: AppTheme.sizeMicro
-                font.weight: AppTheme.weightBold
-                Layout.fillWidth: true
+            for (let k = 0; k < tableHeader.children.length; k++) {
+                let ch = tableHeader.children[k]
+                if (ch.width === root.colNum) { info.headerFieldX = ch.x + tableHeader.x; break }
             }
-            Text { text: "Часы"; color: AppTheme.textTertiary; font.family: AppTheme.fontFamily; font.pixelSize: AppTheme.sizeMicro; font.weight: AppTheme.weightBold; Layout.preferredWidth: 56 }
-            Text { text: "Сверх."; color: AppTheme.textTertiary; font.family: AppTheme.fontFamily; font.pixelSize: AppTheme.sizeMicro; font.weight: AppTheme.weightBold; Layout.preferredWidth: 56 }
-            Text { text: "Дни"; color: AppTheme.textTertiary; font.family: AppTheme.fontFamily; font.pixelSize: AppTheme.sizeMicro; font.weight: AppTheme.weightBold; Layout.preferredWidth: 56 }
-            Text { text: "Остаток"; color: AppTheme.textTertiary; font.family: AppTheme.fontFamily; font.pixelSize: AppTheme.sizeMicro; font.weight: AppTheme.weightBold; Layout.preferredWidth: 86 }
+            return info
         }
 
-        // ── Строки сотрудников ──
-        ListView {
-            id: rowsList
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-            clip: true
-            boundsBehavior: Flickable.StopAtBounds
-            model: root.rows.length
-            spacing: 2
+        Repeater {
+            model: root.rows
 
-            delegate: Rectangle {
-                width: rowsList.width
-                height: 62 + (root.rowErrors[root.rows[index].id] !== undefined ? 18 : 0)
+            Rectangle {
+                id: rowRect
+                width: parent.width
+                required property var modelData
+                readonly property var rowData: modelData
+                readonly property string errText: root.rowErrors[rowData.id] || ""
+                height: errText !== "" ? 86 : 66
                 radius: AppTheme.radiusSmall
-                color: root.rowErrors[root.rows[index].id] !== undefined
-                       ? AppTheme.bgDangerSoft : "transparent"
-                border.width: root.rowErrors[root.rows[index].id] !== undefined ? 1 : 0
+                color: errText !== "" ? AppTheme.bgDangerSoft : "transparent"
+                border.width: errText !== "" ? 1 : 0
                 border.color: AppTheme.accentDanger
+                clip: true
+                Behavior on height { NumberAnimation { duration: AppTheme.durFast; easing.type: AppTheme.easeStandard } }
                 Behavior on color { ColorAnimation { duration: AppTheme.durFast } }
 
-                RowLayout {
+                Row {
                     anchors.fill: parent
-                    anchors.leftMargin: AppTheme.spaceS
-                    anchors.rightMargin: AppTheme.spaceS
-                    spacing: AppTheme.spaceS
+                    spacing: 8
+                    leftPadding: 8
+                    rightPadding: 8
 
                     AppCheckBox {
-                        checked: root.rows[index].checked
-                        onClicked: {
+                        id: rowCheck
+                        checked: rowRect.rowData.checked
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 28
+                        onToggled: {
                             root.rows[index].checked = checked
                             root.recalcTotals()
                         }
                     }
 
-                    ColumnLayout {
-                        Layout.fillWidth: true
+                    Column {
+                        width: root.nameWidth
+                        anchors.verticalCenter: parent.verticalCenter
                         spacing: 0
+
                         Text {
-                            text: root.rows[index].name
-                            color: root.rows[index].checked ? AppTheme.textPrimary : AppTheme.textDisabled
+                            width: parent.width
+                            text: rowRect.rowData.name
+                            color: rowRect.rowData.checked ? AppTheme.textPrimary : AppTheme.textDisabled
                             font.family: AppTheme.fontFamily
                             font.pixelSize: AppTheme.sizeBody
                             font.weight: AppTheme.weightMedium
                             elide: Text.ElideRight
-                            Layout.fillWidth: true
                         }
                         Text {
-                            visible: root.rows[index].subtitle !== ""
-                            text: root.rows[index].subtitle
+                            width: parent.width
+                            visible: rowRect.rowData.subtitle !== ""
+                            text: rowRect.rowData.subtitle
                             color: AppTheme.textTertiary
                             font.family: AppTheme.fontFamily
                             font.pixelSize: AppTheme.sizeSmall
                             elide: Text.ElideRight
-                            Layout.fillWidth: true
                         }
                         Text {
-                            visible: root.rowErrors[root.rows[index].id] !== undefined
-                            text: root.rowErrors[root.rows[index].id] || ""
+                            width: parent.width
+                            visible: rowRect.errText !== ""
+                            text: rowRect.errText
                             color: AppTheme.accentDanger
                             font.family: AppTheme.fontFamily
                             font.pixelSize: AppTheme.sizeSmall
+                            font.weight: AppTheme.weightBold
                             wrapMode: Text.WordWrap
-                            Layout.fillWidth: true
                         }
                     }
 
                     AppTextField {
-                        Layout.preferredWidth: 56
-                        text: root.rows[index].hours
-                        enabled: root.rows[index].checked
+                        width: root.colNum
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: rowRect.rowData.hours
+                        enabled: rowRect.rowData.checked
+                        numericOnly: true
                         horizontalAlignment: TextInput.AlignHCenter
                         onEditingFinished: {
                             root.rows[index].hours = root._toInt(text)
@@ -343,9 +404,11 @@ AppDialog {
                         }
                     }
                     AppTextField {
-                        Layout.preferredWidth: 56
-                        text: root.rows[index].overtime
-                        enabled: root.rows[index].checked
+                        width: root.colNum
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: rowRect.rowData.overtime
+                        enabled: rowRect.rowData.checked
+                        numericOnly: true
                         horizontalAlignment: TextInput.AlignHCenter
                         onEditingFinished: {
                             root.rows[index].overtime = root._toInt(text)
@@ -353,9 +416,11 @@ AppDialog {
                         }
                     }
                     AppTextField {
-                        Layout.preferredWidth: 56
-                        text: root.rows[index].days
-                        enabled: root.rows[index].checked
+                        width: root.colNum
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: rowRect.rowData.days
+                        enabled: rowRect.rowData.checked
+                        numericOnly: true
                         horizontalAlignment: TextInput.AlignHCenter
                         onEditingFinished: {
                             root.rows[index].days = root._toInt(text)
@@ -363,39 +428,65 @@ AppDialog {
                         }
                     }
 
-                    Text {
-                        Layout.preferredWidth: 86
-                        text: root.rows[index].balHours + " ч · " + root.rows[index].balDays + " д"
-                        color: AppTheme.textTertiary
-                        font.family: AppTheme.fontFamily
-                        font.pixelSize: AppTheme.sizeSmall
-                        horizontalAlignment: Text.AlignHCenter
+                    Column {
+                        width: root.colBal
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 0
+                        Text {
+                            width: parent.width
+                            horizontalAlignment: Text.AlignHCenter
+                            text: rowRect.rowData.balHours + " ч · " + rowRect.rowData.balDays + " д"
+                            color: AppTheme.textSecondary
+                            font.family: AppTheme.fontFamily
+                            font.pixelSize: AppTheme.sizeSmall
+                        }
+                        Text {
+                            width: parent.width
+                            horizontalAlignment: Text.AlignHCenter
+                            visible: rowRect.rowData.balOvertime > 0
+                            text: "сверх. " + rowRect.rowData.balOvertime + " ч"
+                            color: AppTheme.textTertiary
+                            font.family: AppTheme.fontFamily
+                            font.pixelSize: AppTheme.sizeSmall
+                        }
                     }
                 }
             }
         }
+    }
 
-        // ── Ошибка сверху (кто именно и что не хватает) ──
-        Text {
-            visible: root.topError !== ""
-            text: root.topError
-            color: AppTheme.accentDanger
-            font.family: AppTheme.fontFamily
-            font.pixelSize: AppTheme.sizeBody
-            wrapMode: Text.WordWrap
-            Layout.fillWidth: true
-        }
+    Text {
+        visible: root.rows.length === 0
+        width: parent.width
+        text: "В подразделении нет активных сотрудников на этот месяц"
+        color: AppTheme.textTertiary
+        font.family: AppTheme.fontFamily
+        font.pixelSize: AppTheme.sizeBody
+        horizontalAlignment: Text.AlignHCenter
+        topPadding: AppTheme.spaceL
+    }
 
-        // ── Итог ──
-        Text {
-            text: "Выплата: " + root.totalEmp + " сотр. · всего " +
-                  root.totalHours + " ч · " + root.totalDays + " д"
-            color: AppTheme.textSecondary
-            font.family: AppTheme.fontFamily
-            font.pixelSize: AppTheme.sizeBody
-            font.weight: AppTheme.weightBold
-            Layout.fillWidth: true
-            horizontalAlignment: Text.AlignRight
-        }
+    // ── Итог ──
+    Text {
+        width: parent.width
+        text: "Выплата: " + root.totalEmp + " сотр. · всего " +
+              root.totalHours + " ч · " + root.totalDays + " д"
+        color: AppTheme.textSecondary
+        font.family: AppTheme.fontFamily
+        font.pixelSize: AppTheme.sizeBody
+        font.weight: AppTheme.weightBold
+        horizontalAlignment: Text.AlignRight
+    }
+
+    // ── Ошибка (кто именно и что не хватает) ──
+    Text {
+        visible: root.topError !== ""
+        width: parent.width
+        text: root.topError
+        color: AppTheme.accentDanger
+        font.family: AppTheme.fontFamily
+        font.pixelSize: AppTheme.sizeBody
+        font.weight: AppTheme.weightBold
+        wrapMode: Text.WordWrap
     }
 }
