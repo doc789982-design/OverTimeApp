@@ -274,7 +274,7 @@ AppDialog {
                     }
                 }
 
-                AppPillSwitch {
+                AppSwitch {
                     id: periodSkipWeekends
                     text: "Пропускать нерабочие дни"
                     checked: true
@@ -282,7 +282,7 @@ AppDialog {
                     onCheckedChanged: compCol.recalcEndFromDays()
                 }
 
-                AppPillSwitch {
+                AppSwitch {
                     id: periodUseShiftPattern
                     text: "По графику сменности"
                     checked: false

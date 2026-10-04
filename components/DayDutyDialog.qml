@@ -55,7 +55,7 @@ AppDialog {
             endMinutes: 1200
         }
 
-        AppPillSwitch {
+        AppSwitch {
             id: shiftCheckBox
             text: "Считать по графику сменности"
             checked: true
