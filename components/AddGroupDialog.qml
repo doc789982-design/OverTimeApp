@@ -61,6 +61,7 @@ AppDialog {
         if (grpNameInput.text.trim() === "") {
             grpErrorMsg.text = "Ошибка: Введите название группы"
             grpErrorMsg.visible = true
+            grpNameInput.flashError()
             root.shake()
             return
         }

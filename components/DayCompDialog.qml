@@ -241,6 +241,7 @@ AppDialog {
                     width: parent.width
                     label: "Начало периода:"
                     onSelectedDateChanged: {
+                        hasError = false
                         if (periodUseShiftPattern.checked)
                             compCol.recalcShiftPattern()
                         else
@@ -267,6 +268,7 @@ AppDialog {
                     width: parent.width
                     label: "Конец периода:"
                     onSelectedDateChanged: {
+                        hasError = false
                         if (!compCol.isUpdating && !periodUseShiftPattern.checked)
                             compCol.recalcDaysFromEnd()
                     }
@@ -738,6 +740,8 @@ AppDialog {
             if (!root.targetDate) return
 
             if (compCol.compMode === 1 && periodErrorMsg.visible) {
+                periodStartInput.flashError()
+                periodEndInput.flashError()
                 root.scrollToItem(periodErrorMsg)
                 root.shake()
                 return
@@ -797,6 +801,8 @@ AppDialog {
             if (finalDates.length === 0) {
                 compErrorMsg.text = "Ошибка: Нет дней в периоде"
                 compErrorMsg.visible = true
+                periodStartInput.flashError()
+                periodEndInput.flashError()
                 root.scrollToItem(compErrorMsg)
                 root.shake()
                 return
@@ -813,6 +819,8 @@ AppDialog {
                 if (compCol.compMode === 1) {
                     periodErrorMsg.text = conflict.message
                     periodErrorMsg.visible = true
+                    periodStartInput.flashError()
+                    periodEndInput.flashError()
                     root.scrollToItem(periodErrorMsg)
                 } else {
                     compErrorMsg.text = conflict.message

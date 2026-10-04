@@ -173,11 +173,13 @@ AppDialog {
     }
 
     onAccepted: {
-        // номер и дата приказа обязательны
-        orderNoInput.hasError = orderNoInput.text.trim() === ""
-        orderDateInput.hasError = !(orderDateInput.selectedDate !== ""
-                                     && /^(\d{2})\.(\d{2})\.(\d{4})$/.test(orderDateInput.text.trim()))
-        if (orderNoInput.hasError || orderDateInput.hasError) {
+        // номер и дата приказа обязательны: вспышка красной рамки
+        let noBad = orderNoInput.text.trim() === ""
+        let dateBad = !(orderDateInput.selectedDate !== ""
+                        && /^(\d{2})\.(\d{2})\.(\d{4})$/.test(orderDateInput.text.trim()))
+        if (noBad) orderNoInput.flashError()
+        if (dateBad) orderDateInput.flashError()
+        if (noBad || dateBad) {
             root.rowErrors = ({})
             root.topError = "Укажите номер и дату приказа"
             root.shake()

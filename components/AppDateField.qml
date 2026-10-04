@@ -12,7 +12,34 @@ TextField {
     property color cutoutColor: AppTheme.bgModal
     
     property bool isFormField: true   // автофокус диалога ищет такие
-    property bool hasError: false     // true = рамка ошибки (accentDanger)
+    property bool hasError: false      // true = показать ошибку (вспышка рамки)
+
+    // КРАСНАЯ РАМКА ОШИБКИ — ВСПЫШКА: flashError() зажигает рамку
+    // на 3 секунды, потом она ПЛАВНО гаснет — не висит, пока не
+    // введёшь значение. Повторное «Сохранить» — вспышка снова.
+    // Ввод значения гасит рамку сразу.
+    property real errGlow: 0           // 0..1 — сила красной рамки
+    function flashError() {
+        root.hasError = true
+        errFade.stop()
+        errLight.restart()
+        errHold.restart()
+    }
+    onHasErrorChanged: {
+        if (root.hasError) {
+            errFade.stop()
+            errLight.restart()
+            errHold.restart()
+        } else {
+            errHold.stop()
+            errFade.restart()          // плавное затухание
+        }
+    }
+    PropertyAnimation { id: errLight; target: root; property: "errGlow";
+                        to: 1; duration: AppTheme.durFast }
+    PropertyAnimation { id: errFade; target: root; property: "errGlow";
+                        to: 0; duration: 700; easing.type: Easing.InQuad }
+    Timer { id: errHold; interval: 3000; onTriggered: root.hasError = false }
         property bool isFloated: root.text.length > 0 || root.activeFocus || calendarDialog.opened
 
     property int currentMonth: new Date().getMonth()
@@ -100,12 +127,19 @@ TextField {
         color: "transparent"
         radius: AppTheme.radiusMedium
         
-        border.color: !root.enabled ? AppTheme.borderDisabled :
-                      (root.hasError ? AppTheme.accentDanger :
-                      (root.activeFocus || calendarDialog.opened ? AppTheme.borderFocus : 
-                      (root.hovered ? AppTheme.textSecondary : AppTheme.borderInput)))
+        border.color: {
+            let base = !root.enabled ? AppTheme.borderDisabled :
+                       (root.activeFocus || calendarDialog.opened ? AppTheme.borderFocus :
+                       (root.hovered ? AppTheme.textSecondary : AppTheme.borderInput))
+            if (root.errGlow <= 0.001) return base
+            let d = AppTheme.accentDanger
+            return Qt.rgba(base.r + (d.r - base.r) * root.errGlow,
+                           base.g + (d.g - base.g) * root.errGlow,
+                           base.b + (d.b - base.b) * root.errGlow, 1)
+        }
         
-        border.width: (root.activeFocus || calendarDialog.opened || root.hasError) ? AppTheme.focusWidth : 1
+        border.width: (root.activeFocus || calendarDialog.opened || root.errGlow > 0.01) ? AppTheme.focusWidth : 1
+        Behavior on border.width { NumberAnimation { duration: AppTheme.durMicro } }
         Behavior on border.color { ColorAnimation { duration: AppTheme.durMicro } }
     }
 
@@ -328,6 +362,7 @@ TextField {
     }
 
     onSelectedDateChanged: {
+        if (root.hasError) root.hasError = false   // ввод даты гасит вспышку ошибки
         if (selectedDate === "") { root.text = ""; return }
         let parts = selectedDate.split("-")
         if (parts.length === 3) root.text = parts[2] + "." + parts[1] + "." + parts[0]

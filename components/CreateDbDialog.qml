@@ -34,6 +34,7 @@ AppDialog {
         if (startupNewDbNameInput.text.trim() === "") {
             createDbErrorMsg.text = "Ошибка: Введите название отдела"
             createDbErrorMsg.visible = true
+            startupNewDbNameInput.flashError()
             root.shake()
             return
         }

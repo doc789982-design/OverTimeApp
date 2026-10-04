@@ -187,6 +187,8 @@ AppDialog {
         if (empLastName.text.trim() === "" || empFirstName.text.trim() === "") {
             empErrorMsg.text = "Ошибка: Заполните обязательные поля (фамилия и имя)"
             empErrorMsg.visible = true
+            if (empLastName.text.trim() === "") empLastName.flashError()
+            if (empFirstName.text.trim() === "") empFirstName.flashError()
             root.shake()
             return
         }
