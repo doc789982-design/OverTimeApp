@@ -4100,6 +4100,12 @@ class Backend(QObject):
     def whatsNew(self):
         return self._whats_new
 
+    @Property(bool, notify=whatsNewChanged)
+    def whatsNewFresh(self):
+        # True — обновление ещё не пролистано (окно само открывается
+        # при старте); False — прочитано, но из справки можно перечитать
+        return bool(getattr(self, "_whats_new_fresh", False))
+
     @Property(int, notify=updateReadyChanged)
     def updateChromeExtra(self):
         # Только когда обновление ГОТОВО. Во время фоновой проверки/скачивания
@@ -4145,12 +4151,15 @@ class Backend(QObject):
         return ""
 
     def _prepare_whats_new(self):
-        # После обновления показываем записи ТОЛЬКО тех сборок, что появились
-        # после последней виденной: 239 → 240 — одна порция изменений;
-        # перепрыг через несколько сборок (230 → 239) — всё накопившееся:
-        # 231–239. Номер прошлой сборки — в конфиге; для старых конфигов
-        # достаётся из ключа «ВЕРСИЯ+сборка».
+        # Окно «Что нового» показывает ИЗМЕНЕНИЯ ПОСЛЕДНЕГО ОБНОВЛЕНИЯ —
+        # записи сборок интервала (since, cur]. Пока обновление не
+        # прочитано (last < cur), интервал начинается с последней
+        # прочитанной сборки и окно само открывается при старте.
+        # После прочтения начало интервала запоминается в prev —
+        # и кнопка в справке показывает ту же порцию снова,
+        # чтобы освежить память, а не пустоту.
         last_build = 0
+        prev_build = 0
         try:
             if self.config_path.exists():
                 data = json.loads(self.config_path.read_text(encoding="utf-8"))
@@ -4159,28 +4168,47 @@ class Backend(QObject):
                 if not last_build:
                     last_build = app_update.build_from_version_key(
                         str(ui_cfg.get("last_changelog_version") or ""))
+                prev_build = int(ui_cfg.get("prev_changelog_build") or 0)
         except Exception:
-            last_build = 0
+            last_build, prev_build = 0, 0
         cur_build = int(self._app_build or 0)
-        if not cur_build or last_build >= cur_build:
+        self._whats_new_fresh = bool(cur_build and last_build < cur_build)
+        if not cur_build:
+            self._whats_new = []
+            return
+        since = last_build if last_build < cur_build else prev_build
+        if since >= cur_build:
             self._whats_new = []
             return
         text = self._read_changelog_text()
-        blocks = app_update.changelog_for_builds(text, last_build, cur_build)
+        blocks = app_update.changelog_for_builds(text, since, cur_build)
         self._whats_new = app_update.whats_new_qml(blocks)
 
     @Slot()
     def ackWhatsNew(self):
-        """Закрыли «Что нового» — больше не показываем эту сборку."""
+        """Закрыли «Что нового» — запоминаем, что просмотрено.
+        Интервал последнего обновления сохраняется (prev), чтобы кнопка
+        в справке показывала его снова. Повторное закрытие окна ничего
+        не затирает (идемпотентно)."""
         try:
             self.config_path.parent.mkdir(parents=True, exist_ok=True)
         except Exception:
             pass
-        if self._app_version:
-            self._write_ui_config("last_changelog_version", self._version_key())
-        if self._app_build:
-            self._write_ui_config("last_changelog_build", int(self._app_build))
-        self._whats_new = []
+        cur_build = int(self._app_build or 0)
+        last = 0
+        try:
+            if self.config_path.exists():
+                data = json.loads(self.config_path.read_text(encoding="utf-8"))
+                last = int(data.get("ui", {}).get("last_changelog_build") or 0)
+        except Exception:
+            last = 0
+        if cur_build and last != cur_build:
+            self._write_ui_config("prev_changelog_build", last)
+            if self._app_version:
+                self._write_ui_config("last_changelog_version", self._version_key())
+            self._write_ui_config("last_changelog_build", cur_build)
+        self._whats_new_fresh = False
+        # содержимое НЕ стираем: справка покажет его ещё раз
         self.whatsNewChanged.emit()
 
     @Slot()

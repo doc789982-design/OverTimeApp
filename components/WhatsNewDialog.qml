@@ -16,7 +16,10 @@ AppDialog {
     onClosed: backend.ackWhatsNew()
 
     function showIfNeeded() {
-        if (backend.whatsNew && backend.whatsNew.length > 0)
+        // само окно открывается только когда обновление НЕ прочитано;
+        // из справки (showChangelog) — в любой момент
+        if (backend.whatsNewFresh &&
+                backend.whatsNew && backend.whatsNew.length > 0)
             root.showCentered()
     }
 
@@ -29,7 +32,7 @@ AppDialog {
         width: root.width - AppTheme.spaceL * 2
         x: AppTheme.spaceL
         visible: !backend.whatsNew || backend.whatsNew.length === 0
-        text: "Новых изменений с прошлого просмотра нет: окно после обновления уже показало всё свежее."
+        text: "Новых изменений не было: всё из последнего обновления вы уже видели."
         color: AppTheme.textSecondary
         font.family: AppTheme.fontFamily
         font.pixelSize: AppTheme.sizeBody

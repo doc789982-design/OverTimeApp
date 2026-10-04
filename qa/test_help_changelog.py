@@ -46,11 +46,16 @@ class StubBackend(QObject):
         super().__init__()
         self.calls = []
         self._whats_new = list(WHATS_NEW_ALL)
+        self.fresh = True
 
     # WhatsNewDialog читает свойство без скобок (биндинг модели)
     @Property(list, notify=whatsNewChanged)
     def whatsNew(self):
         return self._whats_new
+
+    @Property(bool, notify=whatsNewChanged)
+    def whatsNewFresh(self):
+        return self.fresh
 
     def set_whats_new(self, blocks):
         self._whats_new = list(blocks)
@@ -203,7 +208,24 @@ ApplicationWindow {
     settle(app, 1.0)
     assert any(c == "ack" for c in stub.calls), "закрытие не отметило просмотр"
 
-    # всё уже видели → честное пустое состояние, не пустое окно
+    # перечитываемость: после просмотра (fresh=False) кнопка в справке
+    # показывает ТО ЖЕ содержание, а не пустоту
+    stub.fresh = False
+    QMetaObject.invokeMethod(new_dlg, "showChangelog")
+    settle(app, 1.2)
+    body1_5 = all_texts()
+    assert any("Пробная запись" in t for t in body1_5), \
+        "после прочтения справка показывает пустоту: %r" % (body1_5[:6],)
+    # автопоказ при этом больше не срабатывает
+    QMetaObject.invokeMethod(new_dlg, "close")
+    settle(app, 0.8)
+    QMetaObject.invokeMethod(new_dlg, "showIfNeeded")
+    settle(app, 0.5)
+    assert not to_var(new_dlg.property("visible")), \
+        "окно само открылось без свежего обновления"
+    QMetaObject.invokeMethod(new_dlg, "showIfNeeded")   # (закрыто; безOpened)
+
+    # ничего никогда не было → честное пустое состояние
     stub.set_whats_new([])
     QMetaObject.invokeMethod(new_dlg, "showChangelog")
     settle(app, 1.2)
@@ -213,8 +235,8 @@ ApplicationWindow {
     assert not any("Пробная запись" in t for t in body2)
     QMetaObject.invokeMethod(new_dlg, "close")
     settle(app, 0.8)
-    print("B. «Что нового»: только новое с прошлого просмотра; "
-          "пустое состояние есть ✓")
+    print("B. «Что нового»: последнее обновление, перечитывается после "
+          "просмотра; автопоказ только по свежести ✓")
 
     # ── C. группа: редактирование ──
     assert str(group_dlg.property("title")) == "Новая группа"
@@ -271,6 +293,16 @@ ApplicationWindow {
     main_qml = open(os.path.join(ROOT, "main.qml"), encoding="utf-8").read()
     assert "onRequestWhatsNew: whatsNewDialog.showChangelog()" in main_qml, \
         "кнопка справки не подключена к окну чейнджлога"
+    # семантика «освежить память»: интервал последнего обновления
+    # хранится в prev и НЕ стирается при закрытии окна
+    main_py = open(os.path.join(ROOT, "Main.py"), encoding="utf-8").read()
+    assert "prev_changelog_build" in main_py, \
+        "интервал последнего обновления не сохраняется"
+    assert "whatsNewFresh" in main_py, "нет флага свежести для автопоказа"
+    i_ack = main_py.find("def ackWhatsNew")
+    i_end = main_py.find("def ", i_ack + 10)
+    assert "self._whats_new = []" not in main_py[i_ack:i_end], \
+        "ack по-прежнему стирает список изменений"
     print("D. Меню группы и «Деньгами» ведут куда надо ✓")
 
     os.remove(wrapper)
