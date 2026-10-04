@@ -149,7 +149,8 @@ ApplicationWindow {
     settle(app, 0.2)
     assert fired, "кнопка не сигналит requestWhatsNew"
 
-    # карточка В ПОТОКЕ, под календарём (а не поверх кнопок):
+    # раздел «Что нового» — ПЕРВАЯ секция справки (выше QR-плашки
+    # и календаря), в потоке, не поверх кнопок
     QMetaObject.invokeMethod(help_dlg, "show")
     settle(app, 0.8)
     from PySide6.QtQuick import QQuickItem
@@ -171,13 +172,21 @@ ApplicationWindow {
     assert cal, "нет кнопок производственного календаря"
     cal_y = cal[-1].mapToScene(QPointF(0, 0)).y()
     wn_y = btns[0].mapToScene(QPointF(0, 0)).y()
-    assert wn_y > cal_y + 20, \
-        "карточка «Что нового» не в потоке (поверх кнопок): " \
-        "календарь y=%.0f, карточка y=%.0f" % (cal_y, wn_y)
+    assert wn_y < cal_y - 20, \
+        "раздел «Что нового» не над календарём: " \
+        "календарь y=%.0f, раздел y=%.0f" % (cal_y, wn_y)
+    # краткий текст, без рассуждений про «то же окно»
+    body = [str(t.property("text") or "")
+            for t in help_dlg.findChildren(QObject)
+            if t.metaObject().className() == "QQuickText"]
+    assert any("что нового добавлено и исправлено" in t for t in body), \
+        "нет краткого текста о смысле раздела: %r" % (body[:8],)
+    assert not any("то же окно" in t for t in body), \
+        "остался старый текст-пояснялка"
     QMetaObject.invokeMethod(help_dlg, "close")
     settle(app, 0.4)
-    print("A. Справка: карточка «Что нового» в потоке (под календарём), "
-          "кнопка сигналит ✓")
+    print("A. Справка: «Что нового» — первая секция (выше QR и календаря), "
+          "текст краткий, кнопка сигналит ✓")
 
     # ── B. «Что нового»: как при обновлении — только новое ──
     from PySide6.QtQuick import QQuickItem

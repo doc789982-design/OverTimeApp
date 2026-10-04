@@ -75,7 +75,45 @@ AppSidePanel {
 
             // ==========================================
             // ПЛАШКА С QR-КОДОМ
+            // ==========================================            spacing: AppTheme.spaceL
+
             // ==========================================
+            // ЧТО НОВОГО — САМАЯ ПЕРВАЯ СЕКЦИЯ
+            // ==========================================
+            Column {
+                width: parent.width
+                spacing: AppTheme.spaceXS
+
+                Text {
+                    width: parent.width
+                    text: "Что нового"
+                    color: AppTheme.textPrimary
+                    font.family: AppTheme.fontFamily
+                    font.pixelSize: AppTheme.sizeBodyLarge
+                    font.weight: AppTheme.weightBold
+                    wrapMode: Text.WordWrap
+                }
+                Text {
+                    width: parent.width
+                    text: "Здесь можно посмотреть, что нового добавлено и исправлено в этой версии."
+                    color: AppTheme.textSecondary
+                    font.family: AppTheme.fontFamily
+                    font.pixelSize: AppTheme.sizeBody
+                    wrapMode: Text.WordWrap
+                }
+                AppButton {
+                    objectName: "whatsNewButton"
+                    text: "Открыть список изменений"
+                    iconSource: "../icons/sparkle.svg"
+                    variant: "secondary"
+                    onClicked: root.requestWhatsNew()
+                }
+            }
+
+            // ==========================================
+            // ПЛАШКА С QR-КОДОМ
+            // ==========================================
+
             Rectangle {
                 width: parent.width
                 height: githubRow.implicitHeight + (AppTheme.spaceM * 2)
@@ -309,38 +347,6 @@ AppSidePanel {
                 }
             }
 
-            // ==========================================
-            // ЧТО НОВОГО — ПОСЛЕДНЯЯ КАРТОЧКА ПОТОКА
-            // ==========================================
-            Column {
-                width: parent.width
-                spacing: AppTheme.spaceXS
-
-                Text {
-                    width: parent.width
-                    text: "Что нового"
-                    color: AppTheme.textPrimary
-                    font.family: AppTheme.fontFamily
-                    font.pixelSize: AppTheme.sizeBodyLarge
-                    font.weight: AppTheme.weightBold
-                    wrapMode: Text.WordWrap
-                }
-                Text {
-                    width: parent.width
-                    text: "Изменения, которые появились с прошлого просмотра — то же окно, что открывается само после обновления программы."
-                    color: AppTheme.textSecondary
-                    font.family: AppTheme.fontFamily
-                    font.pixelSize: AppTheme.sizeBody
-                    wrapMode: Text.WordWrap
-                }
-                AppButton {
-                    objectName: "whatsNewButton"
-                    text: "Открыть список изменений"
-                    iconSource: "../icons/sparkle.svg"
-                    variant: "secondary"
-                    onClicked: root.requestWhatsNew()
-                }
-            }
         }
 
         // ==========================================
