@@ -375,6 +375,43 @@ Focus-кольцо 2px с 50% brand — свежие MD3-спеки тоже т�
 > начинаться с https://, иначе скрипт отказывается публиковать
 > (проверено: код 1 + понятное сообщение). ЗАПОМНИТЬ при каждом
 > релизе: version.json → url = полный URL на ассет.
+> Батч 75 (сборка 257) — ВЕДОМОСТЬ: ДЕНЕЖНАЯ КОМПЕНСАЦИЯ ОДНИМ
+> ПРИКАЗОМ ВСЕМ. Проект одобрен юзером (+требования: построчное
+> редактирование часов/дней у каждого; при ошибке окно трясётся,
+> виновник подсвечивается). BACKEND (Main.py): _money_balances
+> (start+acc текущего месяца, как панель балансов),
+> moneyOrderEmployees (активные + остатки), saveMoneyOrder
+> (rows_json; СНАЧАЛА проверка всех: не хватает часов/сверх./
+> дней → {ok:False, errors:[{id,name,message}]} БЕЗ записи в
+> базу; иначе одна транзакция: по записи на тип +
+> validate_non_negative_over_year на каждого; тост «Приказ № …
+> проведён: N сотр.»), loadMoneyOrders (журнал: GROUP BY
+> (order_no, order_date) в Python, LEFT JOIN employee, получатели
+> с суммами), deleteMoneyOrder (IS ? — NULL-безопасно; удаление
+> у всех сразу + тост). QML: MoneyOrderDialog.qml НОВЫЙ (AppDialog
+> 720×3/4: шапка №/дата/комментарий; «Всем» одинаковые часы/
+> сверх./дни + «Каждому по табелю»; строки: AppCheckBox + ФИО +
+> три AppTextField (построчно!) + остаток; итог «N сотр. · X ч ·
+> Y д»; ОШИБКИ: rowErrors {id→message} — строка bgDangerSoft +
+> рамка danger + красная подпись, окно — SequentialAnimation по x
+> (shakeAnim); prefillFromOrder для повтора; rowsChanged() для
+> перерисовки после «Всем»/«По табелю»). MoneyInspector.qml
+> ПЕРЕПИСАН в журнал приказов (группа ×N, суммы, раскрытие
+> получателей, «Повторить» → mainWindow.repeatMoneyOrder →
+> prefillFromOrder, удаление приказа с confirm). LeftControlPanel:
+> «₽ Приказ всем» (AppButton secondary, money.svg) под «Новый
+> сотрудник». AppSummaryPanel «Деньгами» → loadMoneyOrders.
+> УДАЛЕНО СТАРОЕ: MoneyDialog.qml, saveMoneyCompList,
+> updateMoneyCompList, loadMoneyComps, deleteMoneyComp,
+> getMoneyOrderGroup, moneyComps property/signal (QML ссылок не
+> осталось — проверено grep'ом). ГРАБЛИ: заначка года приёма в
+> following годах = 0 — тестовые остатки делаются ДЕЖУРСТВАМИ
+> (20:00–08:00 → 8 ночных часов), а не opening_minutes; якорь
+> «@Slot(str) def loadMoneyComps» — на деле @Slot(). ТЕСТ
+> qa/test_money_order.py (A: остатки; B: приказ по табелю,
+> ошибка поимённо без записи, удаление; C: структура QML).
+> Батарея: 25 тестов.
+
 > Батч 74 (сборка 256) — МЕНЮ ПОСЛЕ ПРОТЯЖКИ У ПОСЛЕДНЕЙ ЯЧЕЙКИ.
 > Правка юзера: меню открывалось у якоря (первой ячейки), надо у
 > последней (где отпустили кнопку). onReleased: mapToItem(
