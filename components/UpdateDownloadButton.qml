@@ -260,6 +260,7 @@ Item {
     onTargetVisChanged: stateDebounce.restart()
 
     // ---- Мышь ----
+    HoverHandler { cursorShape: (root.ready || (root.hasUpdate && !root.downloading) || root.idleCheck) }
     MouseArea {
         id: hover
         anchors.fill: parent

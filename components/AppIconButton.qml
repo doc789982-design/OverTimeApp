@@ -37,6 +37,7 @@ Item {
         Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
     }
 
+    HoverHandler { cursorShape: Qt.PointingHandCursor }
     MouseArea {
         id: mouseArea
         anchors.fill: parent

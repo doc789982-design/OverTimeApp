@@ -107,6 +107,7 @@ Popup {
                         color: AppTheme.textSecondary 
                     }
                     
+                    HoverHandler { cursorShape: Qt.PointingHandCursor }
                     MouseArea { 
                         id: closeHov; 
                         anchors.fill: parent; 

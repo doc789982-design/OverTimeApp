@@ -119,6 +119,7 @@ Item {
         elide: Text.ElideRight
     }
 
+    HoverHandler { cursorShape: Qt.PointingHandCursor }
     MouseArea {
         id: ma
         anchors.fill: parent

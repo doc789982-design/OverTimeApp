@@ -81,6 +81,7 @@ Item {
                     }
                 }
 
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
                 MouseArea {
                     id: removeMouse
                     anchors.fill: parent
@@ -92,6 +93,7 @@ Item {
             }
         }
 
+        HoverHandler { cursorShape: Qt.PointingHandCursor }
         MouseArea {
             id: mainMouse
             anchors.left: parent.left

@@ -87,6 +87,7 @@ Item {
         NumberAnimation { target: canvas; property: "rayOffset"; to: 0; duration: 600; easing.type: Easing.InOutSine }
     }
 
+    HoverHandler { cursorShape: Qt.PointingHandCursor }
     MouseArea {
         id: mouseArea
         anchors.fill: parent

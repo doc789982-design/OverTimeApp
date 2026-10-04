@@ -57,6 +57,7 @@ Popup {
         }
 
         // Клик по уведомлению — закрыть его вручную
+        HoverHandler { cursorShape: Qt.PointingHandCursor }
         MouseArea {
             anchors.fill: parent
             cursorShape: Qt.PointingHandCursor

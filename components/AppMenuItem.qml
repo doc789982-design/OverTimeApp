@@ -88,6 +88,7 @@ MenuItem {
                 color: deleteMouse.containsMouse ? AppTheme.accentDanger : AppTheme.textTertiary
             }
 
+            HoverHandler { cursorShape: Qt.PointingHandCursor }
             MouseArea {
                 id: deleteMouse
                 anchors.fill: parent

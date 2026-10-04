@@ -323,6 +323,7 @@ Item {
                             font.weight: AppTheme.weightBold
                         }
                     }
+                    HoverHandler { cursorShape: Qt.PointingHandCursor }
                     MouseArea {
                         id: moneyPillArea
                         anchors.fill: parent

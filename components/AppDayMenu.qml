@@ -123,6 +123,7 @@ Menu {
                     height: AppTheme.iconMedium
                     color: AppTheme.textSecondary
                 }
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
                 MouseArea {
                     id: closeHov
                     anchors.fill: parent
@@ -172,6 +173,7 @@ Menu {
                             font.weight: AppTheme.weightBold
                             font.pixelSize: AppTheme.sizeBodyLarge
                         }
+                        HoverHandler { cursorShape: Qt.PointingHandCursor }
                         MouseArea {
                             id: st
                             anchors.fill: parent
@@ -203,6 +205,7 @@ Menu {
                         height: AppTheme.iconMedium
                         color: clearBtn.containsMouse ? AppTheme.accentDanger : AppTheme.textSecondary
                     }
+                    HoverHandler { cursorShape: Qt.PointingHandCursor }
                     MouseArea {
                         id: clearBtn
                         anchors.fill: parent

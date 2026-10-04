@@ -49,6 +49,7 @@ Rectangle {
                 font.pixelSize: AppTheme.sizeH2 
             }
             
+            HoverHandler { cursorShape: Qt.PointingHandCursor }
             MouseArea { 
                 id: addGrpMouse
                 anchors.fill: parent
@@ -189,6 +190,7 @@ Rectangle {
                     }
 
                     // Зона управления мышью
+                    HoverHandler { cursorShape: btnMouseArea.drag.active ? Qt.ClosedHandCursor : Qt.PointingHandCursor }
                     MouseArea { 
                         id: btnMouseArea
                         anchors.fill: parent

@@ -125,6 +125,7 @@ Rectangle {
                                 height: AppTheme.iconSmall
                                 color: clearSearchMouse.containsMouse ? AppTheme.textPrimary : AppTheme.textTertiary
                             }
+                            HoverHandler { cursorShape: Qt.PointingHandCursor }
                             MouseArea {
                                 id: clearSearchMouse
                                 anchors.fill: parent
@@ -524,6 +525,7 @@ Rectangle {
                         }
                     }
 
+                    HoverHandler { cursorShape: empMouseArea.drag.active ? Qt.ClosedHandCursor : Qt.PointingHandCursor }
                     MouseArea { 
                         id: empMouseArea
                         anchors.fill: parent; hoverEnabled: true; acceptedButtons: Qt.LeftButton | Qt.RightButton

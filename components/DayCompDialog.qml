@@ -82,6 +82,7 @@ AppDialog {
                     font.pixelSize: AppTheme.sizeBody
                     font.weight: compCol.compMode === 0 ? AppTheme.weightBold : AppTheme.weightMedium
                 }
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
                 MouseArea {
                     id: m1Hover
                     anchors.fill: parent
@@ -107,6 +108,7 @@ AppDialog {
                     font.pixelSize: AppTheme.sizeBody
                     font.weight: compCol.compMode === 1 ? AppTheme.weightBold : AppTheme.weightMedium
                 }
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
                 MouseArea {
                     id: m2Hover
                     anchors.fill: parent

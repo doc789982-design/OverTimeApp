@@ -196,6 +196,7 @@ Item {
                         }
                     }
 
+                    HoverHandler { cursorShape: Qt.PointingHandCursor }
                     MouseArea {
                         id: pressArea
                         anchors.fill: parent

@@ -74,6 +74,7 @@ AppDialog {
                         font.weight: root.balanceYear === 0 ? AppTheme.weightBold : AppTheme.weightMedium
                     }
 
+                    HoverHandler { cursorShape: Qt.PointingHandCursor }
                     MouseArea {
                         id: yearHover1
                         anchors.fill: parent
@@ -99,6 +100,7 @@ AppDialog {
                         font.weight: root.balanceYear === 1 ? AppTheme.weightBold : AppTheme.weightMedium
                     }
 
+                    HoverHandler { cursorShape: Qt.PointingHandCursor }
                     MouseArea {
                         id: yearHover2
                         anchors.fill: parent

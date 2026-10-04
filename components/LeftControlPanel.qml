@@ -93,6 +93,7 @@ Item {
                         }
                     }
                     
+                    HoverHandler { cursorShape: Qt.PointingHandCursor }
                     MouseArea {
                         anchors.fill: parent
                         cursorShape: Qt.PointingHandCursor

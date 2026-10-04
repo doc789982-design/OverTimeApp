@@ -139,6 +139,7 @@ AppSidePanel {
                     }
                 }
 
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
                 MouseArea {
                     id: githubHov
                     anchors.fill: parent
@@ -204,6 +205,7 @@ AppSidePanel {
                     }
                 }
 
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
                 MouseArea {
                     id: recoHov
                     anchors.fill: parent
@@ -227,6 +229,7 @@ AppSidePanel {
 
                 // Область клика «открыть 2026» — объявлена ПЕРВОЙ, поэтому
                 // лежит ПОД кнопками годов и не съедает их нажатия
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
                 MouseArea {
                     id: calHov
                     anchors.fill: parent

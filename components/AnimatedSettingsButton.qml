@@ -55,6 +55,7 @@ Item {
         NumberAnimation { target: gearItem; property: "scale"; to: 1.0; duration: AppTheme.durStandard; easing.type: AppTheme.easeEnter }
     }
 
+    HoverHandler { cursorShape: Qt.PointingHandCursor }
     MouseArea {
         id: mouseArea
         anchors.fill: parent

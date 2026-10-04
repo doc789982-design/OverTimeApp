@@ -140,6 +140,7 @@ ApplicationWindow {
                         height: parent.height
                         color: helpHov.pressed ? AppUI.AppTheme.statePress : (helpHov.containsMouse ? AppUI.AppTheme.stateHover : "transparent")
                         
+                        HoverHandler { cursorShape: Qt.PointingHandCursor }
                         MouseArea {
                             id: helpHov
                             anchors.fill: parent
@@ -234,6 +235,7 @@ ApplicationWindow {
                             width: 10; height: 1
                             color: AppUI.AppTheme.textSecondary
                         }
+                        HoverHandler { cursorShape: Qt.PointingHandCursor }
                         MouseArea {
                             id: minHov
                             cursorShape: Qt.PointingHandCursor
@@ -254,6 +256,7 @@ ApplicationWindow {
                             border.color: AppUI.AppTheme.textSecondary
                             border.width: 1
                         }
+                        HoverHandler { cursorShape: Qt.PointingHandCursor }
                         MouseArea {
                             id: maxHov
                             cursorShape: Qt.PointingHandCursor
@@ -280,6 +283,7 @@ ApplicationWindow {
                             font.pixelSize: AppUI.AppTheme.sizeSmall
                             font.weight: AppUI.AppTheme.weightBold
                         }
+                        HoverHandler { cursorShape: Qt.PointingHandCursor }
                         MouseArea {
                             id: closeHov
                             cursorShape: Qt.PointingHandCursor
@@ -291,6 +295,7 @@ ApplicationWindow {
                 }
             }
 
+            HoverHandler { cursorShape: Qt.SizeHorCursor }
             MouseArea {
                 z: 200; width: 8
                 anchors.left: parent.left
@@ -300,6 +305,7 @@ ApplicationWindow {
                 visible: mainWindow.visibility !== Window.Maximized
                 onPressed: mainWindow.startSystemResize(Qt.LeftEdge)
             }
+            HoverHandler { cursorShape: Qt.SizeHorCursor }
             MouseArea {
                 z: 200; width: 8
                 anchors.right: parent.right
@@ -309,6 +315,7 @@ ApplicationWindow {
                 visible: mainWindow.visibility !== Window.Maximized
                 onPressed: mainWindow.startSystemResize(Qt.RightEdge)
             }
+            HoverHandler { cursorShape: Qt.SizeVerCursor }
             MouseArea {
                 z: 200; height: 8
                 anchors.top: parent.top
@@ -318,6 +325,7 @@ ApplicationWindow {
                 visible: mainWindow.visibility !== Window.Maximized
                 onPressed: mainWindow.startSystemResize(Qt.TopEdge)
             }
+            HoverHandler { cursorShape: Qt.SizeVerCursor }
             MouseArea {
                 z: 200; height: 8
                 anchors.bottom: parent.bottom
@@ -329,6 +337,7 @@ ApplicationWindow {
             }
 
             // УГЛЫ: тянуть окно можно и за углы, как в обычных программах
+            HoverHandler { cursorShape: Qt.SizeFDiagCursor }
             MouseArea {
                 z: 201; width: 16; height: 16
                 anchors.top: parent.top; anchors.left: parent.left
@@ -336,6 +345,7 @@ ApplicationWindow {
                 visible: mainWindow.visibility !== Window.Maximized
                 onPressed: mainWindow.startSystemResize(Qt.TopEdge | Qt.LeftEdge)
             }
+            HoverHandler { cursorShape: Qt.SizeBDiagCursor }
             MouseArea {
                 z: 201; width: 16; height: 16
                 anchors.top: parent.top; anchors.right: parent.right
@@ -343,6 +353,7 @@ ApplicationWindow {
                 visible: mainWindow.visibility !== Window.Maximized
                 onPressed: mainWindow.startSystemResize(Qt.TopEdge | Qt.RightEdge)
             }
+            HoverHandler { cursorShape: Qt.SizeBDiagCursor }
             MouseArea {
                 z: 201; width: 16; height: 16
                 anchors.bottom: parent.bottom; anchors.left: parent.left
@@ -350,6 +361,7 @@ ApplicationWindow {
                 visible: mainWindow.visibility !== Window.Maximized
                 onPressed: mainWindow.startSystemResize(Qt.BottomEdge | Qt.LeftEdge)
             }
+            HoverHandler { cursorShape: Qt.SizeFDiagCursor }
             MouseArea {
                 z: 201; width: 16; height: 16
                 anchors.bottom: parent.bottom; anchors.right: parent.right
@@ -516,6 +528,7 @@ ApplicationWindow {
                                 height: AppUI.AppTheme.iconMedium
                                 color: AppUI.AppTheme.textSecondary
                             }
+                            HoverHandler { cursorShape: Qt.PointingHandCursor }
                             MouseArea {
                                 id: folderHov
                                 cursorShape: Qt.PointingHandCursor
@@ -524,6 +537,7 @@ ApplicationWindow {
                                 onClicked: backend.openDbFolder(modelData.path)
                             }
                         }
+                        HoverHandler { cursorShape: Qt.PointingHandCursor }
                         MouseArea {
                             id: mouseArea
                             anchors.fill: parent

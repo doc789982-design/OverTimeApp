@@ -98,6 +98,7 @@ Item {
                                     }
                                 }
                             }
+                            HoverHandler { cursorShape: Qt.IBeamCursor }
                             MouseArea { anchors.fill: parent; cursorShape: Qt.IBeamCursor; onClicked: keyCatcher.forceActiveFocus() }
                         }
 
@@ -331,6 +332,7 @@ Item {
                                     color: delKeyHover.pressed ? AppTheme.statePress : (delKeyHover.containsMouse ? AppTheme.bgDangerSoft : "transparent")
                                     Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
                                     IconImage { anchors.centerIn: parent; source: "../icons/trash.svg"; width: AppTheme.iconMedium; height: AppTheme.iconMedium; color: delKeyHover.containsMouse ? AppTheme.accentDanger : AppTheme.textSecondary }
+                                    HoverHandler { cursorShape: Qt.PointingHandCursor }
                                     MouseArea { 
                                         id: delKeyHover; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; 
                                         onClicked: { let arr = []; for(let i=0; i<backend.hotkeysList.length; i++) arr.push(backend.hotkeysList[i]); arr.splice(index, 1); backend.saveHotkeys(JSON.stringify(arr)) } 

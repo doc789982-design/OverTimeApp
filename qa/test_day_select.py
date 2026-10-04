@@ -124,29 +124,31 @@ def part_a_bulk_slots() -> None:
 # Часть B: логика выделения в календаре (настоящий CalendarWorkspace)
 # ────────────────────────────────────────────────────────────────
 
-def march_days():
-    """42 ячейки марта 2026 (31 день) + апрель-хвост (не текущий месяц)."""
+import calendar as _cal
+
+
+def month_days(year, month):
+    """Сетка месяца ровно как строит refresh_calendar: недели с понедельника,
+    хвосты соседних месяцев помечены is_current_month=False.
+
+    Месяц может занять 5 недель (35 ячеек) или 6 (42) — от этого зависит,
+    есть ли в сетке пустые ячейки (dayInfo=null), на которых ломалось
+    выделение (октябрь 2026 — 5 недель, март 2026 — 6)."""
     days = []
-    for d in range(1, 32):
-        days.append({
-            "date_str": "2026-03-%02d" % d, "day_number": d,
-            "is_current_month": True, "is_before_hire": False,
-            "is_after_end": False, "is_weekend": False, "is_holiday": False,
-            "is_pre_holiday": False, "status": "", "has_comp": False,
-            "duties": [],
-        })
-    for d in range(1, 12):
-        days.append({
-            "date_str": "2026-04-%02d" % d, "day_number": d,
-            "is_current_month": False, "is_before_hire": False,
-            "is_after_end": False, "is_weekend": False, "is_holiday": False,
-            "is_pre_holiday": False, "status": "", "has_comp": False,
-            "duties": [],
-        })
+    for week in _cal.Calendar(firstweekday=0).monthdatescalendar(year, month):
+        for d in week:
+            days.append({
+                "date_str": d.isoformat(), "day_number": d.day,
+                "is_current_month": d.month == month and d.year == year,
+                "is_before_hire": False, "is_after_end": False,
+                "is_weekend": d.weekday() >= 5, "is_holiday": False,
+                "is_pre_holiday": False, "status": "", "has_comp": False,
+                "duties": [],
+            })
     return days
 
 
-DAYS = march_days()
+DAYS = month_days(2026, 10)
 
 WRAPPER = """
 import QtQuick
@@ -181,7 +183,7 @@ class StubBackend(QObject):
 
     @Property(str, constant=True)
     def currentPeriodText(self):
-        return "Март 2026"
+        return "Октябрь 2026"
 
     @Property(list, constant=True)
     def dayDuties(self):
@@ -240,6 +242,10 @@ def qml_selection_checks(app) -> None:
         engine.load(qml_path)
         if not engine.rootObjects():
             raise AssertionError("CalendarWorkspace не загрузился")
+        # дать сцене собраться: без этого наведение приходит
+        # в неполированное окно и курсор не обновляется
+        for _ in range(4):
+            app.processEvents()
         win = engine.rootObjects()[0]
         ws = None
         for obj in win.findChildren(QObject):
@@ -248,6 +254,9 @@ def qml_selection_checks(app) -> None:
                 break
         assert ws is not None, "CalendarWorkspace не найден"
 
+        # ячейка по дате: берём через findChildren(QQuickItem) —
+        # вызов QML-функции возвращает нетипизированный QObject без
+        # mapToScene, а он нужен для проверки курсора
         # ячейка по дате: центр ячейки в координатах сетки
         def cell_center(date_str):
             c = ws.findDayCell(date_str)
@@ -256,28 +265,28 @@ def qml_selection_checks(app) -> None:
                     c.property("y") + c.property("height") / 2)
 
         # ── протяжка с 5-го на 10-е марта = 6 дней ──
-        ws.beginDaySelection("2026-03-05")
-        assert list(read_var(ws, "multiSelectDates") or []) == ["2026-03-05"], \
+        ws.beginDaySelection("2026-10-05")
+        assert list(read_var(ws, "multiSelectDates") or []) == ["2026-10-05"], \
             list(read_var(ws, "multiSelectDates") or [])
         assert not bool(read_var(ws, "multiSelectActive")), "один день — не выделение"
-        x, y = cell_center("2026-03-10")
+        x, y = cell_center("2026-10-10")
         ws.extendDaySelection(x, y)
-        want = ["2026-03-%02d" % d for d in range(5, 11)]
+        want = ["2026-10-%02d" % d for d in range(5, 11)]
         assert list(read_var(ws, "multiSelectDates") or []) == want, \
             list(read_var(ws, "multiSelectDates") or [])
         assert bool(read_var(ws, "multiSelectActive")), \
             "диапазон должен считаться выделением"
 
         # ── протяжка «назад» с 10-го на 3-е — те же правила ──
-        ws.beginDaySelection("2026-03-10")
-        x, y = cell_center("2026-03-03")
+        ws.beginDaySelection("2026-10-10")
+        x, y = cell_center("2026-10-03")
         ws.extendDaySelection(x, y)
-        want = ["2026-03-%02d" % d for d in range(3, 11)]
+        want = ["2026-10-%02d" % d for d in range(3, 11)]
         assert list(read_var(ws, "multiSelectDates") or []) == want, \
             list(read_var(ws, "multiSelectDates") or [])
 
         # ── апрельская ячейка (не текущий месяц) — выделение не меняется ──
-        x, y = cell_center("2026-04-03")
+        x, y = cell_center("2026-11-01")
         before = list(read_var(ws, "multiSelectDates") or [])
         ws.extendDaySelection(x, y)
         assert list(read_var(ws, "multiSelectDates") or []) == before, \
@@ -292,8 +301,21 @@ def qml_selection_checks(app) -> None:
         ws.clearDaySelection()
         assert len(read_var(ws, "multiSelectDates") or []) == 0
         assert not bool(read_var(ws, "multiSelectActive"))
-        print("B: протяжка 5→10 марта, задним ходом, чужой месяц мимо, "
-              "снятие выделения ✓")
+
+        # ── курсор-рука над днём: HoverHandler при реальном наведении ──
+        from PySide6.QtCore import QEvent, QPointF
+        from PySide6.QtGui import QHoverEvent
+        pt = ws.dayCellCenter("2026-10-15")
+        assert pt is not None and pt.x() > 0, "центр ячейки не получен"
+        ev = QHoverEvent(QEvent.HoverMove, pt, QPointF(pt.x() - 1, pt.y()))
+        from PySide6.QtCore import QCoreApplication
+        QCoreApplication.sendEvent(win, ev)
+        app.processEvents()
+        shape = win.cursor().shape()
+        assert int(getattr(shape, "value", shape)) == 13, \
+            "над днём нет курсора-руки: %s" % shape
+        print("B: протяжка 5→10 октября (35 ячеек, было сломано), задним ходом, "
+              "чужой месяц мимо, снятие, курсор-рука над днём ✓")
     finally:
         try:
             os.remove(qml_path)

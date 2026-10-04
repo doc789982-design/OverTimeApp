@@ -162,6 +162,7 @@ AppLargeModal {
                             }
                         }
 
+                        HoverHandler { cursorShape: Qt.PointingHandCursor }
                         MouseArea {
                             id: menuHover
                             anchors.fill: parent

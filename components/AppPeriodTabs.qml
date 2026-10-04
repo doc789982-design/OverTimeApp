@@ -78,6 +78,7 @@ Item {
                 }
             }
 
+            HoverHandler { cursorShape: Qt.PointingHandCursor }
             MouseArea {
                 id: yearHover; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
                 onClicked: yearMenu.popup(parent, 0, parent.height + AppTheme.spaceXXS)
@@ -138,6 +139,7 @@ Item {
                         Behavior on width { NumberAnimation { duration: AppTheme.durFast; easing.type: AppTheme.easeStandard } }
                     }
 
+                    HoverHandler { cursorShape: parent.disabled ? Qt.ArrowCursor : Qt.PointingHandCursor }
                     MouseArea {
                         id: tabHover; anchors.fill: parent; hoverEnabled: true
                         // Если месяц заблокирован — клики не проходят

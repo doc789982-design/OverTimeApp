@@ -50,7 +50,8 @@ Item {
     function dayCellAt(gridX, gridY) {
         for (let i = 0; i < calendarGrid.children.length; i++) {
             let cell = calendarGrid.children[i]
-            if (!cell || cell.dayInfo === undefined) continue
+            // в 5-недельных месяцах хвост сетки — пустые ячейки (dayInfo = null)
+            if (!cell || !cell.dayInfo || cell.dayInfo.date_str === undefined) continue
             if (gridX >= cell.x && gridX < cell.x + cell.width
                     && gridY >= cell.y && gridY < cell.y + cell.height)
                 return cell
@@ -66,7 +67,7 @@ Item {
         let cells = []
         for (let i = 0; i < calendarGrid.children.length; i++) {
             let c = calendarGrid.children[i]
-            if (c && c.dayInfo !== undefined) cells.push(c)
+            if (c && c.dayInfo && c.dayInfo.date_str !== undefined) cells.push(c)
         }
         let lo = -1, hi = -1
         for (let i = 0; i < cells.length; i++) {
@@ -101,6 +102,13 @@ Item {
             if (cell.dayInfo && cell.dayInfo.date_str === dateStr) return cell
         }
         return null
+    }
+
+    // Центр ячейки дня в координатах окна (для проверок курсора)
+    function dayCellCenter(dateStr) {
+        let c = findDayCell(dateStr)
+        if (!c) return null
+        return c.mapToItem(null, c.width / 2, c.height / 2)
     }
 
     function getDutyIdsInDay(dateStr) {
@@ -398,6 +406,7 @@ Item {
                                 sourceComponent: Component { PreHolidaySparkle {} }
                             }
 
+                            HoverHandler { cursorShape: Qt.PointingHandCursor }
                             MouseArea { 
                                 id: dayMouseArea
                                 cursorShape: Qt.PointingHandCursor
@@ -512,6 +521,7 @@ Item {
                                         color: AppTheme.accentTeal
                                     }
                                     // Нажатие на метку — окно правок компенсации этого дня
+                                    HoverHandler { cursorShape: Qt.PointingHandCursor }
                                     MouseArea {
                                         anchors.fill: parent
                                         hoverEnabled: true
@@ -523,8 +533,6 @@ Item {
                                                 dayCompDialog.openForCompEdit(backend.dayComps[0], dayInfo.date_str, parent, parent.width / 2, parent.height)
                                         }
                                     }
-                                    // Курсор «рука»: и через MouseArea, и через HoverHandler
-                                    HoverHandler { cursorShape: Qt.PointingHandCursor }
                                 }
                                 
                                 Rectangle {
@@ -613,6 +621,7 @@ Item {
 
                                             // Нажатие на карточку — окно правок именно
                                             // этого дежурства (полные данные — из базы)
+                                            HoverHandler { cursorShape: Qt.PointingHandCursor }
                                             MouseArea {
                                                 anchors.fill: parent
                                                 hoverEnabled: true
@@ -631,9 +640,6 @@ Item {
                                                         dayDutyDialog.openForDutyEdit(full, dayInfo.date_str, parent, parent.width / 2, parent.height)
                                                 }
                                             }
-                                            // Курсор «рука»: и через MouseArea, и через
-                                            // HoverHandler — надёжнее на любой машине
-                                            HoverHandler { cursorShape: Qt.PointingHandCursor }
                                         }
                                     }
                                 }
@@ -940,6 +946,7 @@ Item {
                                                      : "transparent"))
                                     }
                                     
+                                    HoverHandler { cursorShape: Qt.PointingHandCursor }
                                     MouseArea { 
                                         id: yearMouseArea
                                         cursorShape: Qt.PointingHandCursor

@@ -79,6 +79,7 @@ AppDialog {
                         color: editDutyHover.pressed ? AppTheme.statePress : (editDutyHover.containsMouse ? AppTheme.stateHover : "transparent")
                         Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
                         IconImage { anchors.centerIn: parent; source: "../icons/edit.svg"; width: AppTheme.iconMedium; height: AppTheme.iconMedium; color: editDutyHover.containsMouse ? AppTheme.textPrimary : AppTheme.textTertiary }
+                        HoverHandler { cursorShape: Qt.PointingHandCursor }
                         MouseArea { id: editDutyHover; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: dayDutyDialog.openForDutyEdit(modelData, root.targetDate, parent, 0, 0) }
                     }
 
@@ -88,6 +89,7 @@ AppDialog {
                         color: delDutyHover.pressed ? AppTheme.statePress : (delDutyHover.containsMouse ? AppTheme.bgDangerSoft : "transparent")
                         Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
                         IconImage { anchors.centerIn: parent; source: "../icons/trash.svg"; width: AppTheme.iconMedium; height: AppTheme.iconMedium; color: delDutyHover.containsMouse ? AppTheme.accentDanger : AppTheme.textTertiary }
+                        HoverHandler { cursorShape: Qt.PointingHandCursor }
                         MouseArea { id: delDutyHover; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: { mainWindow.explodeAndDelete(root.targetDate, "duty", modelData.id, function() { backend.deleteDuty(modelData.id, root.targetDate) }) } }
                     }
                 }
@@ -174,6 +176,7 @@ AppDialog {
                         color: editCompHover.pressed ? AppTheme.statePress : (editCompHover.containsMouse ? AppTheme.stateHover : "transparent")
                         Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
                         IconImage { anchors.centerIn: parent; source: "../icons/edit.svg"; width: AppTheme.iconMedium; height: AppTheme.iconMedium; color: editCompHover.containsMouse ? AppTheme.textPrimary : AppTheme.textTertiary }
+                        HoverHandler { cursorShape: Qt.PointingHandCursor }
                         MouseArea { id: editCompHover; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: dayCompDialog.openForCompEdit(modelData, root.targetDate, parent, 0, 0) }
                     }
 
@@ -183,6 +186,7 @@ AppDialog {
                         color: delCompHover.pressed ? AppTheme.statePress : (delCompHover.containsMouse ? AppTheme.bgDangerSoft : "transparent")
                         Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
                         IconImage { anchors.centerIn: parent; source: "../icons/trash.svg"; width: AppTheme.iconMedium; height: AppTheme.iconMedium; color: delCompHover.containsMouse ? AppTheme.accentDanger : AppTheme.textTertiary }
+                        HoverHandler { cursorShape: Qt.PointingHandCursor }
                         MouseArea { id: delCompHover; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: { mainWindow.explodeAndDelete(root.targetDate, "comp", modelData.id, function() { backend.deleteCompensation(modelData.id, root.targetDate) }) } }
                     }
                 }

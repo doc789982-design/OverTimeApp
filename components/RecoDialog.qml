@@ -126,6 +126,7 @@ Popup {
                 anchors.verticalCenter: parent.verticalCenter
                 color: closeHov.pressed ? AppTheme.statePress : (closeHov.containsMouse ? AppTheme.stateHover : "transparent")
                 IconImage { anchors.centerIn: parent; source: "../icons/close.svg"; width: AppTheme.iconMedium; height: AppTheme.iconMedium; color: AppTheme.textSecondary }
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
                 MouseArea { id: closeHov; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.close() }
             }
         }
@@ -213,6 +214,7 @@ Popup {
                                 maximumLineCount: 2
                             }
 
+                            HoverHandler { cursorShape: Qt.PointingHandCursor }
                             MouseArea {
                                 id: tocHov
                                 anchors.fill: parent
@@ -467,6 +469,7 @@ Popup {
                                         }
                                     }
 
+                                    HoverHandler { cursorShape: Qt.PointingHandCursor }
                                     MouseArea {
                                         id: exHov
                                         anchors.fill: parent

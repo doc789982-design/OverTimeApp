@@ -115,6 +115,7 @@ TextField {
             color: monthDialog.opened ? AppTheme.accentBrand : AppTheme.textSecondary
             Behavior on color { ColorAnimation { duration: AppTheme.durMicro } } 
         }
+        HoverHandler { cursorShape: Qt.PointingHandCursor }
         MouseArea {
             anchors.fill: parent; cursorShape: Qt.PointingHandCursor
             onClicked: { 
@@ -196,6 +197,7 @@ TextField {
                 width: 32; height: 32; radius: AppTheme.radiusSmall
                 color: prevHover.pressed ? AppTheme.statePress : (prevHover.containsMouse ? AppTheme.stateHover : "transparent")
                 Text { anchors.centerIn: parent; text: "‹"; color: AppTheme.textSecondary; font.pixelSize: AppTheme.sizeH2 }
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
                 MouseArea { id: prevHover; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.currentYear-- }
             }
             
@@ -212,6 +214,7 @@ TextField {
                 width: 32; height: 32; radius: AppTheme.radiusSmall
                 color: nextHover.pressed ? AppTheme.statePress : (nextHover.containsMouse ? AppTheme.stateHover : "transparent")
                 Text { anchors.centerIn: parent; text: "›"; color: AppTheme.textSecondary; font.pixelSize: AppTheme.sizeH2 }
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
                 MouseArea { id: nextHover; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.currentYear++ }
             }
         }
@@ -248,6 +251,7 @@ TextField {
                         font.weight: isSelected ? AppTheme.weightBold : AppTheme.weightMedium 
                     }
 
+                    HoverHandler { cursorShape: Qt.PointingHandCursor }
                     MouseArea {
                         id: monthHover
                         anchors.fill: parent

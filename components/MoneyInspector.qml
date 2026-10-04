@@ -90,6 +90,7 @@ AppDialog {
                         color: editMHover.pressed ? AppTheme.statePress : (editMHover.containsMouse ? AppTheme.stateHover : "transparent")
                         Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
                         IconImage { anchors.centerIn: parent; source: "../icons/edit.svg"; width: AppTheme.iconMedium; height: AppTheme.iconMedium; color: editMHover.containsMouse ? AppTheme.textPrimary : AppTheme.textTertiary }
+                        HoverHandler { cursorShape: Qt.PointingHandCursor }
                         MouseArea { id: editMHover; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: moneyDialog.openEdit(modelData, parent, 0, 0) }
                     }
                     
@@ -99,6 +100,7 @@ AppDialog {
                         color: delMHover.pressed ? AppTheme.statePress : (delMHover.containsMouse ? AppTheme.bgDangerSoft : "transparent")
                         Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
                         IconImage { anchors.centerIn: parent; source: "../icons/trash.svg"; width: AppTheme.iconMedium; height: AppTheme.iconMedium; color: delMHover.containsMouse ? AppTheme.accentDanger : AppTheme.textTertiary }
+                        HoverHandler { cursorShape: Qt.PointingHandCursor }
                         MouseArea { id: delMHover; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: backend.deleteMoneyComp(modelData.id) }
                     }
                 }
