@@ -478,8 +478,6 @@ class Backend(QObject):
     updateUrlChanged = Signal()
     appVersionChanged = Signal()
     whatsNewChanged = Signal()
-    teamStripEnabledChanged = Signal()
-    teamMonthGridChanged = Signal()
     remoteUpdateAvailableChanged = Signal()   # есть ли новая версия на сайте
     remoteDownloadingChanged = Signal()       # идёт ли скачивание
     remoteDownloadProgressChanged = Signal()  # прогресс скачивания (0..100)
@@ -490,7 +488,6 @@ class Backend(QObject):
         self._db_list = []
         self._group_list = []
         self._employee_list = []
-        self._team_grid = []
         self._calendar_days = []
         self._month_summary = {} # Тут будут лежать итоги
         self._clipboard = None
@@ -511,7 +508,6 @@ class Backend(QObject):
         self._is_dark_theme = True
         self._reminder_enabled = True    # Напоминание "сдать табель" (28-е — 5-е число)
         self._startup_update_enabled = True    # обновление при запуске
-        self._team_strip_enabled = True    # дни месяца напротив сотрудников
         self._tray_hint_shown = False    # Показывали ли подсказку про работу в фоне
         # Данные хранятся в Documents\OverTimeTab; из папки программы автоматически переносятся
         self.app_dir = Path(__file__).parent
@@ -824,7 +820,6 @@ class Backend(QObject):
                 self._is_dark_theme = ui_cfg.get("theme", "dark") == "dark"
                 self._reminder_enabled = ui_cfg.get("reminder_enabled", True)
                 self._startup_update_enabled = bool(ui_cfg.get("startup_update", True))
-                self._team_strip_enabled = bool(ui_cfg.get("team_month_strip", True))
                 self._tray_hint_shown = ui_cfg.get("tray_hint_shown", False)
                 self._update_url = str(ui_cfg.get("update_url", "") or "").strip()
                 
@@ -1070,21 +1065,6 @@ class Backend(QObject):
         self._startup_update_enabled = bool(enabled)
         self._write_ui_config("startup_update", self._startup_update_enabled)
         self.startupUpdateEnabledChanged.emit()
-
-    @Property(bool, notify=teamStripEnabledChanged)
-    def teamStripEnabled(self):
-        return self._team_strip_enabled
-
-    @Property(list, notify=teamMonthGridChanged)
-    def teamMonthGrid(self):
-        return self._team_grid
-
-    @Slot(bool)
-    def setTeamStripEnabled(self, enabled):
-        if self._team_strip_enabled == bool(enabled): return
-        self._team_strip_enabled = bool(enabled)
-        self._write_ui_config("team_month_strip", self._team_strip_enabled)
-        self.teamStripEnabledChanged.emit()
 
     @Slot(bool)
     def setReminderEnabled(self, enabled):
@@ -1757,8 +1737,7 @@ class Backend(QObject):
                     "name": g_name,
                     "group_id": int(gid) if gid is not None else 0,
                     "subtitle": "", "is_active": True, "has_overtime": False,
-                    "shift_minutes": 0, "norm_minutes": 0, "last_name": "", "first_name": "", "middle_name": "", "rank": "", "position": "", "start_month": "", "end_date": ""
-                })
+                    "shift_minutes": 0, "norm_minutes": 0, "last_name": "", "first_name": "", "middle_name": "", "rank": "", "position": "",                 })
                 current_header_gid = gid
 
             # Собираем красивый текст для карточки
@@ -1819,7 +1798,6 @@ class Backend(QObject):
                 "position": e["position"] or "",
                 "start_month": e["start_month"],
                 "hire_date": e["hire_date"] or "",
-                "end_date": e["end_date"] or "",
                 "opening_minutes": int(e["opening_minutes"] or 0),
                 "opening_overtime": int(e["opening_overtime_minutes"] or 0),
                 "opening_days": int(e["opening_days"] or 0),
@@ -1831,99 +1809,6 @@ class Backend(QObject):
             
         self._employee_list = formatted_emps
         self.employeeListChanged.emit()
-        self.refresh_team_grid() 
-
-    def refresh_team_grid(self):
-        """Дни месяца для полосы напротив каждого сотрудника.
-
-        Общая картина подразделения: пока сотрудник не выбран, карточка
-        каждого человека в списке продолжается строкой дней текущего
-        месяца — те же цвета и метки, что у ячеек календаря (выходные,
-        праздники, запертые дни, статусы, дежурства, компенсации).
-        При выбранном сотруднике ничего не делает: календарь и так
-        перед глазами.
-        """
-        if not self.active_db or self._selected_employee_id != 0:
-            return
-        first = date(self.current_year, self.current_month, 1)
-        last = date(self.current_year + (self.current_month == 12),
-                    self.current_month % 12 + 1, 1) - timedelta(days=1)
-        work_map = self.active_db.get_calendar_month(d_iso(first), d_iso(last))
-        holidays_set = self.active_db.get_holidays_month(d_iso(first), d_iso(last))
-        override_set = self.active_db.get_calendar_overrides(d_iso(first), d_iso(last))
-
-        grid = []
-        for emp in self._employee_list:
-            if emp.get("is_header") or not emp.get("id"):
-                continue
-            eid = int(emp["id"])
-            shifted_checker = build_shifted_weekend_checker(self.active_db, eid)
-            status_map = self.active_db.get_statuses_for_period(eid, d_iso(first), d_iso(last))
-
-            comp_set = set()
-            for c in self.active_db.list_compensations_for_period(eid, d_iso(first), d_iso(last)):
-                if c["unit"] in ("hours", "overtime"):
-                    display_d = c["order_date"] if c["order_date"] else c["event_date"]
-                    if display_d: comp_set.add(display_d)
-                else:
-                    for cd in self.active_db.get_comp_dates(int(c["id"])):
-                        comp_set.add(cd)
-
-            duty_map = {}
-            s_dt = datetime.combine(first, datetime.min.time())
-            e_dt = datetime.combine(last + timedelta(days=1), datetime.min.time())
-            duties = self.active_db.list_duties_for_period(eid, s_dt, e_dt)
-            breaks_map = self.active_db.breaks_for_duty_ids([int(d["id"]) for d in duties])
-            for d in duties:
-                did = int(d["id"])
-                is_shift = bool(int(d["is_shift"] if "is_shift" in d.keys() and d["is_shift"] is not None else 0))
-                s0 = max(dt_parse(d["start_dt"]), s_dt)
-                e0 = min(dt_parse(d["end_dt"]), e_dt)
-                if s0 >= e0: continue
-                for s, e in subtract_intervals((s0, e0), breaks_map.get(did, [])):
-                    cur = s.date()
-                    last_d = (e - timedelta(seconds=1)).date() if e > s else s.date()
-                    while cur <= last_d:
-                        day_start = datetime.combine(cur, datetime.min.time())
-                        day_end = day_start + timedelta(days=1)
-                        inter = intersect(s, e, day_start, day_end)
-                        if inter:
-                            t_str = f"{inter[0].strftime('%H:%M')}-{inter[1].strftime('%H:%M')}"
-                            duty_map.setdefault(d_iso(cur), []).append(
-                                {"id": did, "text": t_str, "is_shift": is_shift})
-                        cur += timedelta(days=1)
-
-            hire_iso = str(emp.get("hire_date") or "").strip()
-            if not hire_iso and emp.get("start_month"):
-                hire_iso = str(emp["start_month"])[:7] + "-01"
-            end_iso = str(emp.get("end_date") or "").strip()
-
-            days = []
-            cur = first
-            while cur <= last:
-                d_str = d_iso(cur)
-                is_working = resolve_is_working(
-                    cur,
-                    bool(shifted_checker and shifted_checker(cur)),
-                    work_map, holidays_set, override_set,
-                )
-                is_holiday = cur in holidays_set
-                days.append({
-                    "date_str": d_str,
-                    "day_number": cur.day,
-                    "is_weekend": (not is_working) and (not is_holiday),
-                    "is_holiday": is_holiday,
-                    "status": status_map.get(cur, ""),
-                    "has_comp": d_str in comp_set,
-                    "duties": duty_map.get(d_str, []),
-                    "is_before_hire": bool(hire_iso) and d_str < hire_iso,
-                    "is_after_end": bool(end_iso) and d_str > end_iso,
-                })
-                cur += timedelta(days=1)
-            grid.append({"id": eid, "days": days})
-
-        self._team_grid = grid
-        self.teamMonthGridChanged.emit()
 
     def refresh_pulse(self):
         """Проверяет каждый из 12 месяцев: есть ли там данные для 'зеленой точки'"""
@@ -2123,7 +2008,6 @@ class Backend(QObject):
         else:
             self._month_summary = {}
         self.monthSummaryChanged.emit()
-        self.refresh_team_grid()
 
     def _lazy_year_refresh(self):
         if not self.active_db:
@@ -2379,9 +2263,6 @@ class Backend(QObject):
             self.active_db.conn.execute("ROLLBACK;")
             print(f"ОШИБКА смены типа дня: {e}")
 
-    # ============================================================
-    # МАССОВЫЕ ОПЕРАЦИИ (выделение дней протяжкой в календаре)
-    # ============================================================
     @Slot(list, str)
     def setDayStatusBulk(self, dates, status_code):
         """Статус сразу нескольким дням (выделение протяжкой)."""
@@ -2398,96 +2279,6 @@ class Backend(QObject):
         except Exception:
             if self.active_db:
                 self.active_db.conn.execute("ROLLBACK;")
-
-    @Slot(list, str)
-    def setDayTypeBulk(self, dates, day_type):
-        """Тип дня ('work'/'weekend'/'holiday') сразу нескольким дням."""
-        if not self.active_db:
-            return
-        try:
-            self.active_db.begin()
-            for date_str in (dates or []):
-                self.active_db.set_calendar_day_type(d_parse(date_str), day_type)
-            self.active_db.conn.execute("COMMIT;")
-            self.refresh_calendar()
-            self._defer_year_refresh()
-        except Exception:
-            if self.active_db:
-                self.active_db.conn.execute("ROLLBACK;")
-
-    @Slot(list)
-    def clearDayDutiesBulk(self, dates):
-        """Удаляет все дежурства в выделенных днях одной операцией."""
-        if not self.active_db or self._selected_employee_id == 0:
-            return
-        try:
-            eid = self._selected_employee_id
-            self.active_db.begin()
-            removed = 0
-            for date_str in (dates or []):
-                d0 = d_parse(date_str)
-                s_dt = datetime.combine(d0, datetime.min.time())
-                e_dt = s_dt + timedelta(days=1)
-                duties = self.active_db.list_duties_for_period(eid, s_dt, e_dt)
-                for d in duties:
-                    self.active_db.delete_duty(int(d["id"]))
-                    removed += 1
-            if removed == 0:
-                self.active_db.conn.execute("ROLLBACK;")
-                return
-            self.active_db.conn.execute("COMMIT;")
-            self.refresh_calendar()
-            self._defer_year_refresh()
-            self.showToast.emit(
-                f"Дежурства удалены ({removed}). Отменить: Ctrl+Z", "success")
-        except Exception as e:
-            if self.active_db:
-                self.active_db.conn.execute("ROLLBACK;")
-            self.showToast.emit(f"Ошибка удаления: {e}", "error")
-
-    @Slot(list)
-    def clearDayCompensationsBulk(self, dates):
-        """Удаляет все компенсации в выделенных днях одной операцией."""
-        if not self.active_db or self._selected_employee_id == 0:
-            return
-        try:
-            eid = self._selected_employee_id
-            self.active_db.begin()
-            removed = 0
-            for date_str in (dates or []):
-                d_iso0 = d_iso(d_parse(date_str))
-                comps = self.active_db.conn.execute("""
-                    SELECT id, unit, event_date FROM compensation 
-                    WHERE employee_id=? AND method<>'money' AND (
-                        (event_date=?) OR 
-                        (order_date=?) OR 
-                        (unit='days' AND method='day_off' AND id IN (SELECT compensation_id FROM comp_day_off_date WHERE employee_id=? AND day_off_date=?))
-                    )
-                """, (eid, d_iso0, d_iso0, eid, d_iso0)).fetchall()
-                for c in comps:
-                    cid = int(c["id"])
-                    if c["unit"] == "days":
-                        c_dates = self.active_db.get_comp_dates(cid)
-                        if len(c_dates) > 1:
-                            self.active_db.replace_comp_dayoff_dates(
-                                cid, eid, [d_parse(x) for x in c_dates if x != d_iso0])
-                        else:
-                            self.active_db.delete_compensation(cid)
-                    else:
-                        self.active_db.delete_compensation(cid)
-                    removed += 1
-            if removed == 0:
-                self.active_db.conn.execute("ROLLBACK;")
-                return
-            self.active_db.conn.execute("COMMIT;")
-            self.refresh_calendar()
-            self._defer_year_refresh()
-            self.showToast.emit(
-                f"Компенсации удалены ({removed}). Отменить: Ctrl+Z", "success")
-        except Exception as e:
-            if self.active_db:
-                self.active_db.conn.execute("ROLLBACK;")
-            self.showToast.emit(f"Ошибка удаления: {e}", "error")
 
     @Slot(str, str, str, str, str, str, int, int, int, int, int, int)
     def saveEmployee(self, last_name, first_name, middle_name, rank, position, start_month, open_mins, open_overtime_mins, open_days, prev_mins, prev_overtime, prev_days):

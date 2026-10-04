@@ -677,12 +677,6 @@ ApplicationWindow {
         Item {
             id: workspaceRoot
             property alias calendarPanel: calendarPanelId
-            // Список сотрудников и общая картина месяца (окно календаря)
-            // листаются вместе
-            Component.onCompleted: {
-                calendarPanelId.scrollPartner = empListPanel
-                empListPanel.scrollPartner = calendarPanelId
-            }
             MouseArea {
                 anchors.fill: parent
                 z: 1

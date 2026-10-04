@@ -28,48 +28,6 @@ Item {
     property string multiSelectAnchor: ""
     property bool multiSelectActive: false
 
-    // Синхронизация прокрутки: список сотрудников (слева) и общая
-    // картина месяца (здесь) листаются вместе
-    property var scrollPartner: null
-
-    function syncFromEmpScroll(ratio) {
-        if (teamList._teamScrollLock) return
-        let max = teamList.contentHeight - teamList.height
-        if (max <= 0) return
-        let target = ratio * max
-        if (Math.abs(target - teamList.contentY) < 1) return
-        teamList._teamScrollLock = true
-        teamList.contentY = target
-        teamList._teamScrollLock = false
-    }
-
-    // Для проверок: сколько ячеек дней нарисовано в общей картине
-    function teamStripInfo() {
-        let info = { "cells": 0, "cellWidth": 0, "visible": teamViewRoot.visible }
-        let kids = teamList.contentItem.children
-        for (let i = 0; i < kids.length; i++) {
-            let del = kids[i]
-            if (!del || del.children === undefined) continue
-            for (let j = 0; j < del.children.length; j++) {
-                let row = del.children[j]
-                if (row && row.teamDays !== undefined && row.teamDays.length > 0) {
-                    info.cells += row.teamDays.length
-                    let cellsRow = row.children[0]
-                    if (cellsRow && cellsRow.children !== undefined
-                            && cellsRow.children.length > 0)
-                        info.cellWidth = cellsRow.children[0].width
-                }
-            }
-        }
-        return info
-    }
-
-    // Числа месяца для шапки общей картины (по первому сотруднику)
-    readonly property var teamHeaderDays: {
-        let grid = backend.teamMonthGrid
-        return grid.length > 0 ? grid[0].days : []
-    }
-
     function clearDaySelection() {
         multiSelectDates = []
         multiSelectAnchor = ""
@@ -293,7 +251,6 @@ Item {
             // ДНИ НЕДЕЛИ
             Row {
                 id: weekDaysRow
-                visible: backend.selectedEmployeeId !== 0 || !backend.teamStripEnabled
                 anchors.top: parent.top
                 anchors.left: parent.left
                 anchors.right: parent.right
@@ -415,20 +372,11 @@ Item {
                                 radius: parent.radius
                                 color: dayMouseArea.pressed
                                        ? AppTheme.statePress
-                                       : (dayMouseArea.containsMouse ? AppTheme.stateHover : "transparent")
+                                       : ((dayMouseArea.containsMouse || dayCell.isMultiSelected)
+                                          ? AppTheme.stateHover : "transparent")
                                 Behavior on color {
                                     ColorAnimation { duration: AppTheme.durMicro }
                                 }
-                            }
-
-                            // Рамка выделения при протяжке ЛКМ по дням
-                            Rectangle {
-                                visible: dayCell.isMultiSelected
-                                anchors.fill: parent
-                                radius: parent.radius
-                                color: Qt.alpha(AppTheme.accentBrand, 0.10)
-                                border.color: AppTheme.accentBrand
-                                border.width: 2
                             }
 
                             Loader {
@@ -1029,153 +977,6 @@ Item {
     // Когда сотрудник выбран, накладка скрывается и открывается
     // календарь или матрица года.
     // ═══════════════════════════════════════════════════════════════
-    // ==========================================
-    // ОБЩАЯ КАРТИНА МЕСЯЦА (сотрудник не выбран)
-    // Вместо заставки: список всех сотрудников, у каждого —
-    // строка дней месяца, как ячейки календаря. Листается
-    // вместе со списком сотрудников слева.
-    // ==========================================
-    Item {
-        id: teamViewRoot
-        anchors.top: calendarHeader.bottom
-        anchors.bottom: unifiedSummaryPanel.top
-        anchors.bottomMargin: AppTheme.spaceM
-        anchors.left: parent.left
-        anchors.right: parent.right
-        visible: backend.selectedEmployeeId === 0 && backend.teamStripEnabled
-        z: 50
-
-        // Ширина одной ячейки дня: делим окно на дни месяца
-        function cellWidth(daysCount) {
-            return (teamList.width - AppTheme.spaceL) / Math.max(1, daysCount)
-        }
-
-        ListView {
-            id: teamList
-            anchors.fill: parent
-            clip: true
-            boundsBehavior: Flickable.StopAtBounds
-            property bool _teamScrollLock: false
-
-            // Шапка с числами месяца держится поверх строк
-            headerPositioning: ListView.OverlayHeader
-            header: Rectangle {
-                width: teamList.width
-                height: 26
-                color: AppTheme.bgPanel
-
-                Row {
-                    anchors.fill: parent
-                    spacing: 1
-
-                    Repeater {
-                        model: root.teamHeaderDays
-                        Item {
-                            width: teamViewRoot.cellWidth(root.teamHeaderDays.length)
-                            height: 26
-                            Text {
-                                anchors.centerIn: parent
-                                text: modelData.day_number
-                                color: (modelData.is_weekend || modelData.is_holiday)
-                                       ? AppTheme.accentDanger : AppTheme.textSecondary
-                                font.family: AppTheme.fontFamily
-                                font.pixelSize: AppTheme.sizeSmall
-                                font.weight: AppTheme.weightBold
-                            }
-                        }
-                    }
-                }
-
-                Rectangle {
-                    anchors.bottom: parent.bottom
-                    width: parent.width
-                    height: 1
-                    color: AppTheme.borderDivider
-                    opacity: 0.4
-                }
-            }
-
-            model: backend.employeeList
-
-            delegate: Item {
-                width: ListView.view.width
-                height: modelData.is_header ? 36 : AppTheme.rowHeight
-
-                // ЗАГОЛОВОК ГРУППЫ — как в списке сотрудников
-                Rectangle {
-                    visible: modelData.is_header
-                    anchors.fill: parent
-                    color: "transparent"
-                    Text {
-                        anchors.left: parent.left
-                        anchors.leftMargin: AppTheme.spaceL
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: modelData.name.toUpperCase()
-                        color: AppTheme.textTertiary
-                        font.family: AppTheme.fontFamily
-                        font.pixelSize: AppTheme.sizeMicro
-                        font.weight: AppTheme.weightBold
-                        font.letterSpacing: 1.2
-                    }
-                }
-
-                // СТРОКА СОТРУДНИКА: его дни месяца
-                Rectangle {
-                    id: teamRow
-                    visible: !modelData.is_header
-                    anchors.fill: parent
-                    anchors.topMargin: 2
-                    anchors.bottomMargin: 2
-                    radius: AppTheme.radiusSmall
-                    color: rowHover.containsMouse ? AppTheme.stateHover : "transparent"
-
-                    readonly property var teamDays: {
-                        if (modelData.is_header) return []
-                        let grid = backend.teamMonthGrid
-                        for (let i = 0; i < grid.length; i++)
-                            if (grid[i].id === modelData.id) return grid[i].days
-                        return []
-                    }
-
-                    Row {
-                        anchors.fill: parent
-                        spacing: 1
-
-                        Repeater {
-                            model: teamRow.teamDays
-                            TeamDayCell {
-                                width: (teamRow.width
-                                        - (teamRow.teamDays.length - 1) * parent.spacing)
-                                       / Math.max(1, teamRow.teamDays.length)
-                                height: parent.height
-                                dayData: modelData
-                            }
-                        }
-                    }
-
-                    // Клик по строке — открыть табель этого сотрудника
-                    HoverHandler { cursorShape: Qt.PointingHandCursor }
-                    MouseArea {
-                        id: rowHover
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: backend.selectEmployee(modelData.id)
-                    }
-                }
-            }
-
-            // Листаем картину месяца — список сотрудников едет следом
-            onContentYChanged: {
-                if (_teamScrollLock) return
-                if (!root.scrollPartner) return
-                let max = contentHeight - height
-                if (max <= 0) return
-                root.scrollPartner.scrollEmpToRatio(contentY / max)
-            }
-        }
-    }
-
     Item {
         id: emptyStateOverlay
         anchors.top: calendarHeader.bottom
@@ -1183,7 +984,7 @@ Item {
         anchors.bottomMargin: AppTheme.spaceM
         anchors.left: parent.left
         anchors.right: parent.right
-        visible: backend.selectedEmployeeId === 0 && !backend.teamStripEnabled
+        visible: backend.selectedEmployeeId === 0
         z: 50
 
         Column {

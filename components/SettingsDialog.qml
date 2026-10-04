@@ -208,12 +208,6 @@ AppLargeModal {
                         onToggled: backend.toggleTheme()
                     }
 
-                    AppSwitch {
-                        text: "Дни месяца напротив каждого сотрудника"
-                        checked: backend.teamStripEnabled
-                        onCheckedChanged: backend.setTeamStripEnabled(checked)
-                    }
-
                     AppComboBox {
                         width: 340
                         label: "Режим ввода времени дежурств:"

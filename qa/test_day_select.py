@@ -6,14 +6,13 @@
 выделенным дням сразу.
 
 Проверяется:
-  A. Массовые слоты Python (одна транзакция, все дни сразу):
-     статусы К/Б/О и сброс, тип дня (рабочий/выходной/праздничный),
-     удаление всех дежурств и всех компенсаций; пустой список — не падает;
+  A. Массовый слот Python (одна транзакция, все дни сразу):
+     статусы К/Б/О и сброс; пустой список — не падает;
   B. Логика выделения в календаре (QML): начало на одном дне,
      протяжка до другого — выделяется диапазон между ними; чужой
      месяц в диапазон не попадает; Esc/закрытие меню снимает выделение;
-  C. Меню дня: диапазон в шапке «12–15 марта 2026 г.», действия
-     идут через массовые слоты при выделении.
+  C. Меню дня: диапазон в шапке, при выделении — только статусы;
+     выделение подсвечивается плёнкой наведения.
 
 Запуск:
     python3 qa/test_day_select.py             # из корня репозитория
@@ -82,42 +81,9 @@ def part_a_bulk_slots() -> None:
     got = {d.isoformat(): v for d, v in st.items() if v}
     assert got == {"2026-03-03": "Б"}, got
 
-    # ── тип дня: праздничный ──
-    b.setDayTypeBulk(["2026-03-05", "2026-03-06"], "holiday")
-    row = db.conn.execute(
-        "SELECT is_working, is_holiday FROM calendar_day WHERE date=?",
-        ("2026-03-05",)).fetchone()
-    assert row and row["is_holiday"] == 1 and row["is_working"] == 0, tuple(row)
-    row = db.conn.execute(
-        "SELECT is_holiday FROM calendar_day WHERE date=?",
-        ("2026-03-06",)).fetchone()
-    assert row and row["is_holiday"] == 1, tuple(row)
-
-    # ── удаление всех дежурств в выделенных днях ──
-    db.add_duty(1, datetime(2026, 3, 2, 8, 0), datetime(2026, 3, 2, 20, 0), "а")
-    db.add_duty(1, datetime(2026, 3, 3, 8, 0), datetime(2026, 3, 3, 20, 0), "б")
-    db.add_duty(1, datetime(2026, 3, 9, 8, 0), datetime(2026, 3, 9, 20, 0), "в")
-    db.conn.commit()
-    b.clearDayDutiesBulk(["2026-03-02", "2026-03-03"])
-    left = db.list_duties_for_period(
-        1, datetime(2026, 3, 1), datetime(2026, 4, 1))
-    assert len(left) == 1 and left[0]["comment"] == "в", \
-        [dict(r) for r in left]
-
-    # ── удаление компенсаций в выделенных днях ──
-    db.add_compensation_hours_dayoff(1, date(2026, 3, 12), 480, "ч")
-    db.conn.commit()
-    b.clearDayCompensationsBulk(["2026-03-12"])
-    n = db.conn.execute(
-        "SELECT COUNT(*) c FROM compensation WHERE employee_id=1").fetchone()["c"]
-    assert n == 0, n
-
-    # ── пустой список и дни без записей — не падают ──
+    # ── пустой список — не падает ──
     b.setDayStatusBulk([], "О")
-    b.setDayTypeBulk([], "work")
-    b.clearDayDutiesBulk([])
-    b.clearDayCompensationsBulk(["2026-03-20"])
-    print("A: статусы, типы дней, дежурства и компенсации — сразу всем дням ✓")
+    print("A: статусы К/Б/О и сброс — сразу всем выделенным дням ✓")
 
 
 # ────────────────────────────────────────────────────────────────
@@ -329,17 +295,31 @@ def part_c_menu_checks() -> None:
     qml = open(os.path.join(ROOT, "components", "AppDayMenu.qml"),
                encoding="utf-8").read()
     assert "targetDates" in qml, "меню не знает про массовые дни"
-    assert "setDayStatusBulk" in qml and "setDayTypeBulk" in qml
-    assert "clearDayDutiesBulk" in qml and "clearDayCompensationsBulk" in qml
+    assert "setDayStatusBulk" in qml, "нет массовой установки статусов"
+    # при выделении меню показывает ТОЛЬКО статусы
+    assert "multiMode" in qml
+    assert qml.count("visible: !root.multiMode") >= 5, \
+        "пункты действий не скрываются при выделении"
+    assert "setDayTypeBulk" not in qml and "clearDayDutiesBulk" not in qml \
+        and "clearDayCompensationsBulk" not in qml, "мёртвые bulk-ветки"
     assert "fmtRange" in qml, "нет диапазона в шапке"
     cal = open(os.path.join(ROOT, "components", "CalendarWorkspace.qml"),
                encoding="utf-8").read()
     assert "beginDaySelection" in cal and "extendDaySelection" in cal
     assert "multiSelectDates" in cal
+    # выделение подсвечивается плёнкой наведения, без отдельной рамки
+    assert "isMultiSelected" in cal \
+        and "border.color: AppTheme.accentBrand\n                                border.width: 2" not in cal
+    # от «общей картины месяца» не осталось следов
+    assert "TeamDayCell" not in cal and "teamViewRoot" not in cal
+    panel = open(os.path.join(ROOT, "components", "EmployeeListPanel.qml"),
+                 encoding="utf-8").read()
+    assert "TeamDayCell" not in panel
     main = open(os.path.join(ROOT, "main.qml"), encoding="utf-8").read()
     assert "clearDaySelection" in main, "меню не снимает выделение при закрытии"
-    print("C: меню дня — массовые слоты, диапазон в шапке, снятие при "
-          "закрытии ✓")
+    assert not os.path.exists(os.path.join(ROOT, "components", "TeamDayCell.qml"))
+    print("C: меню после выделения — только статусы; подсветка как при "
+          "наведении; следов общей картины нет ✓")
 
 
 def main() -> int:

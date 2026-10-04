@@ -11,34 +11,6 @@ Rectangle {
     
     property Item workspace: null
 
-    // Синхронизация прокрутки с общей картиной месяца (окно календаря):
-    // листаем список — там листаются строки дней, и наоборот
-    property var scrollPartner: null
-    property bool _empScrollLock: false
-
-    function empScrollRatio() {
-        let max = empList.contentHeight - empList.height
-        return max > 0 ? empList.contentY / max : 0
-    }
-
-    // Нас пролистали в списке сотрудников — сообщить картине месяца
-    function notifyScrollPartner() {
-        if (scrollPartner && !_empScrollLock)
-            scrollPartner.syncFromEmpScroll(empScrollRatio())
-    }
-
-    // Картина месяца листнула нас
-    function scrollEmpToRatio(ratio) {
-        if (_empScrollLock) return
-        let max = empList.contentHeight - empList.height
-        if (max <= 0) return
-        let target = ratio * max
-        if (Math.abs(target - empList.contentY) < 1) return
-        _empScrollLock = true
-        empList.contentY = target
-        _empScrollLock = false
-    }
-
     function blurSearch() {
         searchInput.focus = false
     }
@@ -306,7 +278,6 @@ Rectangle {
         onContentYChanged: {
             if (!restoringScroll) keepContentY = contentY
             updateSelectionPlate(false)   // плашка следует за строкой при прокрутке
-            root.notifyScrollPartner()    // …и картина месяца листается вместе с нами
         }
 
         Connections {

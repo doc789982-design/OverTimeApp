@@ -34,6 +34,8 @@ Menu {
     // Все дни, к которым применится действие (выделение протяжкой);
     // для одиночного клика — один день
     property var targetDates: []
+    // Выделено несколько дней: меню показывает только статусы (К/Б/О и сброс)
+    readonly property bool multiMode: targetDates.length > 1
     property bool menuIsWeekend: false
     property bool menuIsHoliday: false
     property bool menuHasDuties: false
@@ -214,12 +216,11 @@ Menu {
                         onEntered: menuTip.showAt(clearBtn, "Удалить статус")
                         onExited: menuTip.hideTip()
                         onClicked: {
-                            if (root.targetDates.length > 1) {
+                            if (root.multiMode)
                                 backend.setDayStatusBulk(root.targetDates, "")
-                            } else {
+                            else
                                 mainWindow.explodeAndDelete(root.targetDate, "status", null,
                                     function() { backend.setDayStatus(root.targetDate, "") })
-                            }
                             root.close()
                         }
                     }
@@ -228,12 +229,13 @@ Menu {
         }
     }
 
-    AppMenuSeparator { }
+    AppMenuSeparator { visible: !root.multiMode }
 
     // ============================================================
     // ПУНКТЫ ДЕЙСТВИЙ
     // ============================================================
     AppMenuItem {
+        visible: !root.multiMode
         iconSource: "../icons/edit.svg"
         text: "Открыть день"
         onClicked: {
@@ -245,6 +247,7 @@ Menu {
     }
 
     AppMenuItem {
+        visible: !root.multiMode
         iconSource: "../icons/clock.svg"
         text: "Добавить дежурство"
         showDelete: root.menuHasDuties
@@ -254,29 +257,21 @@ Menu {
             dayDutyDialog.showCentered()
         }
         onDeleteClicked: {
-            if (root.targetDates.length > 1) {
-                mainWindow.askConfirm(
-                    "Удалить все дежурства?",
-                    "Будут удалены все дежурства за " + root.fmtRange(root.targetDates) + ".\nЕсли передумаете — нажмите Ctrl+Z.",
-                    "Удалить",
-                    function() { backend.clearDayDutiesBulk(root.targetDates) }
-                )
-            } else {
-                mainWindow.askConfirm(
-                    "Удалить все дежурства?",
-                    "Будут удалены все дежурства за " + root.fmtDate(root.targetDate) + ".\nЕсли передумаете — нажмите Ctrl+Z.",
-                    "Удалить",
-                    function() {
-                        mainWindow.explodeAndDelete(root.targetDate, "duty", null,
-                            function() { backend.clearDayDuties(root.targetDate) })
-                    }
-                )
-            }
+            mainWindow.askConfirm(
+                "Удалить все дежурства?",
+                "Будут удалены все дежурства за " + root.fmtDate(root.targetDate) + ".\nЕсли передумаете — нажмите Ctrl+Z.",
+                "Удалить",
+                function() {
+                    mainWindow.explodeAndDelete(root.targetDate, "duty", null,
+                        function() { backend.clearDayDuties(root.targetDate) })
+                }
+            )
             root.close()
         }
     }
 
     AppMenuItem {
+        visible: !root.multiMode
         iconSource: "../icons/rest.svg"
         text: "Добавить компенсацию"
         showDelete: root.menuHasComps
@@ -286,66 +281,48 @@ Menu {
             dayCompDialog.showCentered()
         }
         onDeleteClicked: {
-            if (root.targetDates.length > 1) {
-                mainWindow.askConfirm(
-                    "Удалить все компенсации?",
-                    "Будут удалены все компенсации за " + root.fmtRange(root.targetDates) + ".\nЕсли передумаете — нажмите Ctrl+Z.",
-                    "Удалить",
-                    function() { backend.clearDayCompensationsBulk(root.targetDates) }
-                )
-            } else {
-                mainWindow.askConfirm(
-                    "Удалить все компенсации?",
-                    "Будут удалены все компенсации за " + root.fmtDate(root.targetDate) + ".\nЕсли передумаете — нажмите Ctrl+Z.",
-                    "Удалить",
-                    function() {
-                        mainWindow.explodeAndDelete(root.targetDate, "comp", null,
-                            function() { backend.clearDayCompensations(root.targetDate) })
-                    }
-                )
-            }
+            mainWindow.askConfirm(
+                "Удалить все компенсации?",
+                "Будут удалены все компенсации за " + root.fmtDate(root.targetDate) + ".\nЕсли передумаете — нажмите Ctrl+Z.",
+                "Удалить",
+                function() {
+                    mainWindow.explodeAndDelete(root.targetDate, "comp", null,
+                        function() { backend.clearDayCompensations(root.targetDate) })
+                }
+            )
             root.close()
         }
     }
 
-    AppMenuSeparator { }
+    AppMenuSeparator { visible: !root.multiMode }
 
     AppMenuItem {
-        visible: root.menuIsWeekend || root.menuIsHoliday
+        visible: !root.multiMode && (root.menuIsWeekend || root.menuIsHoliday)
         iconSource: "../icons/calendar.svg"
         text: "Сделать рабочим"
         customColor: AppTheme.accentTeal
         onClicked: {
-            if (root.targetDates.length > 1)
-                backend.setDayTypeBulk(root.targetDates, "work")
-            else
-                backend.setDayType(root.targetDate, "work")
+            backend.setDayType(root.targetDate, "work")
             root.close()
         }
     }
     AppMenuItem {
-        visible: !root.menuIsWeekend
+        visible: !root.multiMode && !root.menuIsWeekend
         iconSource: "../icons/rest.svg"
         text: "Сделать выходным"
         customColor: AppTheme.accentDanger
         onClicked: {
-            if (root.targetDates.length > 1)
-                backend.setDayTypeBulk(root.targetDates, "weekend")
-            else
-                backend.setDayType(root.targetDate, "weekend")
+            backend.setDayType(root.targetDate, "weekend")
             root.close()
         }
     }
     AppMenuItem {
-        visible: !root.menuIsHoliday
+        visible: !root.multiMode && !root.menuIsHoliday
         iconSource: "../icons/sparkle.svg"
         text: "Сделать нерабочим праздничным"
         customColor: AppTheme.accentPurple
         onClicked: {
-            if (root.targetDates.length > 1)
-                backend.setDayTypeBulk(root.targetDates, "holiday")
-            else
-                backend.setDayType(root.targetDate, "holiday")
+            backend.setDayType(root.targetDate, "holiday")
             root.close()
         }
     }
