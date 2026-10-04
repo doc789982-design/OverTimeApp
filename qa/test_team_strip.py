@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Тест общей картины месяца (полоса дней у каждого сотрудника).
 
-Пока сотрудник не выбран, карточка каждого человека в списке
-продолжается строкой мини-ячеек дней текущего месяца — те же цвета и
+Пока сотрудник не выбран, в окне календаря (вместо заставки) —
+список всех сотрудников со строкой дней текущего месяца — те же цвета и
 метки, что у календаря. Включается тумблером в «Внешнем виде».
 
 Проверяется:
@@ -10,8 +10,8 @@
      на строку — только дни текущего месяца; выходные, праздники,
      статусы, дежурства (текст как в календаре), компенсации, запертые
      дни до приёма; при выбранном сотруднике не строится;
-  B. Живой рендер: EmployeeListPanel в режиме команды рисует по 31
-     мини-ячейке на сотрудника (TeamDayCell);
+  B. Живой рендер: CalendarWorkspace (сотрудник не выбран) рисует
+     по 31 ячейке на сотрудника (TeamDayCell) вместо маскота;
   C. Тумблер: по умолчанию включён, слот пишет в настройки; маскот
      и ряд «Пн..Вс» скрываются, список расширяется на окно.
 
@@ -132,7 +132,7 @@ def part_a_builder() -> None:
 
 
 # ────────────────────────────────────────────────────────────────
-# Часть B: живой рендер полосы
+# Часть B: живой рендер общей картины в окне календаря
 # ────────────────────────────────────────────────────────────────
 
 def stub_days():
@@ -173,9 +173,9 @@ import "components" as AppUI
 
 ApplicationWindow {
     id: w
-    width: 1200; height: 800; visible: true
-    AppUI.EmployeeListPanel {
-        id: panel
+    width: 1400; height: 800; visible: true
+    AppUI.CalendarWorkspace {
+        id: workspace
         anchors.fill: parent
     }
 }
@@ -201,21 +201,58 @@ class StubBackend(QObject):
     def teamMonthGrid(self):
         return TEAM_GRID
 
-    @Property(int, constant=True)
-    def updateChromeExtra(self):
-        return 0
+    @Property(list, constant=True)
+    def calendarDays(self):
+        return []
 
-    def setSearchText(self, t):
+    @Property(str, constant=True)
+    def currentPeriodText(self):
+        return "Октябрь 2026"
+
+    @Property(bool, constant=True)
+    def isSelectedEmployeeShiftedWeekends(self):
+        return False
+
+    @Property(list, constant=True)
+    def dayDuties(self):
+        return []
+
+    @Property(list, constant=True)
+    def dayComps(self):
+        return []
+
+    @Property(list, constant=True)
+    def yearlyData(self):
+        return []
+
+    def loadDayDetails(self, date_str):
         pass
 
-    def setActiveOnly(self, v):
+    def executeHotkey(self, seq, date_str):
+        pass
+
+    def handleClipboard(self, action, date_str):
+        pass
+
+    def jumpToMonth(self, m):
+        pass
+
+    def setYear(self, y):
         pass
 
     def selectEmployee(self, i):
         pass
 
-    def reorderEmployees(self, a, b, c):
+
+def read_var(obj, name):
+    v = obj.property(name)
+    try:
+        from PySide6.QtQml import QJSValue
+        if isinstance(v, QJSValue):
+            v = v.toVariant()
+    except Exception:
         pass
+    return v
 
 
 def part_b_render(app) -> None:
@@ -231,29 +268,34 @@ def part_b_render(app) -> None:
     ctx.setContextProperty("backend", stub)
     try:
         engine.load(qml_path)
-        assert engine.rootObjects(), "EmployeeListPanel не загрузился"
+        assert engine.rootObjects(), "CalendarWorkspace не загрузился"
+        # дать сцене собраться (см. test_day_select)
         for _ in range(6):
             app.processEvents()
         win = engine.rootObjects()[0]
-
-        # мини-ячейки: по 31 на сотрудника (делегаты Repeater из Python
-        # не видны — спрашиваем у самой панели)
-        panel = None
+        ws = None
         for o in win.findChildren(QObject):
             if hasattr(o, "teamStripInfo"):
-                panel = o
+                ws = o
                 break
-        assert panel is not None, "панель не нашлась"
-        info = panel.teamStripInfo()
+        assert ws is not None, "CalendarWorkspace не найден"
+
+        info = ws.teamStripInfo()
         if hasattr(info, "toVariant"):
             from PySide6.QtQml import QJSValue
             if isinstance(info, QJSValue):
                 info = info.toVariant()
+        assert info["visible"] is True, "общая картина не видна"
         assert info["cells"] == 62, \
-            "ожидали 62 мини-ячейки (2 × 31), есть %s" % info
-        assert info["cellWidth"] > 4, "ячейки сжались в ноль: %s" % info
-        print("B: полоса нарисована — 62 мини-ячейки (2 × 31), "
-              "ширина %.1f px ✓" % info["cellWidth"])
+            "ожидали 62 ячейки (2 сотрудника × 31 день), есть %s" % info
+        assert info["cellWidth"] > 24, \
+            "ячейки узкие, как в панели (%s)" % info
+
+        # синхронизация прокрутки: функция принимает долю прокрутки
+        ws.syncFromEmpScroll(0.5)
+        app.processEvents()
+        print("B: картина месяца в окне календаря — 62 ячейки по %.0f px, "
+              "прокрутка синхронизируется ✓" % info["cellWidth"])
     finally:
         try:
             os.remove(qml_path)
@@ -262,22 +304,26 @@ def part_b_render(app) -> None:
 
 
 def part_c_structure() -> None:
+    cal = open(os.path.join(ROOT, "components", "CalendarWorkspace.qml"),
+               encoding="utf-8").read()
+    assert "teamViewRoot" in cal and "TeamDayCell" in cal
+    assert "backend.teamMonthGrid" in cal
+    assert "syncFromEmpScroll" in cal, "нет приёма прокрутки от списка"
+    # маскот остаётся только при выключенной полосе
+    assert "selectedEmployeeId === 0 && !backend.teamStripEnabled" in cal
     panel = open(os.path.join(ROOT, "components", "EmployeeListPanel.qml"),
                  encoding="utf-8").read()
-    assert "teamMode" in panel and "TeamDayCell" in panel
-    assert "backend.teamMonthGrid" in panel
+    assert "TeamDayCell" not in panel, "полоса вернулась в панель сотрудников"
+    assert "teamMode" not in panel
+    assert "scrollEmpToRatio" in panel and "notifyScrollPartner" in panel
+    main = open(os.path.join(ROOT, "main.qml"), encoding="utf-8").read()
+    assert "empListPanel.scrollPartner = calendarPanelId" in main, \
+        "прокрутка не связана"
     settings = open(os.path.join(ROOT, "components", "SettingsDialog.qml"),
                     encoding="utf-8").read()
     assert "backend.teamStripEnabled" in settings, "нет тумблера в настройках"
-    assert "setTeamStripEnabled" in settings
-    cal = open(os.path.join(ROOT, "components", "CalendarWorkspace.qml"),
-               encoding="utf-8").read()
-    # маскот остаётся только при выключенной полосе
-    assert "selectedEmployeeId === 0 && !backend.teamStripEnabled" in cal
-    main = open(os.path.join(ROOT, "main.qml"), encoding="utf-8").read()
-    assert "workspaceRoot.teamMode" in main, "список не расширяется"
-    print("C: тумблер в «Внешнем виде», маскот и «Пн..Вс» уступают место, "
-          "список расширяется ✓")
+    print("C: картина в окне календаря, панель сотрудников чистая, "
+          "прокрутка связана, тумблер на месте ✓")
 
 
 def main() -> int:

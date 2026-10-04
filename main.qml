@@ -677,10 +677,12 @@ ApplicationWindow {
         Item {
             id: workspaceRoot
             property alias calendarPanel: calendarPanelId
-            // Общая картина месяца: сотрудник не выбран, полоса включена —
-            // список сотрудников расширяется на почти всё окно
-            readonly property bool teamMode: backend.selectedEmployeeId === 0
-                                             && backend.teamStripEnabled
+            // Список сотрудников и общая картина месяца (окно календаря)
+            // листаются вместе
+            Component.onCompleted: {
+                calendarPanelId.scrollPartner = empListPanel
+                empListPanel.scrollPartner = calendarPanelId
+            }
             MouseArea {
                 anchors.fill: parent
                 z: 1
@@ -709,12 +711,9 @@ ApplicationWindow {
                     }
                 }
                 Item {
-                    id: leftPane
-                    SplitView.preferredWidth: workspaceRoot.teamMode
-                                              ? parent.width - 620 : 350
-                    SplitView.minimumWidth: workspaceRoot.teamMode ? 480 : 250
-                    SplitView.maximumWidth: workspaceRoot.teamMode
-                                            ? parent.width - 420 : 600
+                    SplitView.preferredWidth: 350
+                    SplitView.minimumWidth: 250
+                    SplitView.maximumWidth: 600
                     SplitView {
                         anchors.fill: parent
                         orientation: Qt.Horizontal
@@ -737,8 +736,8 @@ ApplicationWindow {
                     }
                     Column {
                         anchors.left: parent.left
+                        anchors.right: parent.right
                         anchors.bottom: parent.bottom
-                        width: workspaceRoot.teamMode ? 350 : parent.width
                         z: AppUI.AppTheme.zSticky
                         AppUI.ToastHost { width: parent.width }
                         AppUI.LeftControlPanel { width: parent.width }
