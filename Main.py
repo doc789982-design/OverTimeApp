@@ -478,7 +478,6 @@ class Backend(QObject):
     updateUrlChanged = Signal()
     appVersionChanged = Signal()
     whatsNewChanged = Signal()
-    whatsNewAllChanged = Signal()
     remoteUpdateAvailableChanged = Signal()   # есть ли новая версия на сайте
     remoteDownloadingChanged = Signal()       # идёт ли скачивание
     remoteDownloadProgressChanged = Signal()  # прогресс скачивания (0..100)
@@ -4100,18 +4099,6 @@ class Backend(QObject):
     @Property(list, notify=whatsNewChanged)
     def whatsNew(self):
         return self._whats_new
-
-    @Property(list, notify=whatsNewAllChanged)
-    def whatsNewAll(self):
-        """Весь список изменений текущей версии — для кнопки в справке.
-        Показывает всё, что отмечено пометками сборок, без привязки
-        к «что уже видели»."""
-        cur_build = int(self._app_build or 0)
-        text = self._read_changelog_text()
-        if not cur_build or not text:
-            return []
-        blocks = app_update.changelog_for_builds(text, 0, cur_build)
-        return app_update.whats_new_qml(blocks)
 
     @Property(int, notify=updateReadyChanged)
     def updateChromeExtra(self):

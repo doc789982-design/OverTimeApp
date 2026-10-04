@@ -13,24 +13,31 @@ AppDialog {
     closePolicy: Popup.CloseOnEscape
 
     onAccepted: root.close()
-    onClosed: { backend.ackWhatsNew(); root.showAll = false }
+    onClosed: backend.ackWhatsNew()
 
     function showIfNeeded() {
         if (backend.whatsNew && backend.whatsNew.length > 0)
             root.showCentered()
     }
 
-    // Из справки: показать ВЕСЬ список изменений версии, даже если
-    // «что нового» после обновления уже видели (память освежить)
-    function showChangelog() {
-        root.showAll = true
-        root.showCentered()
+    // Из справки: то же окно, что после обновления, — только
+    // изменения с прошлого просмотра (не весь чейнджлог версии)
+    function showChangelog() { root.showCentered() }
+
+    // Всё уже видели — честно говорим об этом, а не пустое окно
+    Text {
+        width: root.width - AppTheme.spaceL * 2
+        x: AppTheme.spaceL
+        visible: !backend.whatsNew || backend.whatsNew.length === 0
+        text: "Новых изменений с прошлого просмотра нет: окно после обновления уже показало всё свежее."
+        color: AppTheme.textSecondary
+        font.family: AppTheme.fontFamily
+        font.pixelSize: AppTheme.sizeBody
+        wrapMode: Text.WordWrap
     }
 
-    property bool showAll: false
-
     Repeater {
-        model: root.showAll ? backend.whatsNewAll : backend.whatsNew
+        model: backend.whatsNew
 
         Column {
             width: root.width - AppTheme.spaceL * 2

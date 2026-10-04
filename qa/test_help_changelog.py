@@ -29,7 +29,7 @@ os.environ.setdefault("QSG_RASTER_BACKEND", "1")
 os.environ.setdefault("OVERTIMETAB_SANDBOX_FONTS", "1")
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-from PySide6.QtCore import QObject, Slot, Property
+from PySide6.QtCore import QObject, Slot, Property, Signal
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtQml import QQmlApplicationEngine, QJSValue
 
@@ -40,19 +40,21 @@ WHATS_NEW_ALL = [{
 
 
 class StubBackend(QObject):
+    whatsNewChanged = Signal()
+
     def __init__(self):
         super().__init__()
         self.calls = []
+        self._whats_new = list(WHATS_NEW_ALL)
 
-    # WhatsNewDialog (свойства — их читает QML без скобок)
-    @Property(list, constant=True)
+    # WhatsNewDialog читает свойство без скобок (биндинг модели)
+    @Property(list, notify=whatsNewChanged)
     def whatsNew(self):
-        return []          # «после обновления» уже видели
+        return self._whats_new
 
-    @Property(list, constant=True)
-    def whatsNewAll(self):
-        self.calls.append("whatsNewAll")
-        return WHATS_NEW_ALL
+    def set_whats_new(self, blocks):
+        self._whats_new = list(blocks)
+        self.whatsNewChanged.emit()
 
     @Slot()
     def ackWhatsNew(self):
@@ -141,38 +143,78 @@ ApplicationWindow {
     QMetaObject.invokeMethod(btns[0], "clicked")
     settle(app, 0.2)
     assert fired, "кнопка не сигналит requestWhatsNew"
-    print("A. Справка: карточка «Что нового», кнопка сигналит ✓")
 
-    # ── B. «Что нового»: весь чейнджлог по кнопке ──
+    # карточка В ПОТОКЕ, под календарём (а не поверх кнопок):
+    QMetaObject.invokeMethod(help_dlg, "show")
+    settle(app, 0.8)
+    from PySide6.QtQuick import QQuickItem
+    from PySide6.QtCore import QPointF
+
+    def find_items_named(name):
+        found = []
+        for ri in win.findChildren(QQuickItem):
+            if ri.parentItem() is None:
+                def walk2(item):
+                    if str(item.property("objectName") or "") == name:
+                        found.append(item)
+                    for c in item.childItems():
+                        walk2(c)
+                walk2(ri)
+        return found
+
+    cal = find_items_named("calYearButton")
+    assert cal, "нет кнопок производственного календаря"
+    cal_y = cal[-1].mapToScene(QPointF(0, 0)).y()
+    wn_y = btns[0].mapToScene(QPointF(0, 0)).y()
+    assert wn_y > cal_y + 20, \
+        "карточка «Что нового» не в потоке (поверх кнопок): " \
+        "календарь y=%.0f, карточка y=%.0f" % (cal_y, wn_y)
+    QMetaObject.invokeMethod(help_dlg, "close")
+    settle(app, 0.4)
+    print("A. Справка: карточка «Что нового» в потоке (под календарём), "
+          "кнопка сигналит ✓")
+
+    # ── B. «Что нового»: как при обновлении — только новое ──
+    from PySide6.QtQuick import QQuickItem
+
+    def all_texts():
+        acc = []
+        for ri in win.findChildren(QQuickItem):
+            if ri.parentItem() is None:
+                def walk(item):
+                    if item.metaObject().className() == "QQuickText":
+                        acc.append(str(item.property("text") or ""))
+                    for c in item.childItems():
+                        walk(c)
+                walk(ri)
+        return acc
+
     assert not to_var(new_dlg.property("visible"))
     QMetaObject.invokeMethod(new_dlg, "showChangelog")
     settle(app, 1.5)
     assert to_var(new_dlg.property("visible")), "окно не открылось"
-    assert new_dlg.property("showAll") is True, "не включён режим полного списка"
-    assert any(c == "whatsNewAll" for c in stub.calls), "не читан полный список"
-    # делегаты Repeater ищем обходом item-дерева: findChildren
-    # (QObject) их не видит (попап + Repeater)
-    from PySide6.QtQuick import QQuickItem
-
-    def walk_texts(item, acc):
-        if item.metaObject().className() == "QQuickText":
-            acc.append(str(item.property("text") or ""))
-        for c in item.childItems():
-            walk_texts(c, acc)
-
-    body = []
-    roots = [ri for ri in win.findChildren(QQuickItem)
-             if ri.parentItem() is None]
-    assert roots, "нет корневых айтемов — окно не построилось"
-    for ri in roots:
-        walk_texts(ri, body)
+    body = all_texts()
     assert any("Пробная запись" in t for t in body), \
-        "запись полного списка не показана: %r" % (body[:6],)
+        "запись «что нового» не показана: %r" % (body[:6],)
+    # полного чейнджлога в коде больше нет
+    main_py = open(os.path.join(ROOT, "Main.py"), encoding="utf-8").read()
+    assert "whatsNewAll" not in main_py, "whatsNewAll не убран из Main.py"
     QMetaObject.invokeMethod(new_dlg, "close")
     settle(app, 1.0)
     assert any(c == "ack" for c in stub.calls), "закрытие не отметило просмотр"
-    assert new_dlg.property("showAll") is False, "режим полного списка не сброшен"
-    print("B. «Что нового»: полный список открылся и закрылся корректно ✓")
+
+    # всё уже видели → честное пустое состояние, не пустое окно
+    stub.set_whats_new([])
+    QMetaObject.invokeMethod(new_dlg, "showChangelog")
+    settle(app, 1.2)
+    body2 = all_texts()
+    assert any("Новых изменений" in t for t in body2), \
+        "нет пустого состояния: %r" % (body2[:6],)
+    assert not any("Пробная запись" in t for t in body2)
+    QMetaObject.invokeMethod(new_dlg, "close")
+    settle(app, 0.8)
+    print("B. «Что нового»: только новое с прошлого просмотра; "
+          "пустое состояние есть ✓")
 
     # ── C. группа: редактирование ──
     assert str(group_dlg.property("title")) == "Новая группа"

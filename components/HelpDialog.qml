@@ -56,16 +56,21 @@ AppSidePanel {
     // разрешения (icons/github_qr.png). Номер версии прижат к самому низу окна.
     Item {
         width: parent.width
-        height: (parent && parent.parent && parent.parent.availableHeight)
-                ? parent.parent.availableHeight : root.height
+        // Высота растёт под контент (панель скроллится), но не меньше
+        // высоты панели: когда контента мало, номер версии стоит у низа
+        readonly property real baseHeight:
+            (parent && parent.parent && parent.parent.availableHeight)
+            ? parent.parent.availableHeight : root.height
+        height: Math.max(baseHeight,
+                         contentCol.height + versionText.implicitHeight
+                         + AppTheme.spaceXL + AppTheme.spaceL * 2)
 
         Column {
+            id: contentCol
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: parent.top
             anchors.topMargin: AppTheme.spaceXL
-            anchors.bottom: versionText.top
-            anchors.bottomMargin: AppTheme.spaceL
             spacing: AppTheme.spaceL
 
             // ==========================================
@@ -304,38 +309,37 @@ AppSidePanel {
                 }
             }
 
-        }
-
-        // ==========================================
-        // ЧТО НОВОГО — СПИСОК ИЗМЕНЕНИЙ ВЕРСИИ
-        // ==========================================
-        Column {
-            width: parent.width
-            spacing: AppTheme.spaceXS
-
-            Text {
+            // ==========================================
+            // ЧТО НОВОГО — ПОСЛЕДНЯЯ КАРТОЧКА ПОТОКА
+            // ==========================================
+            Column {
                 width: parent.width
-                text: "Что нового"
-                color: AppTheme.textPrimary
-                font.family: AppTheme.fontFamily
-                font.pixelSize: AppTheme.sizeBodyLarge
-                font.weight: AppTheme.weightBold
-                wrapMode: Text.WordWrap
-            }
-            Text {
-                width: parent.width
-                text: "Список изменений программы: что добавили и что починили. Это же окно открывается само после обновления — здесь его можно перечитать в любой момент."
-                color: AppTheme.textSecondary
-                font.family: AppTheme.fontFamily
-                font.pixelSize: AppTheme.sizeBody
-                wrapMode: Text.WordWrap
-            }
-            AppButton {
-                objectName: "whatsNewButton"
-                text: "Открыть список изменений"
-                iconSource: "../icons/sparkle.svg"
-                variant: "secondary"
-                onClicked: root.requestWhatsNew()
+                spacing: AppTheme.spaceXS
+
+                Text {
+                    width: parent.width
+                    text: "Что нового"
+                    color: AppTheme.textPrimary
+                    font.family: AppTheme.fontFamily
+                    font.pixelSize: AppTheme.sizeBodyLarge
+                    font.weight: AppTheme.weightBold
+                    wrapMode: Text.WordWrap
+                }
+                Text {
+                    width: parent.width
+                    text: "Изменения, которые появились с прошлого просмотра — то же окно, что открывается само после обновления программы."
+                    color: AppTheme.textSecondary
+                    font.family: AppTheme.fontFamily
+                    font.pixelSize: AppTheme.sizeBody
+                    wrapMode: Text.WordWrap
+                }
+                AppButton {
+                    objectName: "whatsNewButton"
+                    text: "Открыть список изменений"
+                    iconSource: "../icons/sparkle.svg"
+                    variant: "secondary"
+                    onClicked: root.requestWhatsNew()
+                }
             }
         }
 
