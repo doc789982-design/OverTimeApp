@@ -15,9 +15,10 @@ import QtQuick.Controls
 //   нет обновл. — просто остановилась
 //   есть        — прокрутившись, складывается и раскрывается
 //                 стрелкой «скачать» (download.svg, зелёная)
-//   загрузка    — снова прокрут, «скачать» складывается
-//                 и раскрывается кольцом, которое заполняется
-//                 прогрессом (тонкая дуга)
+//   загрузка    — «скачать» складывается и раскрывается
+//                 ОБЛАКОМ, которое превращается в кольцо
+//                 (морф по образцу из гифки; статус и проценты —
+//                 в подсказке кнопки)
 //   загружено   — кольцо ДОЗАЛИВАЕТСЯ до полного (его конец)
 //                 и зеленеет, внутри вырастает стрелка
 //                 «установить» — начало следующего состояния
@@ -116,17 +117,30 @@ Item {
             opacity: 0
             transform: Scale { id: gX; objectName: "updRingX"; origin.x: iRing.width / 2; origin.y: iRing.height / 2; xScale: 0 }
 
-            // сглаженный прогресс: скачки процентов не щёлкают;
-            // в готовности дозаливается до полного — бесшовно
-            property real fill: root.downloading ? root.progress / 100 : (root.ready ? 1 : 0)
+            // сглаженное заполнение: в готовности кольцо полное —
+            // бесшовный переход к стрелке «установить»
+            // (во время загрузки вместо дуги — облако-морф)
+            property real fill: root.ready ? 1 : 0
             Behavior on fill { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
             property color arcColor: root.ready ? root.stateColor : AppTheme.accentBrand
             Behavior on arcColor { ColorAnimation { duration: AppTheme.durFast; easing.type: Easing.InOutQuad } }
 
+            // загрузка: облако, превращающееся в кольцо (по образцу)
+            UpdateCloudRing {
+                id: cloudRing
+                objectName: "updCloudRing"
+                anchors.centerIn: parent
+                diameter: Math.min(parent.width, parent.height)
+                strokeColor: AppTheme.accentBrand
+                running: root.downloading
+                visible: root.downloading
+            }
+
             Canvas {
                 id: arcCanvas
                 anchors.fill: parent
+                visible: !root.downloading
                 onPaint: {
                     var ctx = getContext("2d")
                     ctx.reset()

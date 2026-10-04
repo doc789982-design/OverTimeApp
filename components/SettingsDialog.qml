@@ -780,13 +780,14 @@ AppLargeModal {
                             onClicked: backend.applyReadyUpdate()
                         }
 
-                        Text {
+                        // Загрузка обновления: облако, превращающееся
+                        // в кольцо (по присланному образцу), подпись — статус
+                        UpdateCloudRing {
                             visible: backend.updateBusy
-                            width: parent.width
-                            text: backend.updateStatusText || "Готовим обновление…"
-                            color: AppTheme.accentBrand
-                            font.family: AppTheme.fontFamily
-                            font.pixelSize: AppTheme.sizeBody
+                            running: backend.updateBusy
+                            diameter: 96
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            caption: backend.updateStatusText || "Готовим обновление…"
                         }
                     }
             }
