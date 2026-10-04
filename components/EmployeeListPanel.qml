@@ -11,6 +11,36 @@ Rectangle {
     
     property Item workspace: null
 
+    // Общая картина месяца: сотрудник не выбран и полоса включена —
+    // карточки продолжаются строкой дней (включается в настройках)
+    readonly property bool teamMode: backend.selectedEmployeeId === 0
+                                     && backend.teamStripEnabled
+    // Ширина карточки в этом режиме (полоса дней — правее)
+    readonly property int teamCardWidth: 300
+
+    // Для проверок: сколько мини-ячеек дней нарисовано и какой они ширины
+    function teamStripInfo() {
+        let info = { "cells": 0, "cellWidth": 0 }
+        let kids = empList.contentItem.children
+        for (let i = 0; i < kids.length; i++) {
+            let del = kids[i]
+            if (!del || del.empId === undefined || del.empId === 0) continue
+            let sub = del.children
+            for (let j = 0; j < sub.length; j++) {
+                let strip = sub[j]
+                if (strip && strip.teamDays !== undefined
+                        && strip.teamDays.length > 0) {
+                    info.cells += strip.teamDays.length
+                    let row = strip.children[0]
+                    if (row && row.children !== undefined
+                            && row.children.length > 0)
+                        info.cellWidth = row.children[0].width
+                }
+            }
+        }
+        return info
+    }
+
     function blurSearch() {
         searchInput.focus = false
     }
@@ -361,7 +391,8 @@ Rectangle {
                 Item {
                     id: cardContainer
                     visible: !modelData.is_header
-                    width: parent.width
+                    width: root.teamMode && !modelData.is_header
+                           ? root.teamCardWidth : parent.width
                     height: modelData.is_header ? 0 : empDelegateItem.empCardHeight
                     clip: true
                     opacity: empMouseArea.drag.active ? 0.35 : 1
@@ -608,6 +639,45 @@ Rectangle {
                             color: AppTheme.textPrimary
                             font.pixelSize: AppTheme.sizeBody
                             font.weight: AppTheme.weightBold
+                        }
+                    }
+                }
+            }
+
+            // ПОЛОСА ДНЕЙ МЕСЯЦЯ: продолжение карточки сотрудника
+            // строкой дней — как ячейки календаря, но в одну линию
+            Item {
+                id: teamStripRow
+                visible: root.teamMode && !modelData.is_header
+                anchors.left: parent.left
+                anchors.leftMargin: root.teamCardWidth + AppTheme.spaceS
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+
+                // Дни этого сотрудника из общей картины месяца
+                readonly property var teamDays: {
+                    if (!visible || modelData.is_header) return []
+                    let grid = backend.teamMonthGrid
+                    for (let i = 0; i < grid.length; i++)
+                        if (grid[i].id === modelData.id) return grid[i].days
+                    return []
+                }
+
+                Row {
+                    anchors.fill: parent
+                    anchors.topMargin: 3
+                    anchors.bottomMargin: 3
+                    spacing: 1
+
+                    Repeater {
+                        model: teamStripRow.teamDays
+                        TeamDayCell {
+                            width: (teamStripRow.width
+                                    - (teamStripRow.teamDays.length - 1) * parent.spacing)
+                                   / Math.max(1, teamStripRow.teamDays.length)
+                            height: parent.height
+                            dayData: modelData
                         }
                     }
                 }

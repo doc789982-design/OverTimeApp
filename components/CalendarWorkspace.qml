@@ -251,6 +251,7 @@ Item {
             // ДНИ НЕДЕЛИ
             Row {
                 id: weekDaysRow
+                visible: backend.selectedEmployeeId !== 0 || !backend.teamStripEnabled
                 anchors.top: parent.top
                 anchors.left: parent.left
                 anchors.right: parent.right
@@ -993,7 +994,7 @@ Item {
         anchors.bottomMargin: AppTheme.spaceM
         anchors.left: parent.left
         anchors.right: parent.right
-        visible: backend.selectedEmployeeId === 0
+        visible: backend.selectedEmployeeId === 0 && !backend.teamStripEnabled
         z: 50
 
         Column {

@@ -478,6 +478,8 @@ class Backend(QObject):
     updateUrlChanged = Signal()
     appVersionChanged = Signal()
     whatsNewChanged = Signal()
+    teamStripEnabledChanged = Signal()
+    teamMonthGridChanged = Signal()
     remoteUpdateAvailableChanged = Signal()   # есть ли новая версия на сайте
     remoteDownloadingChanged = Signal()       # идёт ли скачивание
     remoteDownloadProgressChanged = Signal()  # прогресс скачивания (0..100)
@@ -488,6 +490,7 @@ class Backend(QObject):
         self._db_list = []
         self._group_list = []
         self._employee_list = []
+        self._team_grid = []
         self._calendar_days = []
         self._month_summary = {} # Тут будут лежать итоги
         self._clipboard = None
@@ -508,6 +511,7 @@ class Backend(QObject):
         self._is_dark_theme = True
         self._reminder_enabled = True    # Напоминание "сдать табель" (28-е — 5-е число)
         self._startup_update_enabled = True    # обновление при запуске
+        self._team_strip_enabled = True    # дни месяца напротив сотрудников
         self._tray_hint_shown = False    # Показывали ли подсказку про работу в фоне
         # Данные хранятся в Documents\OverTimeTab; из папки программы автоматически переносятся
         self.app_dir = Path(__file__).parent
@@ -820,6 +824,7 @@ class Backend(QObject):
                 self._is_dark_theme = ui_cfg.get("theme", "dark") == "dark"
                 self._reminder_enabled = ui_cfg.get("reminder_enabled", True)
                 self._startup_update_enabled = bool(ui_cfg.get("startup_update", True))
+                self._team_strip_enabled = bool(ui_cfg.get("team_month_strip", True))
                 self._tray_hint_shown = ui_cfg.get("tray_hint_shown", False)
                 self._update_url = str(ui_cfg.get("update_url", "") or "").strip()
                 
@@ -1065,6 +1070,21 @@ class Backend(QObject):
         self._startup_update_enabled = bool(enabled)
         self._write_ui_config("startup_update", self._startup_update_enabled)
         self.startupUpdateEnabledChanged.emit()
+
+    @Property(bool, notify=teamStripEnabledChanged)
+    def teamStripEnabled(self):
+        return self._team_strip_enabled
+
+    @Property(list, notify=teamMonthGridChanged)
+    def teamMonthGrid(self):
+        return self._team_grid
+
+    @Slot(bool)
+    def setTeamStripEnabled(self, enabled):
+        if self._team_strip_enabled == bool(enabled): return
+        self._team_strip_enabled = bool(enabled)
+        self._write_ui_config("team_month_strip", self._team_strip_enabled)
+        self.teamStripEnabledChanged.emit()
 
     @Slot(bool)
     def setReminderEnabled(self, enabled):
@@ -1737,7 +1757,7 @@ class Backend(QObject):
                     "name": g_name,
                     "group_id": int(gid) if gid is not None else 0,
                     "subtitle": "", "is_active": True, "has_overtime": False,
-                    "shift_minutes": 0, "norm_minutes": 0, "last_name": "", "first_name": "", "middle_name": "", "rank": "", "position": "", "start_month": ""
+                    "shift_minutes": 0, "norm_minutes": 0, "last_name": "", "first_name": "", "middle_name": "", "rank": "", "position": "", "start_month": "", "end_date": ""
                 })
                 current_header_gid = gid
 
@@ -1799,6 +1819,7 @@ class Backend(QObject):
                 "position": e["position"] or "",
                 "start_month": e["start_month"],
                 "hire_date": e["hire_date"] or "",
+                "end_date": e["end_date"] or "",
                 "opening_minutes": int(e["opening_minutes"] or 0),
                 "opening_overtime": int(e["opening_overtime_minutes"] or 0),
                 "opening_days": int(e["opening_days"] or 0),
@@ -1809,7 +1830,100 @@ class Backend(QObject):
             })
             
         self._employee_list = formatted_emps
-        self.employeeListChanged.emit() 
+        self.employeeListChanged.emit()
+        self.refresh_team_grid() 
+
+    def refresh_team_grid(self):
+        """Дни месяца для полосы напротив каждого сотрудника.
+
+        Общая картина подразделения: пока сотрудник не выбран, карточка
+        каждого человека в списке продолжается строкой дней текущего
+        месяца — те же цвета и метки, что у ячеек календаря (выходные,
+        праздники, запертые дни, статусы, дежурства, компенсации).
+        При выбранном сотруднике ничего не делает: календарь и так
+        перед глазами.
+        """
+        if not self.active_db or self._selected_employee_id != 0:
+            return
+        first = date(self.current_year, self.current_month, 1)
+        last = date(self.current_year + (self.current_month == 12),
+                    self.current_month % 12 + 1, 1) - timedelta(days=1)
+        work_map = self.active_db.get_calendar_month(d_iso(first), d_iso(last))
+        holidays_set = self.active_db.get_holidays_month(d_iso(first), d_iso(last))
+        override_set = self.active_db.get_calendar_overrides(d_iso(first), d_iso(last))
+
+        grid = []
+        for emp in self._employee_list:
+            if emp.get("is_header") or not emp.get("id"):
+                continue
+            eid = int(emp["id"])
+            shifted_checker = build_shifted_weekend_checker(self.active_db, eid)
+            status_map = self.active_db.get_statuses_for_period(eid, d_iso(first), d_iso(last))
+
+            comp_set = set()
+            for c in self.active_db.list_compensations_for_period(eid, d_iso(first), d_iso(last)):
+                if c["unit"] in ("hours", "overtime"):
+                    display_d = c["order_date"] if c["order_date"] else c["event_date"]
+                    if display_d: comp_set.add(display_d)
+                else:
+                    for cd in self.active_db.get_comp_dates(int(c["id"])):
+                        comp_set.add(cd)
+
+            duty_map = {}
+            s_dt = datetime.combine(first, datetime.min.time())
+            e_dt = datetime.combine(last + timedelta(days=1), datetime.min.time())
+            duties = self.active_db.list_duties_for_period(eid, s_dt, e_dt)
+            breaks_map = self.active_db.breaks_for_duty_ids([int(d["id"]) for d in duties])
+            for d in duties:
+                did = int(d["id"])
+                is_shift = bool(int(d["is_shift"] if "is_shift" in d.keys() and d["is_shift"] is not None else 0))
+                s0 = max(dt_parse(d["start_dt"]), s_dt)
+                e0 = min(dt_parse(d["end_dt"]), e_dt)
+                if s0 >= e0: continue
+                for s, e in subtract_intervals((s0, e0), breaks_map.get(did, [])):
+                    cur = s.date()
+                    last_d = (e - timedelta(seconds=1)).date() if e > s else s.date()
+                    while cur <= last_d:
+                        day_start = datetime.combine(cur, datetime.min.time())
+                        day_end = day_start + timedelta(days=1)
+                        inter = intersect(s, e, day_start, day_end)
+                        if inter:
+                            t_str = f"{inter[0].strftime('%H:%M')}-{inter[1].strftime('%H:%M')}"
+                            duty_map.setdefault(d_iso(cur), []).append(
+                                {"id": did, "text": t_str, "is_shift": is_shift})
+                        cur += timedelta(days=1)
+
+            hire_iso = str(emp.get("hire_date") or "").strip()
+            if not hire_iso and emp.get("start_month"):
+                hire_iso = str(emp["start_month"])[:7] + "-01"
+            end_iso = str(emp.get("end_date") or "").strip()
+
+            days = []
+            cur = first
+            while cur <= last:
+                d_str = d_iso(cur)
+                is_working = resolve_is_working(
+                    cur,
+                    bool(shifted_checker and shifted_checker(cur)),
+                    work_map, holidays_set, override_set,
+                )
+                is_holiday = cur in holidays_set
+                days.append({
+                    "date_str": d_str,
+                    "day_number": cur.day,
+                    "is_weekend": (not is_working) and (not is_holiday),
+                    "is_holiday": is_holiday,
+                    "status": status_map.get(cur, ""),
+                    "has_comp": d_str in comp_set,
+                    "duties": duty_map.get(d_str, []),
+                    "is_before_hire": bool(hire_iso) and d_str < hire_iso,
+                    "is_after_end": bool(end_iso) and d_str > end_iso,
+                })
+                cur += timedelta(days=1)
+            grid.append({"id": eid, "days": days})
+
+        self._team_grid = grid
+        self.teamMonthGridChanged.emit()
 
     def refresh_pulse(self):
         """Проверяет каждый из 12 месяцев: есть ли там данные для 'зеленой точки'"""
@@ -2009,6 +2123,7 @@ class Backend(QObject):
         else:
             self._month_summary = {}
         self.monthSummaryChanged.emit()
+        self.refresh_team_grid()
 
     def _lazy_year_refresh(self):
         if not self.active_db:
