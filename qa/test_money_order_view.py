@@ -166,6 +166,51 @@ def main() -> int:
         assert not any("Доступно" in t for t in texts), "«Доступно» не убрано"
         assert not any("Выплата" in t for t in texts), "«Выплата» не убрано"
 
+        # 3в. радио годов не обрезаны многоточием (сборка 262:
+        #     implicitWidth забыл x индикатора → вечное «…»)
+        for r in radios:
+            lbl = None
+            for c in r.findChildren(QObject):
+                if c.metaObject().className() == "QQuickText":
+                    lbl = c
+                    break
+            assert lbl is not None, "у радио нет лейбла"
+            assert lbl.property("truncated") is not True, \
+                "радио %r обрезано: %r" % (r.property("text"),
+                                           lbl.property("text"))
+
+        # 3г. поля сумм НЕ выезжают за правый край карточки
+        #     (nameWidth теперь от реальной ширины таблицы).
+        #     Делегаты Repeater ищем через childItems — QObject-
+        #     findChildren их не видит
+        def walk_items(item, acc):
+            acc.append(item)
+            for c in item.childItems():
+                walk_items(c, acc)
+            return acc
+
+        all_items = []
+        for root_i in win.findChildren(QQuickItem):
+            if root_i.parentItem() is None:
+                walk_items(root_i, all_items)
+        cards = [i for i in all_items
+                 if i.metaObject().className().startswith("QQuickRectangle")
+                 and abs(float(i.property("height") or 0) - 66) < 1]
+        assert cards, "карточки-строки не найдены"
+        card = cards[0]
+        card_w = float(card.property("width"))
+        card_items = walk_items(card, [])
+        fields_in_card = [i for i in card_items
+                          if i.metaObject().className().startswith("AppTextField")
+                          and abs(float(i.property("width") or 0) - 56) < 1]
+        assert len(fields_in_card) == 3, \
+            "в карточке нет трёх полей сумм: %d" % len(fields_in_card)
+        for f in fields_in_card:
+            right = float(f.property("x") or 0) + 56
+            assert right <= card_w - 8 + 0.5, \
+                "поле выезжает за карточку: правый край %.1f при ширине %.1f" \
+                % (right, card_w)
+
         # 4. снимок карточки (contentItem попапа — «окно» ведомости).
         #    В offscreen раскладка/заливки «доезжают» не сразу: первые
         #    grabToImage — прогрев, боевой снимок — последний.
@@ -273,7 +318,7 @@ def main() -> int:
         i = 0
         while i < len(ys):
             group = [ys[i]]
-            while i + 1 < len(ys) and ys[i+1] - ys[i] <= 70:
+            while i + 1 < len(ys) and ys[i+1] - ys[i] <= 76:
                 same = all(
                     abs(a[0]-b[0]) <= 3 and abs(a[1]-b[1]) <= 3
                     for a, b in zip(table_rows[group[0]], table_rows[ys[i+1]]))
@@ -319,7 +364,7 @@ def main() -> int:
 
         # 5д. радио «Текущий год» отмечено: акцентная точка-индикатор
         #     в правой колонке шапки
-        n_radio = sum(1 for x in range(335, 385) for y in range(115, 165)
+        n_radio = sum(1 for x in range(255, 305) for y in range(115, 165)
                       if near(px[x, y], ACCENT, 40))
         assert n_radio > 40, "радио года не найдено (%d px)" % n_radio
 

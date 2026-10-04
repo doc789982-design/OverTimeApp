@@ -52,10 +52,15 @@ AppDialog {
 
     // ширины колонок таблицы (одинаково в шапке и строках)
     readonly property int colNum: 56
-    readonly property int headLeft: 300     // колонка реквизитов
+    // реквизиты — на четверть короче, чтобы правой колонке
+    // (журнал, годы, «Компенсировать всё») было вольготно
+    readonly property int headLeft: 225
     readonly property int headRight: width - AppTheme.spaceL * 2
                                      - headLeft - AppTheme.spaceL
-    readonly property int nameWidth: width - AppTheme.spaceL * 2 - 28
+    // имя сотрудника — от РЕАЛЬНОЙ ширины таблицы (не от ширины
+    // окна: у попапа свои поля, из-за этого поля сумм выезжали
+    // за правый край карточки на 12px)
+    readonly property int nameWidth: empTable.width - 28
                                      - colNum * 3 - 8 * 4 - 16
 
     function _fromBackend() {
@@ -292,6 +297,7 @@ AppDialog {
 
             AppButton {
                 id: btnJournal
+                width: parent.width
                 text: "Журнал приказов"
                 iconSource: "../icons/clock.svg"
                 variant: "secondary"
@@ -324,6 +330,7 @@ AppDialog {
 
             AppButton {
                 id: btnFillAll
+                width: parent.width
                 text: "Компенсировать всё"
                 iconSource: "../icons/edit.svg"
                 variant: "secondary"
@@ -349,6 +356,7 @@ AppDialog {
             AppButton {
                 id: btnEqual
                 visible: !root.singleMode
+                width: visible ? parent.width : implicitWidth
                 text: root.showEqual ? "Скрыть" : "Одинаково всем…"
                 iconSource: "../icons/money.svg"
                 variant: "secondary"
@@ -457,7 +465,7 @@ AppDialog {
     Column {
         id: empTable
         width: parent.width
-        spacing: 2
+        spacing: 6
         visible: root.rows.length > 0
 
         // Для проверок в песочнице: геометрия отрисованных строк

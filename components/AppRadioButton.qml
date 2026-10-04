@@ -23,7 +23,9 @@ Item {
     signal toggled()
 
     implicitHeight: 36
-    implicitWidth: indicatorRow.width + AppTheme.spaceM + label.implicitWidth
+    // x индикатора входит в ширину: без него лейбл короче на 2px
+    // и текст вечно обрезался многоточием («Текущий год…»)
+    implicitWidth: indicatorRow.x + indicatorRow.width + AppTheme.spaceM + label.implicitWidth
 
     opacity: control.enabled ? 1.0 : AppTheme.alphaDisabled
     scale: ma.pressed ? AppTheme.scaleActive : 1.0
