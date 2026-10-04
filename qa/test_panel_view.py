@@ -4,9 +4,9 @@
 Панель рендерится со стабом backend; проверяется вёрстка после переноса
 кнопки печати в ряд «тема · настройки · печать»:
   – в верхнем ряду у правого края три иконки (тема, настройки, печать);
-  – в нижнем ряду одна широкая кнопка «Новый сотрудник», от левого поля
-    до правого симметрично;
-  – иконок во втором ряду нет.
+  – в нижнем ряду широкая кнопка «Новый сотрудник» и круглая
+    кнопка-₽ (Приказ всем) справа от неё — только символ рубля;
+  – иконок во втором ряду (между рядами) нет.
 Снимок: qa/render/panel.png
 
 Запуск (песочница):
@@ -133,8 +133,42 @@ def main() -> int:
         assert abs(left_pad - right_pad) <= 6, \
             "поля кнопки несимметричны: слева %d, справа %d" % (left_pad, right_pad)
 
+        # объектная проверка нижнего ряда: широкая «Новый сотрудник»
+        # + круглая кнопка-₽ (сборка 263)
+        from PySide6.QtCore import QMetaObject
+        panel = None
+        for o in win.findChildren(QObject):
+            if o.metaObject().className().startswith("LeftControlPanel"):
+                panel = o
+                break
+        assert panel is not None, "панель не найдена"
+        emp_btn = icon_btn = None
+        for o in panel.findChildren(QObject):
+            if o.metaObject().className().startswith("AppButton") \
+                    and str(o.property("text") or "") == "Новый сотрудник":
+                emp_btn = o
+            if o.metaObject().className().startswith("AppIconButton") \
+                    and "ruble.svg" in str(o.property("iconSource") or ""):
+                icon_btn = o
+        assert emp_btn is not None, "нет кнопки «Новый сотрудник»"
+        assert icon_btn is not None, "нет круглой кнопки-₽ (ruble.svg)"
+        assert float(emp_btn.property("width")) > 250, \
+            "«Новый сотрудник» не расширилась: %s px" % emp_btn.property("width")
+        iw, ih = float(icon_btn.property("width")), float(icon_btn.property("height"))
+        assert abs(iw - 36) < 1 and abs(ih - 36) < 1, \
+            "кнопка-₽ не круглая 36×36: %s×%s" % (iw, ih)
+        gap = float(icon_btn.property("x")) - (float(emp_btn.property("x"))
+                                                + float(emp_btn.property("width")))
+        assert 4 <= gap <= 20, "кнопка-₽ не рядом с «Новым сотрудником»: %s px" % gap
+        for o in panel.findChildren(QObject):
+            if o.metaObject().className().startswith("AppButton") \
+                    and "Приказ всем" in str(o.property("text") or ""):
+                raise AssertionError("широкая кнопка «Приказ всем» не убрана")
+
         print("верхний ряд: 3 иконки (тема · настройки · печать) ✓")
-        print("нижний ряд: одна широкая кнопка, поля %d/%d px ✓" % (left_pad, right_pad))
+        print("нижний ряд: широкая «Новый сотрудник» %d px + круглая ₽ 36×36 "
+              "через %d px, поля %d/%d px ✓"
+              % (emp_btn.property("width"), gap, left_pad, right_pad))
         print("снимок: qa/render/panel.png")
         print("═══ ПАНЕЛЬ: ВЁРСТКА ПО ЗАДАЧЕ ═══")
         return 0

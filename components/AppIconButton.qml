@@ -13,6 +13,12 @@ Item {
     property color iconColor: AppTheme.textSecondary
     property color iconHoverColor: AppTheme.textPrimary
     property int bgRadius: AppTheme.radiusMedium
+    // Стиль «простоя»: по умолчанию кнопка-иконка без фона (как в
+    // панели инструментов), но можно задать видимую рамку и фон —
+    // например, круглую «вторичную» кнопку рядом с обычной кнопкой
+    property color bgIdleColor: "transparent"
+    property color borderIdleColor: "transparent"
+    property int borderIdleWidth: 0
 
     signal clicked()
 
@@ -23,8 +29,10 @@ Item {
         id: bg
         anchors.fill: parent
         radius: root.bgRadius
-        color: mouseArea.pressed ? AppTheme.statePress : (mouseArea.containsMouse ? AppTheme.stateHover : "transparent")
+        color: mouseArea.pressed ? AppTheme.statePress : (mouseArea.containsMouse ? AppTheme.stateHover : root.bgIdleColor)
         Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
+        border.color: root.borderIdleColor
+        border.width: root.borderIdleWidth
     }
 
     IconImage {

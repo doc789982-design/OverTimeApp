@@ -193,13 +193,30 @@ Item {
                     }
                 }
 
-                AppButton {
-                    Layout.fillWidth: true
+                // Круглая кнопка-₽: тот же вторичный стиль, что и у
+                // «Нового сотрудника» (рамка), но только символ рубля.
+                // «Новый сотрудник» забирает всю освободившуюся ширину.
+                AppIconButton {
+                    Layout.preferredWidth: 36
                     Layout.preferredHeight: 36
-                    variant: "secondary"
-                    text: "₽ Приказ всем"
-                    iconSource: "../icons/money.svg"
+                    Layout.alignment: Qt.AlignVCenter
+                    bgRadius: AppTheme.radiusPill
+                    iconSource: "../icons/ruble.svg"
+                    iconSize: 18
+                    iconColor: AppTheme.textPrimary
+                    iconHoverColor: AppTheme.textPrimary
+                    borderIdleColor: AppTheme.borderInput
+                    borderIdleWidth: 1
                     onClicked: moneyOrderDialog.openNew()
+
+                    HoverHandler { id: moneyOrderHover }
+                    AppToolTip {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        anchors.bottom: parent.top
+                        anchors.bottomMargin: AppTheme.spaceS
+                        text: "Приказ всем"
+                        isVisible: moneyOrderHover.hovered
+                    }
                 }
 
 
