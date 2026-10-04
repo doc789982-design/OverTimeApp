@@ -41,7 +41,7 @@ AppDialog {
         placeholderText: "Смена 1"
     }
 
-    AppSwitch {
+    AppPillSwitch {
         id: grpShiftCheck
         text: "График сменности"
     }
@@ -50,7 +50,7 @@ AppDialog {
         width: parent.width
         spacing: 4
 
-        AppSwitch {
+        AppPillSwitch {
             id: grpShiftedCheck
             text: "Смещённые выходные"
         }

@@ -52,6 +52,9 @@ ApplicationWindow {
         id: sw
         objectName: "sw"
         x: 74; y: 87
+        pillWidth: 252
+        pillHeight: 126
+        withShadow: true
     }
 }
 """
@@ -89,15 +92,21 @@ def main() -> int:
     sw = find_switch(win)
     assert sw is not None, "переключатель не найден"
 
+    # размер пилюли по свойствам (252×126 — пропорции образца)
+    assert abs(float(sw.property("pillWidth")) - 252) < 1
+    assert abs(float(sw.property("pillHeight")) - 126) < 1
+    cover = float(sw.property("coverScale"))
+    assert 3.8 < cover < 5.2, "странная кратность волны: %s" % cover
     # волны — дети пилюли: тёмная левее светлой
     rects = [o for o in sw.findChildren(QObject)
              if o.metaObject().className().startswith("QQuickRectangle")]
     pill = [r for r in rects
             if abs(float(r.property("width") or 0) - 252) < 1
             and abs(float(r.property("height") or 0) - 126) < 1][0]
+    knob = 126 * 80 / 126
     waves = [r for r in rects
-             if abs(float(r.property("width") or 0) - 80) < 1]
-    assert len(waves) == 2, "ожидали две волны 80px: %d" % len(waves)
+             if abs(float(r.property("width") or 0) - knob) < 1]
+    assert len(waves) == 2, "ожидали две волны-ножки: %d" % len(waves)
     dark = [r for r in waves if float(r.property("x") or 0) < 100][0]
     light = [r for r in waves if float(r.property("x") or 0) > 100][0]
 
@@ -107,19 +116,24 @@ def main() -> int:
             img.height(), img.width(), 4)[:, :, :3].copy()
         return arr[:, :, ::-1]      # BGR32 → RGB
 
+    # предмет свитча высотой 36 центрирует пилюлю 126px:
+    # её верх-лево в окне = (74, 87 - (126-36)/2) = (74, 42)
+    PILL_X, PILL_Y = 74, 87 - 45
+
     def px(arr, x, y):
-        # координаты окна: свитч на (74, 87)
-        return tuple(int(v) for v in arr[87 + y, 74 + x])
+        return tuple(int(v) for v in arr[PILL_Y + y, PILL_X + x])
 
     def near(p, ref, tol=40):
         return abs(p[0]-ref[0]) + abs(p[1]-ref[1]) + abs(p[2]-ref[2]) < tol
 
     # ── 1. исходное состояние ──
     assert sw.property("checked") is False
-    assert abs(float(dark.property("scale")) - 4.8) < 0.01, dark.property("scale")
+    assert abs(float(dark.property("scale")) - cover) < 0.01, dark.property("scale")
     assert abs(float(light.property("scale")) - 1.0) < 0.01
     assert int(light.property("z")) > int(dark.property("z")), \
         "ножка (светлая) должна быть над волной"
+    # стандартный размер (замена AppSwitch): пилюля 52×32
+    assert abs(float(sw.property("knobD")) - 126 * 80 / 126) < 0.01
     arr = snap()
     assert near(px(arr, 126, 63), DARK), "центр не тёмный: %r" % (px(arr, 126, 63),)
     assert near(px(arr, 189, 63), LIGHT), "ножка справа не белая: %r" % (px(arr, 189, 63),)
@@ -135,19 +149,19 @@ def main() -> int:
     assert sw.property("checked") is True
     assert abs(float(dark.property("scale")) - 1.0) < 0.05, \
         "тёмная волна не сжалась мгновенно: %s" % dark.property("scale")
-    assert 1.0 < float(light.property("scale")) < 4.8, \
+    assert 1.0 < float(light.property("scale")) < cover, \
         "светлая волна не начала расти: %s" % light.property("scale")
     print("2. Клик: сигнал вышел, тёмная сжалась мгновенно, светлая растёт ✓")
 
     # ── 3. середина роста ──
     settle(app, 0.25)      # всего ~300 мс от клика
     ls = float(light.property("scale"))
-    assert 1.3 < ls < 4.6, "светлая волна не в пути (300 мс): %s" % ls
+    assert 1.3 < ls < cover - 0.2, "светлая волна не в пути (300 мс): %s" % ls
     print("3. Середина роста: светлая волна в пути (scale %.2f) ✓" % ls)
 
     # ── 4. конец анимации ──
     settle(app, 0.5)       # всего ~800 мс
-    assert abs(float(light.property("scale")) - 4.8) < 0.01
+    assert abs(float(light.property("scale")) - cover) < 0.01
     assert abs(float(dark.property("scale")) - 1.0) < 0.01
     assert int(dark.property("z")) > int(light.property("z")), \
         "ножка (тёмная) должна быть над волной"
@@ -169,7 +183,7 @@ def main() -> int:
     frames.append(snap())      # середина выключения
     settle(app, 0.5)
     assert sw.property("checked") is False
-    assert abs(float(dark.property("scale")) - 4.8) < 0.01
+    assert abs(float(dark.property("scale")) - cover) < 0.01
     assert abs(float(light.property("scale")) - 1.0) < 0.01
     arr = snap()
     frames.append(arr)
@@ -198,7 +212,7 @@ def main() -> int:
     strip = Image.new("RGB", (tile_w * 3 + 40, tile_h + 34), "#F5F5F5")
     d = ImageDraw.Draw(strip)
     for i, (name, a) in enumerate(tiles):
-        im = Image.fromarray(a[87:87 + tile_h, 74:74 + tile_w])
+        im = Image.fromarray(a[PILL_Y:PILL_Y + tile_h, PILL_X:PILL_X + tile_w])
         x = 10 + i * (tile_w + 10)
         strip.paste(im, (x, 10))
         d.text((x + tile_w // 2 - 30, tile_h + 18), name, fill="#5F6B74")

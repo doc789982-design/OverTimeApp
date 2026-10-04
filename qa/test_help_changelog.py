@@ -260,7 +260,7 @@ ApplicationWindow {
     assert str(group_dlg.property("acceptText")) == "Сохранить"
     name_f = find_by(group_dlg, "AppTextField", label="Название группы")[0]
     assert str(name_f.property("text")) == "Смена 2", name_f.property("text")
-    switches = find_by(group_dlg, "AppSwitch")
+    switches = find_by(group_dlg, "AppPillSwitch")
     assert len(switches) == 2, "в окне нет двух тумблеров (график, выходные)"
     assert all(s.property("checked") is True for s in switches), \
         "editGroup не включил тумблеры"

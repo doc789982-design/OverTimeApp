@@ -200,7 +200,7 @@ AppLargeModal {
                     title: "Внешний вид"
                     description: "Тема оформления и режим ввода времени."
 
-                    AppSwitch {
+                    AppPillSwitch {
                         text: "Тёмная тема"
                         checked: backend.isDarkTheme
                         // onToggled срабатывает только от клика человека —
@@ -687,7 +687,7 @@ AppLargeModal {
                         wrapMode: Text.WordWrap
                     }
 
-                    AppSwitch {
+                    AppPillSwitch {
                         text: "Напоминать о сдаче табеля"
                         checked: backend.reminderEnabled
                         onCheckedChanged: backend.setReminderEnabled(checked)
@@ -720,7 +720,7 @@ AppLargeModal {
                             font.weight: AppTheme.weightBold
                         }
 
-                        AppSwitch {
+                        AppPillSwitch {
                             text: "Обновлять при запуске"
                             checked: backend.startupUpdateEnabled
                             onCheckedChanged: backend.setStartupUpdateEnabled(checked)

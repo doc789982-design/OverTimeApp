@@ -1,65 +1,77 @@
 import QtQuick
 
 // ============================================================
-// БОЛЬШОЙ ПЕРЕКЛЮЧАТЕЛЬ-«ПИЛЮЛЯ» (по мотивам CSS-свотча:
-// две волны-круга расходятся и закрывают пилюлю, вторая
-// мгновенно сжимается в кружок-ногу).
+// ПЕРЕКЛЮЧАТЕЛЬ-ПИЛЮЛЯ (вместо AppSwitch) — по CSS-образцу:
+// волна-круг растёт и закрывает пилюлю, вторая мгновенно
+// сжимается в ножку, фон держит прошлый цвет до 80% анимации.
 //
-// Механика оригинала (252×126, круги 80px, 600 мс):
-//   - «Волна» — круг в ножке; включаясь, РАСТЁТ (scale 1 → 4.8)
-//     за 600 мс и закрывает всю пилюлю своим цветом;
-//   - вторая волна в этот момент МГНОВЕННО сжимается в кружок —
-//     это новая «нога» переключателя;
-//   - фон пилюли держит прошлый цвет до 80% анимации (480 мс),
+// Механика образца (600 мс):
+//   - «Волна» — круг в ножке; включаясь, РАСТЁТ (scale 1 →
+//     coverScale) за 600 мс и закрывает всю пилюлю;
+//   - волна второй стороны в этот же момент МГНОВЕННО
+//     сжимается в круг — становится новой ножкой;
+//   - фон пилюли держит прошлый цвет 480 мс (80% анимации),
 //     чтобы у растущего круга не было видно швов по краям;
-//   - z-порядок меняется в момент клика: маленький круг (нога)
-//     всегда сверху.
+//   - ножка всегда над волной.
 //
-// Цвета — палитра нашей темы (не зависимости от тёмной/светлой):
-// тёмная сторона — чернильный #2D3B45 (textPrimary светлой
-// темы), светлая — #FFFFFF (bgElevated). Оба можно переопределить
-// свойствами darkColor / lightColor.
-//
-// Внешний вид: пилюля с большой мягкой тенью (AppShadow level 4;
-// в тёмной теме тень скрыта по правилам дизайн-системы).
+// Совместим со старым AppSwitch: text (подпись справа),
+// checked, сигнал toggled() (только от клика человека),
+// размеры трека 52×32 по умолчанию — вёрстка не ломается.
+// Цвета фиксированы палитрой темы: чернильный #2D3B45 и
+// #FFFFFF — переключатель сам показывает «тёмное/светлое».
 // ============================================================
 Item {
     id: root
 
-    width: 252
-    height: width / 2
-
     property bool checked: false
     signal toggled()
 
-    // Цвета сторон (палитра темы, фиксированы — переключатель сам
-    // показывает «светлое/тёмное» и не должен меняться с темой)
+    property string text: ""
+
+    // Размер пилюли (трека); подпись добавляет ширину сама
+    property real pillWidth: 52
+    property real pillHeight: 32
+
+    // Цвета сторон (палитра темы; переключатель показывает
+    // «светлое/тёмное» и не меняется вместе с темой программы)
     property color darkColor: "#2D3B45"
     property color lightColor: "#FFFFFF"
 
-    // Геометрия пропорциональна высоте (80/126 и 23/126 — как в
-    // оригинале), поэтому компонент можно уменьшать шириной
-    readonly property real knobD: height * 80 / 126      // диаметр круга
-    readonly property real knobM: height * 23 / 126      // отступ от края
-    readonly property real coverScale: 4.8 * width / 252 // во сколько раз
-                                                          // волна закрывает пилюлю
+    // Большая тень — только для крупного варианта (настройки и
+    // окна используют маленький размер, тень им не нужна)
+    property bool withShadow: false
+
+    // Геометрия пропорциональна пилюле (80/126 и 23/126 —
+    // пропорции образца 252×126)
+    readonly property real knobD: pillHeight * 80 / 126
+    readonly property real knobM: pillHeight * 23 / 126
+    // Во сколько раз волна закрывает пилюлю: с запасом, как в
+    // образце (80 × 4.8 = 384 при пилюле 252 — рост «с перехлёстом»)
+    readonly property real coverScale: Math.max(pillWidth, pillHeight) / knobD * 1.5
+
+    implicitWidth: pillWidth
+                   + (text !== "" ? AppTheme.spaceM + label.implicitWidth : 0)
+    implicitHeight: 36
 
     opacity: enabled ? 1.0 : AppTheme.alphaDisabled
+    Behavior on opacity { NumberAnimation { duration: AppTheme.durNormal } }
 
     function toggle() {
         root.checked = !root.checked
         root.toggled()
     }
 
-    // Большая мягкая тень (уровень 4); в тёмной теме AppShadow
-    // сама становится невидимой
-    AppShadow { level: 4 }
+    AppShadow {
+        level: 4
+        visible: root.withShadow
+    }
 
-    // Пилюля; фон — «светлый», волны его полностью закрывают.
-    // clip = overflow: hidden у оригинала.
+    // Пилюля; clip = overflow: hidden образца
     Rectangle {
         id: pill
-        anchors.fill: parent
+        width: root.pillWidth
+        height: root.pillHeight
+        anchors.verticalCenter: parent.verticalCenter
         radius: height / 2
         color: root.lightColor
         clip: true
@@ -68,15 +80,15 @@ Item {
         Rectangle {
             id: rippleDark
             x: root.knobM
-            y: root.knobM
+            y: (parent.height - root.knobD) / 2
             width: root.knobD
             height: root.knobD
             radius: width / 2
             color: root.darkColor
             z: root.checked ? 2 : 1
             scale: root.checked ? 1 : root.coverScale
-            // растёт 600 мс, сжимается мгновенно (как transition
-            // transform 0s у оригинала)
+            // растёт 600 мс, сжимается мгновенно (transition
+            // transform 0s образца)
             Behavior on scale {
                 NumberAnimation {
                     duration: root.checked ? 0 : 600
@@ -89,7 +101,7 @@ Item {
         Rectangle {
             id: rippleLight
             x: parent.width - root.knobM - root.knobD
-            y: root.knobM
+            y: (parent.height - root.knobD) / 2
             width: root.knobD
             height: root.knobD
             radius: width / 2
@@ -105,21 +117,40 @@ Item {
         }
     }
 
-    // Фон пилюли: при включении мгновенно тёмный и ОСТАЁТСЯ им до
-    // 80% анимации (480 мс), затем светлеет; при выключении —
-    // сразу светлый (changeColor 80%/80.01% у оригинала)
+    // Подпись справа от пилюли (как у старого AppSwitch)
+    Text {
+        id: label
+        visible: root.text !== ""
+        x: root.pillWidth + AppTheme.spaceM
+        anchors.verticalCenter: parent.verticalCenter
+        width: implicitWidth
+        text: root.text
+        color: AppTheme.textPrimary
+        font.family: AppTheme.fontFamily
+        font.pixelSize: AppTheme.sizeBody
+        font.weight: AppTheme.weightMedium
+    }
+
+    // Фон пилюли: при включении мгновенно тёмный и ОСТАЁТСЯ им
+    // до 80% анимации (480 мс), затем светлеет; при выключении —
+    // сразу светлый (keyframes changeColor 80%/80.01% образца).
+    // Внутренняя реакция — через Connections на ребёнке: прямой
+    // onCheckedChanged экземпляра её бы затёр.
     Timer {
         id: bgHold
         interval: 480
         onTriggered: pill.color = root.lightColor
     }
-    onCheckedChanged: {
-        if (checked) {
-            pill.color = root.darkColor
-            bgHold.restart()
-        } else {
-            pill.color = root.lightColor
-            bgHold.stop()
+    Connections {
+        target: root
+        function onCheckedChanged() {
+            if (root.checked) {
+                pill.color = root.darkColor
+                bgHold.restart()
+            } else {
+                pill.color = root.lightColor
+                bgHold.stop()
+            }
         }
     }
 
