@@ -54,7 +54,10 @@ DEFAULT_UPDATE_URL = "https://github.com/doc789982-design/OverTimeApp/releases/l
 # сети), запрос пробивается сюда. Формат — как у любого веб-хранилища:
 # рядом с архивом лежит version.json (его готовит tools/make_web_release.py).
 # Порядок проверки обновлений: адрес из настроек (если указан) → GitHub → сюда.
-FALLBACK_UPDATE_URL = "https://post.mvd.ru/~mgrigorev46@mvd.ru/"
+# Адрес ровно в том виде, в каком его дал владелец программы (http).
+# Не «улучшать» до https: на защищённых рабочих местах https туда может
+# не пройти (проверка сертификатов), а браузеры качают по http.
+FALLBACK_UPDATE_URL = "http://post.mvd.ru/~mgrigorev46@mvd.ru/"
 
 
 def resolve_update_url(stored_url: str = "") -> str:
@@ -1987,8 +1990,11 @@ def _write_ssl_report(url: str, attempts) -> str:
             parts = []
             for store in ("ROOT", "CA"):
                 user_n, machine_n = counts.get(store, (None, None))
+                machine_text = _n_or_q(machine_n)
+                if machine_n == 0:
+                    machine_text += " (или нет доступа)"
                 parts.append(store + ": пользователь " + _n_or_q(user_n)
-                             + ", компьютер " + _n_or_q(machine_n))
+                             + ", компьютер " + machine_text)
             lines += ["", "Сертификатов в хранилищах Windows — "
                       + "; ".join(parts)]
         else:
@@ -2019,15 +2025,18 @@ class _BytesResponse:
         return False
 
 
-# Биты отказа из WinHTTP (WINHTTP_CALLBACK_FLAG_SECURE_…): по ним видно,
-# ЧТО именно не понравилось Windows — срок, имя, корень, отзыв
+# Биты отказа WinHTTP — WINHTTP_CALLBACK_STATUS_FLAG_* из winhttp.h
+# (точные значения из настоящего заголовка; по ним видно, ЧТО именно
+# не понравилось Windows — отзыв, имя, срок, корень)
 _WINHTTP_SECURE_BITS = [
-    (0x00002000, "срок действия сертификата истёк или ещё не наступил"),
-    (0x00001000, "имя в сертификате не совпадает с адресом сайта"),
-    (0x00004000, "корневой центр сертификации не входит в доверенные Windows"),
-    (0x00008000, "не удалось проверить отзыв сертификата"),
-    (0x00010000, "сертификат сайта отозван"),
-    (0x00020000, "сертификат не предназначен для сайтов"),
+    (0x00000001, "не удалось проверить отзыв сертификата (сервер списков отзыва недоступен)"),
+    (0x00000002, "сертификат сайта недействителен"),
+    (0x00000004, "сертификат сайта отозван"),
+    (0x00000008, "центр сертификации сайта не входит в доверенные Windows"),
+    (0x00000010, "имя в сертификате не совпадает с адресом сайта"),
+    (0x00000020, "срок действия сертификата истёк или ещё не наступил"),
+    (0x00000040, "сертификат не предназначен для сайтов"),
+    (0x80000000, "внутренняя ошибка защищённого канала Windows"),
 ]
 
 
@@ -2035,6 +2044,24 @@ def _winhttp_flags_text(value: int) -> str:
     """Расшифровка кода, которым Windows отказал в доверии сертификату."""
     bits = [text for mask, text in _WINHTTP_SECURE_BITS if value & mask]
     return "; ".join(bits) if bits else "код отказа 0x%08X" % value
+
+
+# Подробности отказа сертификата Windows сообщает только в callback-функцию
+# (WINHTTP_CALLBACK_STATUS_SECURE_FAILURE, флаги — DWORD по указателю),
+# поэтому держим ссылку на callback и место, куда он записывает флаги
+_WINHTTP_SECURE_INFO = {"flags": None}
+_WINHTTP_CALLBACK_REF = None
+
+
+def _winhttp_status_callback(hreq, ctx, status, info, length):
+    """Принимает от Windows подробности отказа сертификата (если были)."""
+    if status == 0x00010000 and info:      # WINHTTP_CALLBACK_STATUS_SECURE_FAILURE
+        try:
+            import ctypes
+            _WINHTTP_SECURE_INFO["flags"] = int(
+                ctypes.cast(info, ctypes.POINTER(ctypes.c_ulong))[0])
+        except Exception:
+            pass
 
 
 # Код последней ошибки WinHTTP: на Windows — настоящий из ctypes, в тестах
@@ -2056,12 +2083,15 @@ def _winhttp_check(win, hreq) -> None:
     import ssl
     code = _winhttp_last_error()
     if code == 12175:  # ERROR_WINHTTP_SECURE_FAILURE
-        flags = None
-        val = ctypes.c_ulong(0)
-        size = ctypes.c_ulong(4)
-        if win.WinHttpQueryOption(hreq, 76, ctypes.byref(val), ctypes.byref(size)):
-            flags = val.value
-        detail = _winhttp_flags_text(flags) if flags is not None else "причина не уточнена"
+        flags = _WINHTTP_SECURE_INFO.get("flags")
+        if flags is None:
+            # запасной путь: WINHTTP_OPTION_SECURITY_FLAGS = 31
+            val = ctypes.c_ulong(0)
+            size = ctypes.c_ulong(4)
+            if win.WinHttpQueryOption(hreq, 31, ctypes.byref(val),
+                                      ctypes.byref(size)):
+                flags = val.value
+        detail = _winhttp_flags_text(flags) if flags else "причина не уточнена"
         raise ssl.SSLError(
             "Windows сам проверил сертификат сайта и не принял его: " + detail)
     raise OSError("WinHTTP, код " + str(code))
@@ -2148,6 +2178,13 @@ def _winhttp_prototypes():
                                [ctypes.c_void_p, ctypes.c_uint,
                                 ctypes.c_void_p,
                                 ctypes.POINTER(wintypes.DWORD)]),
+        "WinHttpSetStatusCallback": (ctypes.c_void_p,
+                                     [ctypes.c_void_p,
+                                      ctypes.CFUNCTYPE(
+                                          None, ctypes.c_void_p,
+                                          ctypes.c_size_t, ctypes.c_uint,
+                                          ctypes.c_void_p, ctypes.c_uint),
+                                      ctypes.c_uint, ctypes.c_size_t]),
         "WinHttpCloseHandle": (ctypes.c_int, [ctypes.c_void_p]),
     }
 
@@ -2175,7 +2212,8 @@ def _winhttp_get(url: str, timeout: float) -> _BytesResponse:
         # AttributeError — ctypes без WinDLL (не Windows)
         raise RuntimeError("Библиотека WinHTTP недоступна: " + str(e)) from e
 
-    for _name, (_restype, _argtypes) in _winhttp_prototypes().items():
+    protos = _winhttp_prototypes()
+    for _name, (_restype, _argtypes) in protos.items():
         _fn = getattr(win, _name)
         _fn.restype = _restype
         _fn.argtypes = _argtypes
@@ -2186,6 +2224,15 @@ def _winhttp_get(url: str, timeout: float) -> _BytesResponse:
         raise OSError("WinHttpOpen, код " + str(_winhttp_last_error()))
     try:
         win.WinHttpSetTimeouts(hsession, 0, ms, ms, ms)
+        # Подробности отказа сертификата Windows сообщает в callback
+        # (WINHTTP_CALLBACK_STATUS_SECURE_FAILURE); держим ссылку, чтобы
+        # сборщик мусора не забрал функцию, пока идёт запрос
+        global _WINHTTP_CALLBACK_REF
+        _WINHTTP_SECURE_INFO["flags"] = None
+        _WINHTTP_CALLBACK_REF = protos["WinHttpSetStatusCallback"][1][1](
+            _winhttp_status_callback)
+        win.WinHttpSetStatusCallback(hsession, _WINHTTP_CALLBACK_REF,
+                                     0x00010000, 0)
         current = url
         for _hop in range(6):            # до пяти переадресаций
             cur = urllib.parse.urlsplit(current)

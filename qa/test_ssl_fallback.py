@@ -245,13 +245,15 @@ def main() -> int:
         app_update._winhttp_get = real_winhttp
     print("J: без WinHTTP — исходная ошибка, отчёт с причиной ✓")
 
-    # ── K. расшифровка кодов отказа Windows ──
-    t = app_update._winhttp_flags_text(0x00004000)
-    assert "корневой центр" in t, t
-    t2 = app_update._winhttp_flags_text(0x00002000 | 0x00010000)
-    assert "срок действия" in t2 and "отозван" in t2, t2
-    assert "0x" in app_update._winhttp_flags_text(0x80000000)
-    print("K: коды отказа Windows читаются по-русски ✓")
+    # ── K. расшифровка кодов отказа Windows (значения из winhttp.h) ──
+    t = app_update._winhttp_flags_text(0x00000008)
+    assert "не входит в доверенные" in t, t
+    t2 = app_update._winhttp_flags_text(0x00000001 | 0x00000020)
+    assert "отзыв" in t2 and "срок действия" in t2, t2
+    assert "отозван" in app_update._winhttp_flags_text(0x00000004), \
+        app_update._winhttp_flags_text(0x00000004)
+    assert "0x" in app_update._winhttp_flags_text(0x00008000)
+    print("K: коды отказа Windows читаются по-русски (значения winhttp.h) ✓")
 
     # ── L. ограничения пути WinHTTP ──
     try:
@@ -276,7 +278,8 @@ def main() -> int:
         "WinHttpSetTimeouts": 5, "WinHttpSendRequest": 7,
         "WinHttpReceiveResponse": 2, "WinHttpQueryHeaders": 6,
         "WinHttpQueryDataAvailable": 2, "WinHttpReadData": 4,
-        "WinHttpQueryOption": 4, "WinHttpCloseHandle": 1,
+        "WinHttpQueryOption": 4, "WinHttpSetStatusCallback": 4,
+        "WinHttpCloseHandle": 1,
     }
     assert set(protos) == set(real_params), set(protos) ^ set(real_params)
     for name, n in real_params.items():
@@ -328,6 +331,7 @@ def main() -> int:
     ok_script = {
         "WinHttpOpen": lambda a: 0x1111,
         "WinHttpSetTimeouts": lambda a: 1,
+        "WinHttpSetStatusCallback": lambda a: 0,
         "WinHttpConnect": lambda a: 0x2222,
         "WinHttpOpenRequest": lambda a: 0x3333,
         "WinHttpSendRequest": lambda a: 1,
@@ -368,17 +372,39 @@ def main() -> int:
     assert exc.read() == b"error"
     _check_args(fake)
 
-    # отказ сертификата: код 12175 + флаг «корень не в доверенных»
+    # отказ сертификата: callback принёс флаг INVALID_CA (0x8), код 12175
+    cb_holder = {}
+
+    def _set_cb(a):
+        cb_holder["cb"] = a[1]
+        return 0
+
     def _send_fail(a):
+        flags = ctypes.c_ulong(0x00000008)  # INVALID_CA
+        cb_holder["cb"](ctypes.c_void_p(1), 0, 0x00010000,
+                        ctypes.cast(ctypes.byref(flags), ctypes.c_void_p), 4)
         app_update._WINHTTP_TEST_LAST_ERROR = 12175
         return 0
 
     fake, result, exc = _run(dict(
-        ok_script, WinHttpSendRequest=_send_fail,
-        WinHttpQueryOption=lambda a: (_set(a[2], 0x00004000), _set(a[3], 4), 1)[2]))
+        ok_script, WinHttpSetStatusCallback=_set_cb,
+        WinHttpSendRequest=_send_fail))
     app_update._WINHTTP_TEST_LAST_ERROR = None
     assert isinstance(exc, ssl.SSLError), exc
-    assert "корневой центр" in str(exc), exc
+    assert "не входит в доверенные" in str(exc), exc
+    _check_args(fake)
+
+    # тот же отказ без callback — флаги спрашиваем у Windows (опция 31)
+    def _send_fail_no_cb(a):
+        app_update._WINHTTP_TEST_LAST_ERROR = 12175
+        return 0
+
+    fake, result, exc = _run(dict(
+        ok_script, WinHttpSendRequest=_send_fail_no_cb,
+        WinHttpQueryOption=lambda a: (_set(a[2], 0x00000020), _set(a[3], 4), 1)[2]))
+    app_update._WINHTTP_TEST_LAST_ERROR = None
+    assert isinstance(exc, ssl.SSLError), exc
+    assert "срок действия" in str(exc), exc
     _check_args(fake)
 
     # переадресация: 302 на другой адрес → там 200
@@ -399,7 +425,7 @@ def main() -> int:
     assert exc is None, exc
     assert result.status == 200 and hops["n"] == 2
     _check_args(fake)
-    print("N: фиктивный WinHTTP — вызовы сходятся с сигнатурами; 200, 404, сертификат, переадресация ✓")
+    print("N: фиктивный WinHTTP — вызовы сходятся с сигнатурами; 200, 404, сертификат (callback и опция 31), переадресация ✓")
 
     # ── P. подсчёт хранилищ сертификатов безопасен без Windows ──
     counts = app_update._windows_store_counts()
@@ -410,6 +436,13 @@ def main() -> int:
     assert app_update._machine_store_count("ROOT") is None \
         or sys.platform == "win32"
     print("P: подсчёт хранилищ (пользователь + компьютер) безопасен ✓")
+
+    # ── O. запасной адрес — http, ровно как дал владелец ──
+    # регрессия: адрес когда-то «улучшили» до https, и на защищённых
+    # рабочих местах это ломало обновление (браузеры качают по http)
+    assert app_update.FALLBACK_UPDATE_URL == \
+        "http://post.mvd.ru/~mgrigorev46@mvd.ru/", app_update.FALLBACK_UPDATE_URL
+    print("O: запасной адрес хранилища — http, как дал владелец ✓")
 
     app_update.set_ssl_report_dir(None)
     app_update._LAST_SSL_REPORT = ""
