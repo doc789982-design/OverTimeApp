@@ -515,6 +515,9 @@ class Backend(QObject):
         # Данные со старых версий автоматически переносятся сюда (режим copy).
         self._data_dir = self._resolve_data_dir()
         self.config_path = self._data_dir / "config.json"
+        # Отчёт о непринятом сертификате при проверке обновлений
+        # кладём в папку данных — папка программы бывает надоступна
+        app_update.set_ssl_report_dir(self._data_dir)
         
         # Данные старых версий (включая самые старые с папкой
         # %USERPROFILE%\.overtimetab) переносятся в Documents в _resolve_data_dir().

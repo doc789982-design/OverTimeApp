@@ -143,7 +143,133 @@ def main() -> int:
         app_update._urlopen_https = real
     print("F: обычная сетевая ошибка — прежний текст ✓")
 
-    print("═══ КОРПОРАТИВНЫЕ СЕРТИФИКАТЫ: ПОВТОР КАК БРАУЗЕР + ПОНЯТНАЯ ОШИБКА ═══")
+    # ── G. ответ в памяти для пути WinHTTP ──
+    resp = app_update._BytesResponse(b"0123456789", 200, {"Content-Length": "10"})
+    with resp as r:
+        assert r.read(4) == b"0123"
+        assert r.read() == b"456789"
+        assert r.headers.get("Content-Length") == "10"
+        assert r.status == 200
+    print("G: ответ WinHTTP читается как ответ urlopen ✓")
+
+    # ── H. третья попытка — проверка силами Windows ──
+    import tempfile
+    from pathlib import Path
+
+    def cert_err(msg="self-signed certificate in certificate chain"):
+        return urllib.error.URLError(
+            ssl.SSLCertVerificationError("SSL: CERTIFICATE_VERIFY_FAILED " + msg))
+
+    real_urlopen2 = app_update.urllib.request.urlopen
+    real_winhttp = app_update._winhttp_get
+    report_dir = Path(tempfile.mkdtemp(prefix="ssl_report_"))
+    app_update.set_ssl_report_dir(report_dir)
+    app_update._LAST_SSL_REPORT = ""
+    order = []
+
+    def always_cert(url, timeout=None, data=None, context=None):
+        order.append("python:" + ("store" if context is not None else "default"))
+        raise cert_err()
+
+    def fake_winhttp_ok(url, timeout):
+        order.append("winhttp")
+        return app_update._BytesResponse(b'{"version": "2.0.0"}', 200)
+
+    try:
+        app_update.urllib.request.urlopen = always_cert
+        app_update._winhttp_get = fake_winhttp_ok
+        app_update._WINDOWS_SSL_CONTEXT = None
+        with app_update._urlopen_https("https://post.mvd.ru/version.json", 8) as r:
+            assert r.read() == b'{"version": "2.0.0"}'
+        assert order == ["python:default", "python:store", "winhttp"], order
+        assert app_update._LAST_SSL_REPORT == "", "успех — отчёт не нужен"
+    finally:
+        app_update.urllib.request.urlopen = real_urlopen2
+        app_update._winhttp_get = real_winhttp
+    print("H: после двух отказов Python соединяет сам Windows ✓")
+
+    # ── I. все пути отказали — файл-отчёт и подсказка в сообщении ──
+    order2 = []
+
+    def fake_winhttp_cert(url, timeout):
+        order2.append("winhttp")
+        raise ssl.SSLError(
+            "Windows сам проверил сертификат сайта и не принял его: "
+            "корневой центр сертификации не входит в доверенные Windows")
+
+    try:
+        app_update.urllib.request.urlopen = always_cert
+        app_update._winhttp_get = fake_winhttp_cert
+        app_update._WINDOWS_SSL_CONTEXT = None
+        try:
+            app_update._urlopen_https("https://post.mvd.ru/version.json", 8)
+            raise AssertionError("должна была быть ошибка сертификата")
+        except ssl.SSLError:
+            pass
+        assert order2 == ["winhttp"], order2
+        assert app_update._LAST_SSL_REPORT.endswith("update_ssl_report.txt"), \
+            app_update._LAST_SSL_REPORT
+        report = Path(app_update._LAST_SSL_REPORT).read_text(encoding="utf-8")
+        assert "post.mvd.ru" in report, report
+        assert "обычный SSL Python" in report, report
+        assert "корни из хранилищ Windows" in report, report
+        assert "проверка Windows (WinHTTP)" in report, report
+        assert "не входит в доверенные" in report, report
+        # сообщение об ошибке ведёт к файлу отчёта
+        msg = app_update._cert_error_message(
+            "https://post.mvd.ru/version.json", cert_err())
+        assert "Подробности — в файле" in msg, msg
+        assert "update_ssl_report.txt" in msg, msg
+    finally:
+        app_update.urllib.request.urlopen = real_urlopen2
+        app_update._winhttp_get = real_winhttp
+    print("I: полный отказ — отчёт записан, сообщение ведёт к файлу ✓")
+
+    # ── J. WinHTTP не запустился — исходная ошибка сертификата ──
+    def fake_winhttp_dead(url, timeout):
+        raise RuntimeError("WinHTTP доступен только на Windows")
+
+    try:
+        app_update.urllib.request.urlopen = always_cert
+        app_update._winhttp_get = fake_winhttp_dead
+        app_update._WINDOWS_SSL_CONTEXT = None
+        try:
+            app_update._urlopen_https("https://post.mvd.ru/version.json", 8)
+            raise AssertionError("должна была быть ошибка сертификата")
+        except urllib.error.URLError as e:
+            assert app_update._is_cert_error(e), "исходная ошибка сертификата"
+        report = Path(app_update._LAST_SSL_REPORT).read_text(encoding="utf-8")
+        assert "не запустилась" in report, report
+    finally:
+        app_update.urllib.request.urlopen = real_urlopen2
+        app_update._winhttp_get = real_winhttp
+    print("J: без WinHTTP — исходная ошибка, отчёт с причиной ✓")
+
+    # ── K. расшифровка кодов отказа Windows ──
+    t = app_update._winhttp_flags_text(0x00004000)
+    assert "корневой центр" in t, t
+    t2 = app_update._winhttp_flags_text(0x00002000 | 0x00010000)
+    assert "срок действия" in t2 and "отозван" in t2, t2
+    assert "0x" in app_update._winhttp_flags_text(0x80000000)
+    print("K: коды отказа Windows читаются по-русски ✓")
+
+    # ── L. ограничения пути WinHTTP ──
+    try:
+        app_update._winhttp_get("http://post.mvd.ru/", 8)
+        raise AssertionError("только https")
+    except ValueError:
+        pass
+    if sys.platform != "win32":
+        try:
+            app_update._winhttp_get("https://post.mvd.ru/", 8)
+            raise AssertionError("не Windows — пути нет")
+        except RuntimeError:
+            pass
+    print("L: WinHTTP — только https и только Windows ✓")
+
+    app_update.set_ssl_report_dir(None)
+    app_update._LAST_SSL_REPORT = ""
+    print("═══ КОРПОРАТИВНЫЕ СЕРТИФИКАТЫ: ТРИ ПУТИ + ОТЧЁТ ДЛЯ ДИАГНОСТИКИ ═══")
     return 0
 
 

@@ -15,6 +15,7 @@
 """
 from __future__ import annotations
 
+import io
 import json
 import os
 import re
@@ -1858,6 +1859,289 @@ def windows_ssl_context():
     return ctx
 
 
+# ── Проверка сертификатов силами самого Windows (WinHTTP) ──────────────
+# Третья попытка для HTTPS: соединение и проверку сертификата делает сам
+# Windows через WinHTTP — тот же механизм, которым пользуются Edge/Chrome:
+# хранилища доверия и компьютера, и пользователя, автозагрузка недостающих
+# промежуточных звеньев цепочки по ссылке из сертификата. Python про
+# корпоративный центр может не знать, а Windows — знает.
+
+# Папка для файла-отчёта о непринятом сертификате (Main задаёт папку
+# данных — Program Files обычно недоступна для записи). Не задана —
+# пишем рядом с программой, если можно, иначе во временную папку.
+_SSL_REPORT_DIR = None
+_LAST_SSL_REPORT = ""
+_SSL_REPORT_NAME = "update_ssl_report.txt"
+
+
+def set_ssl_report_dir(path) -> None:
+    """Куда класть отчёт о непринятом сертификате (вызывает Main)."""
+    global _SSL_REPORT_DIR
+    _SSL_REPORT_DIR = Path(path) if path else None
+
+
+def _ssl_report_path() -> Path:
+    if _SSL_REPORT_DIR is not None:
+        return Path(_SSL_REPORT_DIR) / _SSL_REPORT_NAME
+    base = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path.cwd()
+    try:
+        probe = base / (".probe_" + str(os.getpid()))
+        probe.touch()
+        probe.unlink()
+        return base / _SSL_REPORT_NAME
+    except Exception:
+        return Path(tempfile.gettempdir()) / _SSL_REPORT_NAME
+
+
+def _write_ssl_report(url: str, attempts) -> str:
+    """Текстовый отчёт для диагностики: что пробовали и почему не приняли.
+
+    Пишется, когда сертификат сайта не приняли ВСЕ способы соединения.
+    Возвращает путь файла (или пустую строку, если записать не удалось).
+    """
+    global _LAST_SSL_REPORT
+    import datetime
+    import ssl
+    try:
+        path = _ssl_report_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        lines = [
+            "Отчёт о проверке обновлений (не принят сертификат сайта)",
+            "Дата: " + datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "Адрес: " + url,
+            "Python " + sys.version.split()[0] + " · " + ssl.OPENSSL_VERSION,
+            "",
+            "Все способы соединения не приняли сертификат:",
+        ]
+        for name, exc in attempts:
+            reason = getattr(exc, "reason", None) or exc
+            lines.append("- " + name + ": " + str(reason).strip())
+        try:
+            counts = []
+            for store in ("ROOT", "CA"):
+                counts.append(store + "=" + str(sum(1 for _ in ssl.enum_certificates(store))))
+            lines += ["", "Сертификатов в хранилищах Windows (текущий пользователь): "
+                      + ", ".join(counts)]
+        except Exception:
+            lines += ["", "Хранилища сертификатов Windows недоступны (не Windows)"]
+        path.write_text("\r\n".join(lines) + "\r\n", encoding="utf-8")
+        _LAST_SSL_REPORT = str(path)
+    except Exception:
+        _LAST_SSL_REPORT = ""
+    return _LAST_SSL_REPORT
+
+
+class _BytesResponse:
+    """Ответ в памяти для пути WinHTTP: тот же интерфейс, что у urlopen."""
+
+    def __init__(self, body: bytes, status: int = 200, headers=None):
+        self._bio = io.BytesIO(body)
+        self.status = status
+        self.code = status
+        self.headers = headers or {}
+
+    def read(self, n=-1):
+        return self._bio.read(n)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+# Биты отказа из WinHTTP (WINHTTP_CALLBACK_FLAG_SECURE_…): по ним видно,
+# ЧТО именно не понравилось Windows — срок, имя, корень, отзыв
+_WINHTTP_SECURE_BITS = [
+    (0x00002000, "срок действия сертификата истёк или ещё не наступил"),
+    (0x00001000, "имя в сертификате не совпадает с адресом сайта"),
+    (0x00004000, "корневой центр сертификации не входит в доверенные Windows"),
+    (0x00008000, "не удалось проверить отзыв сертификата"),
+    (0x00010000, "сертификат сайта отозван"),
+    (0x00020000, "сертификат не предназначен для сайтов"),
+]
+
+
+def _winhttp_flags_text(value: int) -> str:
+    """Расшифровка кода, которым Windows отказал в доверии сертификату."""
+    bits = [text for mask, text in _WINHTTP_SECURE_BITS if value & mask]
+    return "; ".join(bits) if bits else "код отказа 0x%08X" % value
+
+
+def _winhttp_check(win, hreq) -> None:
+    """Сбой запроса WinHTTP → понятное исключение (12175 — сертификат)."""
+    import ctypes
+    import ssl
+    code = ctypes.get_last_error()
+    if code == 12175:  # ERROR_WINHTTP_SECURE_FAILURE
+        flags = None
+        val = ctypes.c_ulong(0)
+        size = ctypes.c_ulong(4)
+        if win.WinHttpQueryOption(hreq, 76, ctypes.byref(val), ctypes.byref(size)):
+            flags = val.value
+        detail = _winhttp_flags_text(flags) if flags is not None else "причина не уточнена"
+        raise ssl.SSLError(
+            "Windows сам проверил сертификат сайта и не принял его: " + detail)
+    raise OSError("WinHTTP, код " + str(code))
+
+
+def _winhttp_header_str(win, hreq, which: int) -> str:
+    """Строковый заголовок ответа (which — код WINHTTP_QUERY_…)."""
+    import ctypes
+    size = ctypes.c_ulong(0)
+    win.WinHttpQueryHeaders(hreq, which, None, None, ctypes.byref(size), None)
+    n = size.value // 2
+    if n <= 0:
+        return ""
+    buf = ctypes.create_unicode_buffer(n)
+    if win.WinHttpQueryHeaders(hreq, which, None, buf, ctypes.byref(size), None):
+        return buf.value
+    return ""
+
+
+def _winhttp_read_all(win, hreq) -> bytes:
+    import ctypes
+    chunks = []
+    avail = ctypes.c_ulong(0)
+    while True:
+        if not win.WinHttpQueryDataAvailable(hreq, ctypes.byref(avail), None):
+            raise OSError("WinHttpQueryDataAvailable, код "
+                          + str(ctypes.get_last_error()))
+        if avail.value == 0:
+            break
+        buf = ctypes.create_string_buffer(avail.value)
+        got = ctypes.c_ulong(0)
+        if not win.WinHttpReadData(hreq, buf, avail.value, ctypes.byref(got)):
+            raise OSError("WinHttpReadData, код " + str(ctypes.get_last_error()))
+        if got.value:
+            chunks.append(buf.raw[:got.value])
+    return b"".join(chunks)
+
+
+def _winhttp_get(url: str, timeout: float) -> _BytesResponse:
+    """HTTPS GET силами самого Windows (WinHTTP).
+
+    Проверку сертификата выполняет Windows — браузерным механизмом.
+    Ошибки сертификата приходят как ssl.SSLError (с расшифровкой кода),
+    HTTP-ошибки — как urllib.error.HTTPError, чтобы вызывающему коду
+    было всё равно, каким путём пришёл ответ.
+    """
+    import ctypes
+    from ctypes import wintypes
+
+    parts = urllib.parse.urlsplit(url)
+    if parts.scheme.lower() != "https" or not parts.hostname:
+        raise ValueError("WinHTTP-путь работает только с https-адресами")
+    if sys.platform != "win32":
+        raise RuntimeError("WinHTTP доступен только на Windows")
+
+    try:
+        win = ctypes.WinDLL("winhttp.dll", use_last_error=True)
+    except OSError as e:
+        raise RuntimeError("Библиотека WinHTTP недоступна: " + str(e)) from e
+
+    # HINTERNET — указатель: без явного restype на 64-битной Windows
+    # адрес обработчика обрезался бы до int и соединение падало бы
+    win.WinHttpOpen.restype = ctypes.c_void_p
+    win.WinHttpOpen.argtypes = [ctypes.c_wchar_p, ctypes.c_uint,
+                                ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint]
+    win.WinHttpConnect.restype = ctypes.c_void_p
+    win.WinHttpConnect.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p,
+                                   ctypes.c_ushort, ctypes.c_uint]
+    win.WinHttpOpenRequest.restype = ctypes.c_void_p
+    win.WinHttpOpenRequest.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p,
+                                       ctypes.c_wchar_p, ctypes.c_wchar_p,
+                                       ctypes.c_wchar_p, ctypes.c_wchar_p,
+                                       ctypes.c_uint]
+    win.WinHttpSetTimeouts.restype = ctypes.c_int
+    win.WinHttpSetTimeouts.argtypes = [ctypes.c_void_p, ctypes.c_int,
+                                       ctypes.c_int, ctypes.c_int, ctypes.c_int]
+    win.WinHttpSendRequest.restype = ctypes.c_int
+    win.WinHttpSendRequest.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p,
+                                       ctypes.c_uint, ctypes.c_void_p,
+                                       ctypes.c_uint, ctypes.c_void_p,
+                                       ctypes.c_uint, ctypes.c_void_p]
+    win.WinHttpReceiveResponse.restype = ctypes.c_int
+    win.WinHttpReceiveResponse.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+    win.WinHttpQueryHeaders.restype = ctypes.c_int
+    win.WinHttpQueryHeaders.argtypes = [ctypes.c_void_p, ctypes.c_uint,
+                                        ctypes.c_wchar_p, ctypes.c_void_p,
+                                        ctypes.POINTER(wintypes.DWORD),
+                                        ctypes.c_void_p]
+    win.WinHttpQueryDataAvailable.restype = ctypes.c_int
+    win.WinHttpQueryDataAvailable.argtypes = [ctypes.c_void_p,
+                                              ctypes.POINTER(wintypes.DWORD),
+                                              ctypes.c_void_p]
+    win.WinHttpReadData.restype = ctypes.c_int
+    win.WinHttpReadData.argtypes = [ctypes.c_void_p, ctypes.c_void_p,
+                                    ctypes.c_uint,
+                                    ctypes.POINTER(wintypes.DWORD)]
+    win.WinHttpQueryOption.restype = ctypes.c_int
+    win.WinHttpQueryOption.argtypes = [ctypes.c_void_p, ctypes.c_uint,
+                                       ctypes.c_void_p,
+                                       ctypes.POINTER(wintypes.DWORD)]
+    win.WinHttpCloseHandle.restype = ctypes.c_int
+    win.WinHttpCloseHandle.argtypes = [ctypes.c_void_p]
+
+    ms = max(1000, int(timeout * 1000))
+    hsession = win.WinHttpOpen("OVERTIMETAB-updater", 0, None, None, 0)
+    if not hsession:
+        raise OSError("WinHttpOpen, код " + str(ctypes.get_last_error()))
+    try:
+        win.WinHttpSetTimeouts(hsession, 0, ms, ms, ms)
+        current = url
+        for _hop in range(6):            # до пяти переадресаций
+            cur = urllib.parse.urlsplit(current)
+            host = cur.hostname
+            port = cur.port or 443
+            path = cur.path or "/"
+            if cur.query:
+                path += "?" + cur.query
+            hconn = win.WinHttpConnect(hsession, host, port, 0)
+            if not hconn:
+                raise OSError("WinHttpConnect, код " + str(ctypes.get_last_error()))
+            try:
+                # 0x00800000 — WINHTTP_FLAG_SECURE (https)
+                hreq = win.WinHttpOpenRequest(hconn, "GET", path, None,
+                                              None, None, 0x00800000)
+                if not hreq:
+                    raise OSError("WinHttpOpenRequest, код "
+                                  + str(ctypes.get_last_error()))
+                try:
+                    if not win.WinHttpSendRequest(hreq, None, 0, None, 0, 0, None):
+                        _winhttp_check(win, hreq)
+                    if not win.WinHttpReceiveResponse(hreq, None):
+                        _winhttp_check(win, hreq)
+                    status = wintypes.DWORD(0)
+                    size = wintypes.DWORD(4)
+                    if not win.WinHttpQueryHeaders(
+                            hreq, 19 | 0x20000000, None, ctypes.byref(status),
+                            ctypes.byref(size), None):
+                        raise OSError("WinHttpQueryHeaders, код "
+                                      + str(ctypes.get_last_error()))
+                    if status.value in (301, 302, 303, 307, 308):
+                        loc = _winhttp_header_str(win, hreq, 33)  # Location
+                        if not loc:
+                            raise OSError("переадресация без адреса")
+                        current = urllib.parse.urljoin(current, loc)
+                        continue
+                    body = _winhttp_read_all(win, hreq)
+                    if status.value >= 400:
+                        raise urllib.error.HTTPError(
+                            current, status.value,
+                            "HTTP " + str(status.value), None, io.BytesIO(body))
+                    return _BytesResponse(
+                        body, status.value,
+                        {"Content-Length": str(len(body))})
+                finally:
+                    win.WinHttpCloseHandle(hreq)
+            finally:
+                win.WinHttpCloseHandle(hconn)
+        raise RuntimeError("слишком много переадресаций")
+    finally:
+        win.WinHttpCloseHandle(hsession)
+
+
 def _is_cert_error(exc: Exception) -> bool:
     """Ошибка доверия к сертификату сайта (CERTIFICATE_VERIFY_FAILED)."""
     import ssl
@@ -1874,31 +2158,59 @@ def _ssl_fallback_enabled() -> bool:
 
 
 def _urlopen_https(url, timeout: float, data=None):
-    """HTTPS-запрос с повторной попыткой для корпоративных сертификатов.
+    """HTTPS-запрос с запасными путями для корпоративных сертификатов.
 
-    Первая попытка — стандартный контекст. Если компьютер не принял
-    сертификат сайта (CERTIFICATE_VERIFY_FAILED — типично для сетей с
-    проверкой трафика), повторяем с контекстом, которому доверены все
-    сертификаты из хранилищ Windows, — как делают браузеры.
+    Порядок попыток:
+      1. Стандартный контекст Python.
+      2. Контекст со всеми корнями из хранилищ Windows (ROOT + CA).
+      3. Соединение силами самого Windows (WinHTTP) — как браузеры:
+         все хранилища доверия, автозагрузка недостающих звеньев цепочки.
+    Если сертификат не приняли все три — пишем файл-отчёт для диагностики.
     """
     import ssl
     try:
         return urllib.request.urlopen(url, timeout=timeout, data=data)
-    except (urllib.error.URLError, ssl.SSLError) as e:
-        if _is_cert_error(e) and _ssl_fallback_enabled():
+    except (urllib.error.URLError, ssl.SSLError) as e1:
+        if not (_is_cert_error(e1) and _ssl_fallback_enabled()):
+            raise
+        attempts = [("обычный SSL Python", e1)]
+        try:
             return urllib.request.urlopen(
                 url, timeout=timeout, data=data,
                 context=windows_ssl_context())
-        raise
+        except (urllib.error.URLError, ssl.SSLError) as e2:
+            if not _is_cert_error(e2):
+                raise
+            attempts.append(("корни из хранилищ Windows", e2))
+            # WinHTTP — только простые GET-запросы по строке-адресу
+            if data is None and isinstance(url, str) \
+                    and url.lower().startswith("https://"):
+                try:
+                    return _winhttp_get(url, timeout)
+                except ssl.SSLError as e3:
+                    attempts.append(("проверка Windows (WinHTTP)", e3))
+                    _write_ssl_report(url, attempts)
+                    raise
+                except Exception as e3:
+                    # WinHTTP не справился по другой причине — показываем
+                    # исходную ошибку сертификата, отчёт тоже пригодится
+                    attempts.append(("проверка Windows (WinHTTP) не запустилась", e3))
+                    _write_ssl_report(url, attempts)
+                    raise e2 from e3
+            _write_ssl_report(url, attempts)
+            raise
 
 
 def _cert_error_message(url: str, exc: Exception) -> str:
     """Понятное объяснение ошибки сертификата для окна проверки обновлений."""
     host = url.split("//", 1)[-1].split("/", 1)[0]
-    return ("Компьютер не доверяет сертификату сайта " + host + " ("
-            + str(getattr(exc, "reason", exc)) + "). Обычно причина — "
-            "защита сетевого трафика на рабочем компьютере. Обратитесь "
-            "к системному администратору.")
+    msg = ("Компьютер не доверяет сертификату сайта " + host + " ("
+           + str(getattr(exc, "reason", exc)) + "). Обычно причина — "
+           "защита сетевого трафика на рабочем компьютере. Обратитесь "
+           "к системному администратору.")
+    if _LAST_SSL_REPORT:
+        msg += "\nПодробности — в файле " + _LAST_SSL_REPORT
+    return msg
 
 
 def _fetch_version_json(base_url: str, timeout: float = 15.0) -> tuple[Optional[dict], str]:
