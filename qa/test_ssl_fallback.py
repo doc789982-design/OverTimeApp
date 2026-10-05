@@ -267,6 +267,150 @@ def main() -> int:
             pass
     print("L: WinHTTP — только https и только Windows ✓")
 
+    # ── M. сигнатуры WinHTTP — как в настоящем API Windows ──
+    # в 275 WinHttpSendRequest был описан с лишним аргументом — путь падал
+    # «this function takes 8 arguments (7 given)»; теперь сверяем всё
+    protos = app_update._winhttp_prototypes()
+    real_params = {
+        "WinHttpOpen": 5, "WinHttpConnect": 4, "WinHttpOpenRequest": 7,
+        "WinHttpSetTimeouts": 5, "WinHttpSendRequest": 7,
+        "WinHttpReceiveResponse": 2, "WinHttpQueryHeaders": 6,
+        "WinHttpQueryDataAvailable": 2, "WinHttpReadData": 4,
+        "WinHttpQueryOption": 4, "WinHttpCloseHandle": 1,
+    }
+    assert set(protos) == set(real_params), set(protos) ^ set(real_params)
+    for name, n in real_params.items():
+        restype, argtypes = protos[name]
+        assert len(argtypes) == n, (name, len(argtypes), n)
+        assert restype is not None, name
+    print("M: все " + str(len(real_params))
+          + " сигнатур WinHTTP совпадают с настоящим API ✓")
+
+    # ── N. фиктивный winhttp.dll: каждый вызов — с тем числом аргументов ──
+    import ctypes
+
+    class _FakeWinHttp:
+        def __init__(self, script):
+            self.calls = []          # (имя функции, число аргументов)
+            self.script = script
+
+        def __getattr__(self, name):
+            def call(*args):
+                self.calls.append((name, len(args)))
+                return self.script[name](args)
+            return call
+
+    def _set(arg, value):
+        arg._obj.value = value       # запись в byref-переменную
+
+    def _run(script):
+        fake = _FakeWinHttp(script)
+        real_windll = getattr(ctypes, "WinDLL", None)   # на Linux его нет
+        ctypes.WinDLL = lambda name, use_last_error=False: fake
+        os.environ["OVERTIMETAB_TEST_WINHTTP"] = "1"
+        try:
+            try:
+                return fake, app_update._winhttp_get(
+                    "https://post.mvd.ru/version.json", 8), None
+            except Exception as e:
+                return fake, None, e
+        finally:
+            if real_windll is None:
+                del ctypes.WinDLL
+            else:
+                ctypes.WinDLL = real_windll
+            del os.environ["OVERTIMETAB_TEST_WINHTTP"]
+
+    def _check_args(fake):
+        for name, argc in fake.calls:
+            assert argc == len(protos[name][1]), (name, argc)
+
+    ok_script = {
+        "WinHttpOpen": lambda a: 0x1111,
+        "WinHttpSetTimeouts": lambda a: 1,
+        "WinHttpConnect": lambda a: 0x2222,
+        "WinHttpOpenRequest": lambda a: 0x3333,
+        "WinHttpSendRequest": lambda a: 1,
+        "WinHttpReceiveResponse": lambda a: 1,
+        "WinHttpQueryHeaders": lambda a: (_set(a[3], 200), _set(a[4], 4), 1)[2],
+        "WinHttpQueryDataAvailable": lambda a: (_set(a[1], 0), 1)[1],
+        "WinHttpReadData": lambda a: 1,
+        "WinHttpCloseHandle": lambda a: 1,
+        "WinHttpQueryOption": lambda a: 0,
+    }
+
+    # успех: 200, пустое тело
+    fake, result, exc = _run(ok_script)
+    assert exc is None, exc
+    with result as r:
+        assert r.status == 200 and r.read() == b""
+    _check_args(fake)
+    assert any(n == "WinHttpSendRequest" for n, _ in fake.calls)
+
+    # 404 → HTTPError с телом
+    state = {"avail": 0}
+
+    def _avail(a):
+        state["avail"] += 1
+        _set(a[1], 5 if state["avail"] == 1 else 0)
+        return 1
+
+    def _read(a):
+        a[1][0:5] = b"error"
+        _set(a[3], 5)
+        return 1
+
+    fake, result, exc = _run(dict(
+        ok_script,
+        WinHttpQueryHeaders=lambda a: (_set(a[3], 404), _set(a[4], 4), 1)[2],
+        WinHttpQueryDataAvailable=_avail, WinHttpReadData=_read))
+    assert isinstance(exc, urllib.error.HTTPError) and exc.code == 404, exc
+    assert exc.read() == b"error"
+    _check_args(fake)
+
+    # отказ сертификата: код 12175 + флаг «корень не в доверенных»
+    def _send_fail(a):
+        app_update._WINHTTP_TEST_LAST_ERROR = 12175
+        return 0
+
+    fake, result, exc = _run(dict(
+        ok_script, WinHttpSendRequest=_send_fail,
+        WinHttpQueryOption=lambda a: (_set(a[2], 0x00004000), _set(a[3], 4), 1)[2]))
+    app_update._WINHTTP_TEST_LAST_ERROR = None
+    assert isinstance(exc, ssl.SSLError), exc
+    assert "корневой центр" in str(exc), exc
+    _check_args(fake)
+
+    # переадресация: 302 на другой адрес → там 200
+    hops = {"n": 0}
+
+    def _headers(a):
+        if a[1] == 33:                # Location
+            if a[3] is not None:
+                a[3].value = "https://post.mvd.ru/next/version.json"
+            _set(a[4], 80)
+            return 1
+        hops["n"] += 1
+        _set(a[3], 302 if hops["n"] == 1 else 200)
+        _set(a[4], 4)
+        return 1
+
+    fake, result, exc = _run(dict(ok_script, WinHttpQueryHeaders=_headers))
+    assert exc is None, exc
+    assert result.status == 200 and hops["n"] == 2
+    _check_args(fake)
+    print("N: фиктивный WinHTTP — вызовы сходятся с сигнатурами; 200, 404, сертификат, переадресация ✓")
+
+    # ── P. подсчёт хранилищ сертификатов безопасен без Windows ──
+    counts = app_update._windows_store_counts()
+    if sys.platform == "win32":
+        assert set(counts) == {"ROOT", "CA"}
+    else:
+        assert counts == {}, counts
+    assert app_update._machine_store_count("ROOT") is None \
+        or sys.platform == "win32"
+    print("P: подсчёт хранилищ (пользователь + компьютер) безопасен ✓")
+
     app_update.set_ssl_report_dir(None)
     app_update._LAST_SSL_REPORT = ""
     print("═══ КОРПОРАТИВНЫЕ СЕРТИФИКАТЫ: ТРИ ПУТИ + ОТЧЁТ ДЛЯ ДИАГНОСТИКИ ═══")

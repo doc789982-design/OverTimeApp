@@ -1893,6 +1893,69 @@ def _ssl_report_path() -> Path:
         return Path(tempfile.gettempdir()) / _SSL_REPORT_NAME
 
 
+def _n_or_q(n) -> str:
+    """Число для отчёта: «?», если посчитать не удалось."""
+    return "?" if n is None else str(n)
+
+
+def _machine_store_count(store: str):
+    """Число сертификатов в хранилище ЛОКАЛЬНОГО КОМПЬЮТЕРА (Crypt32).
+
+    Python видит только хранилища текущего пользователя, а корпоративные
+    корни часто кладут групповыми политиками именно в хранилище
+    компьютера — тогда Python про них не знает, а Windows и браузеры
+    знают. Не получилось посчитать — None (в отчёте будет «?»).
+    """
+    import ctypes
+    try:
+        crypt = ctypes.WinDLL("crypt32.dll", use_last_error=True)
+        crypt.CertOpenStore.restype = ctypes.c_void_p
+        crypt.CertOpenStore.argtypes = [ctypes.c_void_p, ctypes.c_uint,
+                                        ctypes.c_void_p, ctypes.c_uint,
+                                        ctypes.c_wchar_p]
+        crypt.CertEnumCertificatesInStore.restype = ctypes.c_void_p
+        crypt.CertEnumCertificatesInStore.argtypes = [ctypes.c_void_p,
+                                                      ctypes.c_void_p]
+        crypt.CertCloseStore.restype = ctypes.c_int
+        crypt.CertCloseStore.argtypes = [ctypes.c_void_p, ctypes.c_uint]
+        CERT_STORE_PROV_SYSTEM_W = 11                 # системное хранилище (Unicode)
+        CERT_SYSTEM_STORE_LOCAL_MACHINE = 0x00020000  # хранилище компьютера
+        CERT_STORE_READONLY_FLAG = 0x00008000
+        handle = crypt.CertOpenStore(
+            ctypes.c_void_p(CERT_STORE_PROV_SYSTEM_W), 0, None,
+            CERT_SYSTEM_STORE_LOCAL_MACHINE | CERT_STORE_READONLY_FLAG,
+            "Root" if store == "ROOT" else "CA")
+        if not handle:
+            return None
+        try:
+            count, ctx = 0, None
+            while True:
+                ctx = crypt.CertEnumCertificatesInStore(handle, ctx)
+                if not ctx:
+                    return count
+                count += 1
+        finally:
+            crypt.CertCloseStore(handle, 0)
+    except Exception:
+        return None
+
+
+def _windows_store_counts() -> dict:
+    """Число сертификатов по хранилищам: (пользователь, компьютер)."""
+    import ssl
+    out = {}
+    for store in ("ROOT", "CA"):
+        user_n = None
+        try:
+            user_n = sum(1 for _ in ssl.enum_certificates(store))
+        except Exception:
+            pass
+        out[store] = (user_n, _machine_store_count(store))
+    if all(v == (None, None) for v in out.values()):
+        return {}          # не Windows — хранилищ нет
+    return out
+
+
 def _write_ssl_report(url: str, attempts) -> str:
     """Текстовый отчёт для диагностики: что пробовали и почему не приняли.
 
@@ -1917,12 +1980,18 @@ def _write_ssl_report(url: str, attempts) -> str:
             reason = getattr(exc, "reason", None) or exc
             lines.append("- " + name + ": " + str(reason).strip())
         try:
-            counts = []
-            for store in ("ROOT", "CA"):
-                counts.append(store + "=" + str(sum(1 for _ in ssl.enum_certificates(store))))
-            lines += ["", "Сертификатов в хранилищах Windows (текущий пользователь): "
-                      + ", ".join(counts)]
+            counts = _windows_store_counts()
         except Exception:
+            counts = {}
+        if counts:
+            parts = []
+            for store in ("ROOT", "CA"):
+                user_n, machine_n = counts.get(store, (None, None))
+                parts.append(store + ": пользователь " + _n_or_q(user_n)
+                             + ", компьютер " + _n_or_q(machine_n))
+            lines += ["", "Сертификатов в хранилищах Windows — "
+                      + "; ".join(parts)]
+        else:
             lines += ["", "Хранилища сертификатов Windows недоступны (не Windows)"]
         path.write_text("\r\n".join(lines) + "\r\n", encoding="utf-8")
         _LAST_SSL_REPORT = str(path)
@@ -1968,11 +2037,24 @@ def _winhttp_flags_text(value: int) -> str:
     return "; ".join(bits) if bits else "код отказа 0x%08X" % value
 
 
+# Код последней ошибки WinHTTP: на Windows — настоящий из ctypes, в тестах
+# без Windows — подставной (путь отказа сертификата проверяется везде)
+_WINHTTP_TEST_LAST_ERROR = None
+
+
+def _winhttp_last_error() -> int:
+    import ctypes
+    get = getattr(ctypes, "get_last_error", None)
+    if get is not None:
+        return int(get())
+    return int(_WINHTTP_TEST_LAST_ERROR or 0)
+
+
 def _winhttp_check(win, hreq) -> None:
     """Сбой запроса WinHTTP → понятное исключение (12175 — сертификат)."""
     import ctypes
     import ssl
-    code = ctypes.get_last_error()
+    code = _winhttp_last_error()
     if code == 12175:  # ERROR_WINHTTP_SECURE_FAILURE
         flags = None
         val = ctypes.c_ulong(0)
@@ -2004,18 +2086,70 @@ def _winhttp_read_all(win, hreq) -> bytes:
     chunks = []
     avail = ctypes.c_ulong(0)
     while True:
-        if not win.WinHttpQueryDataAvailable(hreq, ctypes.byref(avail), None):
+        if not win.WinHttpQueryDataAvailable(hreq, ctypes.byref(avail)):
             raise OSError("WinHttpQueryDataAvailable, код "
-                          + str(ctypes.get_last_error()))
+                          + str(_winhttp_last_error()))
         if avail.value == 0:
             break
         buf = ctypes.create_string_buffer(avail.value)
         got = ctypes.c_ulong(0)
         if not win.WinHttpReadData(hreq, buf, avail.value, ctypes.byref(got)):
-            raise OSError("WinHttpReadData, код " + str(ctypes.get_last_error()))
+            raise OSError("WinHttpReadData, код " + str(_winhttp_last_error()))
         if got.value:
             chunks.append(buf.raw[:got.value])
     return b"".join(chunks)
+
+
+def _winhttp_prototypes():
+    """Сигнатуры функций WinHTTP (restype, argtypes) — как в настоящем API.
+
+    Число аргументов обязано совпадать с Windows точно: лишний или
+    недостающий аргумент в ctypes либо падает («takes N arguments»), либо
+    ломает стек вызова. HINTERNET — указатель, поэтому restype у функций,
+    возвращающих обработчик, — c_void_p (иначе на 64-битной Windows адрес
+    обрезался бы до int).
+    """
+    import ctypes
+    from ctypes import wintypes
+    return {
+        "WinHttpOpen": (ctypes.c_void_p,
+                        [ctypes.c_wchar_p, ctypes.c_uint,
+                         ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint]),
+        "WinHttpConnect": (ctypes.c_void_p,
+                           [ctypes.c_void_p, ctypes.c_wchar_p,
+                            ctypes.c_ushort, ctypes.c_uint]),
+        "WinHttpOpenRequest": (ctypes.c_void_p,
+                               [ctypes.c_void_p, ctypes.c_wchar_p,
+                                ctypes.c_wchar_p, ctypes.c_wchar_p,
+                                ctypes.c_wchar_p, ctypes.c_wchar_p,
+                                ctypes.c_uint]),
+        "WinHttpSetTimeouts": (ctypes.c_int,
+                               [ctypes.c_void_p] + [ctypes.c_int] * 4),
+        "WinHttpSendRequest": (ctypes.c_int,
+                               [ctypes.c_void_p, ctypes.c_wchar_p,
+                                ctypes.c_uint, ctypes.c_void_p,
+                                ctypes.c_uint, ctypes.c_uint,
+                                ctypes.c_void_p]),
+        "WinHttpReceiveResponse": (ctypes.c_int,
+                                   [ctypes.c_void_p, ctypes.c_void_p]),
+        "WinHttpQueryHeaders": (ctypes.c_int,
+                                [ctypes.c_void_p, ctypes.c_uint,
+                                 ctypes.c_wchar_p, ctypes.c_void_p,
+                                 ctypes.POINTER(wintypes.DWORD),
+                                 ctypes.c_void_p]),
+        "WinHttpQueryDataAvailable": (ctypes.c_int,
+                                      [ctypes.c_void_p,
+                                       ctypes.POINTER(wintypes.DWORD)]),
+        "WinHttpReadData": (ctypes.c_int,
+                            [ctypes.c_void_p, ctypes.c_void_p,
+                             ctypes.c_uint,
+                             ctypes.POINTER(wintypes.DWORD)]),
+        "WinHttpQueryOption": (ctypes.c_int,
+                               [ctypes.c_void_p, ctypes.c_uint,
+                                ctypes.c_void_p,
+                                ctypes.POINTER(wintypes.DWORD)]),
+        "WinHttpCloseHandle": (ctypes.c_int, [ctypes.c_void_p]),
+    }
 
 
 def _winhttp_get(url: str, timeout: float) -> _BytesResponse:
@@ -2032,61 +2166,24 @@ def _winhttp_get(url: str, timeout: float) -> _BytesResponse:
     parts = urllib.parse.urlsplit(url)
     if parts.scheme.lower() != "https" or not parts.hostname:
         raise ValueError("WinHTTP-путь работает только с https-адресами")
-    if sys.platform != "win32":
+    if sys.platform != "win32" and not os.environ.get("OVERTIMETAB_TEST_WINHTTP"):
         raise RuntimeError("WinHTTP доступен только на Windows")
 
     try:
         win = ctypes.WinDLL("winhttp.dll", use_last_error=True)
-    except OSError as e:
+    except (OSError, AttributeError) as e:
+        # AttributeError — ctypes без WinDLL (не Windows)
         raise RuntimeError("Библиотека WinHTTP недоступна: " + str(e)) from e
 
-    # HINTERNET — указатель: без явного restype на 64-битной Windows
-    # адрес обработчика обрезался бы до int и соединение падало бы
-    win.WinHttpOpen.restype = ctypes.c_void_p
-    win.WinHttpOpen.argtypes = [ctypes.c_wchar_p, ctypes.c_uint,
-                                ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint]
-    win.WinHttpConnect.restype = ctypes.c_void_p
-    win.WinHttpConnect.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p,
-                                   ctypes.c_ushort, ctypes.c_uint]
-    win.WinHttpOpenRequest.restype = ctypes.c_void_p
-    win.WinHttpOpenRequest.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p,
-                                       ctypes.c_wchar_p, ctypes.c_wchar_p,
-                                       ctypes.c_wchar_p, ctypes.c_wchar_p,
-                                       ctypes.c_uint]
-    win.WinHttpSetTimeouts.restype = ctypes.c_int
-    win.WinHttpSetTimeouts.argtypes = [ctypes.c_void_p, ctypes.c_int,
-                                       ctypes.c_int, ctypes.c_int, ctypes.c_int]
-    win.WinHttpSendRequest.restype = ctypes.c_int
-    win.WinHttpSendRequest.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p,
-                                       ctypes.c_uint, ctypes.c_void_p,
-                                       ctypes.c_uint, ctypes.c_void_p,
-                                       ctypes.c_uint, ctypes.c_void_p]
-    win.WinHttpReceiveResponse.restype = ctypes.c_int
-    win.WinHttpReceiveResponse.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
-    win.WinHttpQueryHeaders.restype = ctypes.c_int
-    win.WinHttpQueryHeaders.argtypes = [ctypes.c_void_p, ctypes.c_uint,
-                                        ctypes.c_wchar_p, ctypes.c_void_p,
-                                        ctypes.POINTER(wintypes.DWORD),
-                                        ctypes.c_void_p]
-    win.WinHttpQueryDataAvailable.restype = ctypes.c_int
-    win.WinHttpQueryDataAvailable.argtypes = [ctypes.c_void_p,
-                                              ctypes.POINTER(wintypes.DWORD),
-                                              ctypes.c_void_p]
-    win.WinHttpReadData.restype = ctypes.c_int
-    win.WinHttpReadData.argtypes = [ctypes.c_void_p, ctypes.c_void_p,
-                                    ctypes.c_uint,
-                                    ctypes.POINTER(wintypes.DWORD)]
-    win.WinHttpQueryOption.restype = ctypes.c_int
-    win.WinHttpQueryOption.argtypes = [ctypes.c_void_p, ctypes.c_uint,
-                                       ctypes.c_void_p,
-                                       ctypes.POINTER(wintypes.DWORD)]
-    win.WinHttpCloseHandle.restype = ctypes.c_int
-    win.WinHttpCloseHandle.argtypes = [ctypes.c_void_p]
+    for _name, (_restype, _argtypes) in _winhttp_prototypes().items():
+        _fn = getattr(win, _name)
+        _fn.restype = _restype
+        _fn.argtypes = _argtypes
 
     ms = max(1000, int(timeout * 1000))
     hsession = win.WinHttpOpen("OVERTIMETAB-updater", 0, None, None, 0)
     if not hsession:
-        raise OSError("WinHttpOpen, код " + str(ctypes.get_last_error()))
+        raise OSError("WinHttpOpen, код " + str(_winhttp_last_error()))
     try:
         win.WinHttpSetTimeouts(hsession, 0, ms, ms, ms)
         current = url
@@ -2099,14 +2196,14 @@ def _winhttp_get(url: str, timeout: float) -> _BytesResponse:
                 path += "?" + cur.query
             hconn = win.WinHttpConnect(hsession, host, port, 0)
             if not hconn:
-                raise OSError("WinHttpConnect, код " + str(ctypes.get_last_error()))
+                raise OSError("WinHttpConnect, код " + str(_winhttp_last_error()))
             try:
                 # 0x00800000 — WINHTTP_FLAG_SECURE (https)
                 hreq = win.WinHttpOpenRequest(hconn, "GET", path, None,
                                               None, None, 0x00800000)
                 if not hreq:
                     raise OSError("WinHttpOpenRequest, код "
-                                  + str(ctypes.get_last_error()))
+                                  + str(_winhttp_last_error()))
                 try:
                     if not win.WinHttpSendRequest(hreq, None, 0, None, 0, 0, None):
                         _winhttp_check(win, hreq)
@@ -2118,7 +2215,7 @@ def _winhttp_get(url: str, timeout: float) -> _BytesResponse:
                             hreq, 19 | 0x20000000, None, ctypes.byref(status),
                             ctypes.byref(size), None):
                         raise OSError("WinHttpQueryHeaders, код "
-                                      + str(ctypes.get_last_error()))
+                                      + str(_winhttp_last_error()))
                     if status.value in (301, 302, 303, 307, 308):
                         loc = _winhttp_header_str(win, hreq, 33)  # Location
                         if not loc:
