@@ -226,13 +226,14 @@ def main() -> int:
     # выходом на полной скорости (проверяем по коду: замах в 90 мс
     # покадровая съёмка стенда ловит нестабильно)
     qml_src = (ROOT / "main.qml").read_text(encoding="utf-8")
-    assert "to: -16; duration: 100" in qml_src, "пропал замах назад"
-    # кривая броска — OutQuint 1150 мс: взрывной старт и планирование
-    # (~400 мс видимого полёта). Easing.Bezier в этой версии Qt молча
-    # падает в Linear (замерено прототипом — обе «кривые» 281 выходили
-    # линейными) — запрещаем навсегда
-    assert "easing.type: Easing.OutQuint" in qml_src, "пропал бросок OutQuint"
-    assert "duration: 1150" in qml_src, "пропала длительность броска"
+    # УХОД шторки = кривая разгона (Material 3: exit — accelerate):
+    # плавный набор скорости с места, уход за край на полном ходу.
+    # Кривые торможения (OutQuint/OutExpo/OutExpo) для выхода — ошибка
+    # («рывок в начале, линейный хвост» — брак 282/283). Замаха назад
+    # больше нет: рывок назад читался как дёрганье.
+    assert "easing.type: Easing.InCubic" in qml_src, "уход не на кривой разгона"
+    assert "duration: 400" in qml_src, "пропала длительность улёта"
+    assert "to: -16" not in qml_src, "вернулся замах-рывок назад"
     assert "bezierCurve" not in qml_src, "Bezier молча линейный — запрещён"
     assert "contentOpacity" in qml_src, "пропало гаснущее содержимое шторки"
     # бросок стартует ПОСЛЕ паузы-бит: тяжёлое построение рабочего экрана
@@ -241,9 +242,16 @@ def main() -> int:
     # динамика: замах назад и быстрый улёт (кадров «в полёте» немного,
     # крадущийся хвост у края — признак тормозящей кривой)
     xs = [f[0] for f in frames if f[3]]
-    assert any(x < -4 for x in xs), "нет замаха назад: %s" % xs[:8]
+    assert not any(x < -4 for x in xs), "вернулся рывок назад: %s" % xs[:8]
     flying = [x for x in xs if 0 < x < win.width()]
-    assert 6 <= len(flying) <= 48, "кадров полёта вне диапазона: %s" % flying
+    assert 8 <= len(flying) <= 40, "кадров полёта вне диапазона: %s" % flying
+    # разгон: скорость в конце полёта заметно выше, чем в начале
+    diffs = [b - a for a, b in zip(flying, flying[1:]) if b > a]
+    assert len(diffs) >= 4, "слишком мало кадров для оценки разгона: %s" % flying
+    early = max(diffs[:len(diffs) // 2])
+    late = max(diffs[len(diffs) // 2:])
+    assert late > early * 1.5, (
+        "нет разгона (начало %s, конец %s): %s" % (early, late, diffs))
     # страница сменилась мгновенно: под улетающей панелью интерфейс базы
     workspace = None
     for i in walk_items(win):

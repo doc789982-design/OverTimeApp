@@ -514,26 +514,21 @@ ApplicationWindow {
         SequentialAnimation {
             id: coverFly
             onStopped: { startCover.reset(); mainWindow.startTransition = false }
-            NumberAnimation {
-                // замах: ход назад — «взяли, чтобы швырнуть»
-                target: startCover; property: "x"
-                to: -16; duration: 100; easing.type: Easing.OutQuad
-            }
             ParallelAnimation {
                 NumberAnimation {
-                    // бросок с силой: взрывной старт (~100px за кадр) и
-                    // длинное планирование с гашением — брошенная вещь.
-                    // OutQuint 1150 мс: видимый полёт ~400 мс, хвост за
-                    // краем обрезается досрочной остановкой.
-                    // ВАЖНО: Easing.Bezier в этой версии Qt молча падает
-                    // в Linear (замерено) — не использовать
+                    // УХОД = кривая разгона (Material 3: exit — accelerate,
+                    // InCubic): без рывка — плавно набирает скорость и
+                    // уходит за край на полном ходу. Кривые торможения
+                    // (OutQuint/OutExpo) для выхода — ошибка: мгновенный
+                    // рывок в начале и долгий почти-равномерный хвост.
+                    // Easing.Bezier* в этой сборке Qt молча линейны — не использовать.
                     target: startCover; property: "x"
-                    to: mainWindow.width + 130; duration: 1150
-                    easing.type: Easing.OutQuint
+                    to: mainWindow.width + 130; duration: 400
+                    easing.type: Easing.InCubic
                 }
                 NumberAnimation {
                     target: startCover; property: "contentOpacity"
-                    to: 0; duration: 280; easing.type: Easing.OutQuad
+                    to: 0; duration: 180; easing.type: Easing.OutQuad
                 }
             }
         }
