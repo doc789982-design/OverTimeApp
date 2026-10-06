@@ -515,23 +515,25 @@ ApplicationWindow {
             id: coverFly
             onStopped: { startCover.reset(); mainWindow.startTransition = false }
             NumberAnimation {
-                // замах: короткий ход назад — «взяли, чтобы швырнуть»
+                // замах: ход назад — «взяли, чтобы швырнуть»
                 target: startCover; property: "x"
-                to: -12; duration: 70; easing.type: Easing.OutQuad
+                to: -16; duration: 100; easing.type: Easing.OutQuad
             }
             ParallelAnimation {
                 NumberAnimation {
-                    // бросок с силой: взрывной старт (полэкрана за первые
-                    // 50 мс) и планирование с затуханием — брошенная вещь.
-                    // (Bezier [0.2,0.3,0.7,0.72] из 281 был почти диагональю
-                    // — глаз читал его как линейный сдвиг)
+                    // бросок с силой: взрывной старт (~100px за кадр) и
+                    // длинное планирование с гашением — брошенная вещь.
+                    // OutQuint 1150 мс: видимый полёт ~400 мс, хвост за
+                    // краем обрезается досрочной остановкой.
+                    // ВАЖНО: Easing.Bezier в этой версии Qt молча падает
+                    // в Linear (замерено) — не использовать
                     target: startCover; property: "x"
-                    to: mainWindow.width + 130; duration: 300
-                    easing.type: Easing.OutExpo
+                    to: mainWindow.width + 130; duration: 1150
+                    easing.type: Easing.OutQuint
                 }
                 NumberAnimation {
                     target: startCover; property: "contentOpacity"
-                    to: 0; duration: 160; easing.type: Easing.OutQuad
+                    to: 0; duration: 280; easing.type: Easing.OutQuad
                 }
             }
         }
@@ -832,10 +834,10 @@ ApplicationWindow {
             Component.onCompleted: wsEnter.start()
             SequentialAnimation {
                 id: wsEnter
-                PauseAnimation { duration: 60 }
+                PauseAnimation { duration: 80 }
                 ParallelAnimation {
-                    NumberAnimation { target: workspaceRoot; property: "opacity"; to: 1; duration: 320; easing.type: Easing.OutCubic }
-                    NumberAnimation { target: workspaceRoot; property: "y"; from: 14; to: 0; duration: 380; easing.type: Easing.OutCubic }
+                    NumberAnimation { target: workspaceRoot; property: "opacity"; to: 1; duration: 380; easing.type: Easing.OutCubic }
+                    NumberAnimation { target: workspaceRoot; property: "y"; from: 14; to: 0; duration: 440; easing.type: Easing.OutCubic }
                 }
             }
             // страховка: даже если анимация не запустилась — экран виден

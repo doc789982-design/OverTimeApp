@@ -226,12 +226,14 @@ def main() -> int:
     # выходом на полной скорости (проверяем по коду: замах в 90 мс
     # покадровая съёмка стенда ловит нестабильно)
     qml_src = (ROOT / "main.qml").read_text(encoding="utf-8")
-    assert "to: -12; duration: 70" in qml_src, "пропал замах назад"
-    # кривая броска — взрывной старт и планирование (OutExpo, 300 мс);
-    # почти-диагональные кривые (как Bezier 0.2/0.3/0.7/0.72 из 281)
-    # глаз читает как линейный сдвиг — запрещаем их возвращение
-    assert "easing.type: Easing.OutExpo" in qml_src, "пропал бросок OutExpo"
-    assert "bezierCurve" not in qml_src, "вернулась почти-линейная кривая"
+    assert "to: -16; duration: 100" in qml_src, "пропал замах назад"
+    # кривая броска — OutQuint 1150 мс: взрывной старт и планирование
+    # (~400 мс видимого полёта). Easing.Bezier в этой версии Qt молча
+    # падает в Linear (замерено прототипом — обе «кривые» 281 выходили
+    # линейными) — запрещаем навсегда
+    assert "easing.type: Easing.OutQuint" in qml_src, "пропал бросок OutQuint"
+    assert "duration: 1150" in qml_src, "пропала длительность броска"
+    assert "bezierCurve" not in qml_src, "Bezier молча линейный — запрещён"
     assert "contentOpacity" in qml_src, "пропало гаснущее содержимое шторки"
     # бросок стартует ПОСЛЕ паузы-бит: тяжёлое построение рабочего экрана
     # иначе замораживает анимацию на полпути (брак 281 — панель исчезала)
@@ -241,7 +243,7 @@ def main() -> int:
     xs = [f[0] for f in frames if f[3]]
     assert any(x < -4 for x in xs), "нет замаха назад: %s" % xs[:8]
     flying = [x for x in xs if 0 < x < win.width()]
-    assert 1 <= len(flying) <= 14, "кадров полёта вне диапазона: %s" % flying
+    assert 6 <= len(flying) <= 48, "кадров полёта вне диапазона: %s" % flying
     # страница сменилась мгновенно: под улетающей панелью интерфейс базы
     workspace = None
     for i in walk_items(win):
