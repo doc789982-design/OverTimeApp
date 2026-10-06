@@ -78,8 +78,12 @@ ApplicationWindow {
             // Immediate: страница меняется мгновенно — улетающая панель
             // открывает уже готовый интерфейс базы, без растворения
             stackView.replace(mainWorkspacePage, StackView.Immediate) 
-            // Заставка улетает вправо с инерцией, открывая программу
-            if (startCover.visible) coverFly.restart()
+            // Бросок — не сразу: рабочий экран тяжёлый, его построение
+            // замораживает поток на десятки миллисекунд и бросок замирает
+            // на полпути. Даём интерфейсу построиться и отрисоваться за
+            // неподвижной шторкой (глазу это — короткая пауза-бит),
+            // затем шторка летит над уже готовой сценой
+            flightDelay.restart()
         }
         function onDatabaseOpenFailed(message) {
             // База не открылась (файла нет, повреждена) — панель возвращается
@@ -433,6 +437,12 @@ ApplicationWindow {
             visible: false
             color: AppUI.AppTheme.bgPanel
             property string path: ""
+            // содержимое гаснет при улёте — летит «пустая» шторка
+            property real contentOpacity: 1
+            onXChanged: {
+                // шторка полностью ушла за край — анимацию завершаем досрочно
+                if (visible && x >= mainWindow.width) coverFly.stop()
+            }
 
             // На время анимации держит клики при себе — под панелью ничего не нажимается
             MouseArea { anchors.fill: parent; onClicked: {} }
@@ -446,6 +456,7 @@ ApplicationWindow {
                 anchors.centerIn: parent
                 width: 260
                 spacing: AppUI.AppTheme.spaceL
+                opacity: startCover.contentOpacity
                 AppUI.AppEmptyMascot {
                     anchors.horizontalCenter: parent.horizontalCenter
                     width: 180; height: 180
@@ -478,6 +489,7 @@ ApplicationWindow {
             function reset() {
                 x = 0
                 width = 300
+                contentOpacity = 1
                 visible = false
             }
         }
@@ -492,26 +504,34 @@ ApplicationWindow {
             }
             ScriptAction { script: backend.openDatabase(startCover.path) }
         }
+        Timer {
+            id: flightDelay
+            interval: 120
+            onTriggered: {
+                if (startCover.visible && !coverFly.running) coverFly.restart()
+            }
+        }
         SequentialAnimation {
             id: coverFly
             onStopped: { startCover.reset(); mainWindow.startTransition = false }
             NumberAnimation {
                 // замах: короткий ход назад — «взяли, чтобы швырнуть»
                 target: startCover; property: "x"
-                to: -16; duration: 90; easing.type: Easing.OutQuad
+                to: -12; duration: 70; easing.type: Easing.OutQuad
             }
             ParallelAnimation {
                 NumberAnimation {
-                    // бросок: скорость от замаха + перенос — выход
-                    // на полной скорости, без торможения у края
+                    // бросок с силой: взрывной старт (полэкрана за первые
+                    // 50 мс) и планирование с затуханием — брошенная вещь.
+                    // (Bezier [0.2,0.3,0.7,0.72] из 281 был почти диагональю
+                    // — глаз читал его как линейный сдвиг)
                     target: startCover; property: "x"
-                    to: mainWindow.width + 100; duration: 480
-                    easing.type: Easing.Bezier
-                    easing.bezierCurve: [0.2, 0.3, 0.7, 0.72]
+                    to: mainWindow.width + 130; duration: 300
+                    easing.type: Easing.OutExpo
                 }
                 NumberAnimation {
                     target: startCover; property: "contentOpacity"
-                    to: 0; duration: 240; easing.type: Easing.OutQuad
+                    to: 0; duration: 160; easing.type: Easing.OutQuad
                 }
             }
         }
@@ -804,6 +824,23 @@ ApplicationWindow {
         Item {
             id: workspaceRoot
             property alias calendarPanel: calendarPanelId
+
+            // Мягкий подъезд интерфейса: после улёта шторки база
+            // проявляется и чуть поднимается снизу — глаз следит за
+            // шторкой, потом находит готовый интерфейс
+            opacity: 0
+            Component.onCompleted: wsEnter.start()
+            SequentialAnimation {
+                id: wsEnter
+                PauseAnimation { duration: 60 }
+                ParallelAnimation {
+                    NumberAnimation { target: workspaceRoot; property: "opacity"; to: 1; duration: 320; easing.type: Easing.OutCubic }
+                    NumberAnimation { target: workspaceRoot; property: "y"; from: 14; to: 0; duration: 380; easing.type: Easing.OutCubic }
+                }
+            }
+            // страховка: даже если анимация не запустилась — экран виден
+            Timer { interval: 900; running: true; onTriggered: { workspaceRoot.opacity = 1; workspaceRoot.y = 0 } }
+
             MouseArea {
                 anchors.fill: parent
                 z: 1

@@ -165,14 +165,22 @@ def find_cover(win):
 
 
 def pump(app, seconds, win, collect):
+    """Съёмка кадров: шторку держим по ссылке (обход дерева дорог и
+    размазывает тайминги), маскотов считаем каждый третий кадр."""
     deadline = time.time() + seconds
+    cover = None
+    i = 0
     while time.time() < deadline:
         app.processEvents()
-        time.sleep(0.04)
-        c = find_cover(win)
-        if c is not None:
-            collect.append((c.x(), c.width(), c.height(), c.isVisible(),
-                            len(visible_mascots(win))))
+        time.sleep(0.012)
+        if cover is None or not cover.isVisible():
+            cover = find_cover(win)
+        if cover is not None and cover.isVisible():
+            masc = len(visible_mascots(win)) if i % 3 == 0 else -1
+            collect.append((cover.x(), cover.width(), cover.height(), True, masc))
+        else:
+            collect.append((0.0, 0.0, 0.0, False, 0))
+        i += 1
 
 
 def load(app, fail):
@@ -206,8 +214,10 @@ def main() -> int:
     pump(app, 2.2, win, frames)
     assert frames, "кадров нет"
     for x, w, h, vis, masc in frames:
-        assert h > 400, "панель-заставка потеряла высоту: %s" % ((x, w, h),)
-        assert masc <= 1, "видно несколько маскотов: %s" % masc
+        if vis:
+            assert h > 400, "панель-заставка потеряла высоту: %s" % ((x, w, h),)
+        if masc >= 0:
+            assert masc <= 1, "видно несколько маскотов: %s" % masc
     grew = max(f[1] for f in frames if f[3])
     assert grew > win.width() * 0.9, "панель не раскрылась на весь экран: %s" % grew
     flew = max(f[0] for f in frames if f[3])
@@ -216,15 +226,22 @@ def main() -> int:
     # выходом на полной скорости (проверяем по коду: замах в 90 мс
     # покадровая съёмка стенда ловит нестабильно)
     qml_src = (ROOT / "main.qml").read_text(encoding="utf-8")
-    assert "to: -16; duration: 90" in qml_src, "пропал замах назад"
-    assert "easing.bezierCurve: [0.2, 0.3, 0.7, 0.72]" in qml_src, \
-        "пропала кривая броска"
-    # …и быстрый уход за край: кадров «в полёте» мало, без затухающего
-    # крадущегося хвоста (тормозящая кривая давала бы длинную серию
-    # кадров с уменьшающейся скоростью у края)
+    assert "to: -12; duration: 70" in qml_src, "пропал замах назад"
+    # кривая броска — взрывной старт и планирование (OutExpo, 300 мс);
+    # почти-диагональные кривые (как Bezier 0.2/0.3/0.7/0.72 из 281)
+    # глаз читает как линейный сдвиг — запрещаем их возвращение
+    assert "easing.type: Easing.OutExpo" in qml_src, "пропал бросок OutExpo"
+    assert "bezierCurve" not in qml_src, "вернулась почти-линейная кривая"
+    assert "contentOpacity" in qml_src, "пропало гаснущее содержимое шторки"
+    # бросок стартует ПОСЛЕ паузы-бит: тяжёлое построение рабочего экрана
+    # иначе замораживает анимацию на полпути (брак 281 — панель исчезала)
+    assert "flightDelay" in qml_src, "пропала пауза на построение экрана"
+    # динамика: замах назад и быстрый улёт (кадров «в полёте» немного,
+    # крадущийся хвост у края — признак тормозящей кривой)
     xs = [f[0] for f in frames if f[3]]
+    assert any(x < -4 for x in xs), "нет замаха назад: %s" % xs[:8]
     flying = [x for x in xs if 0 < x < win.width()]
-    assert 0 < len(flying) <= 6, "панель выползает слишком медленно: %s" % flying
+    assert 1 <= len(flying) <= 14, "кадров полёта вне диапазона: %s" % flying
     # страница сменилась мгновенно: под улетающей панелью интерфейс базы
     workspace = None
     for i in walk_items(win):
@@ -245,11 +262,11 @@ def main() -> int:
                 pass
         raise AssertionError("под панелью не рабочий интерфейс базы; предметы: %s"
                              % classes[:40])
-    # интерфейс базы «подъехал»: проявился и принял натуральную величину
+    # интерфейс базы «подъехал»: проявился и поднялся на место
     assert abs(float(workspace.property("opacity")) - 1.0) < 0.01, (
         "интерфейс не проявился: %s" % workspace.property("opacity"))
-    assert abs(float(workspace.property("scale")) - 1.0) < 0.001, (
-        "интерфейс не дошёл до натуральной величины: %s" % workspace.property("scale"))
+    assert abs(float(workspace.property("y"))) < 0.01, (
+        "интерфейс не поднялся на место: %s" % workspace.property("y"))
     assert not frames[-1][3], "панель не скрылась после улёта"
     print("A: рост на весь экран → улёт вправо; маскот всегда один; "
           "под панелью готовый интерфейс базы ✓")
@@ -262,8 +279,10 @@ def main() -> int:
     pump(app, 2.5, win2, frames2)
     assert frames2, "кадров неудачи нет"
     for x, w, h, vis, masc in frames2:
-        assert h > 400, "панель потеряла высоту при возврате: %s" % ((x, w, h),)
-        assert masc <= 1, "несколько маскотов при возврате: %s" % masc
+        if vis:
+            assert h > 400, "панель потеряла высоту при возврате: %s" % ((x, w, h),)
+        if masc >= 0:
+            assert masc <= 1, "несколько маскотов при возврате: %s" % masc
     grew2 = max((f[1] for f in frames2 if f[3]), default=0)
     assert grew2 > win2.width() * 0.9, "панель не раскрылась: %s" % grew2
     assert not frames2[-1][3], "панель не скрылась после возврата"
