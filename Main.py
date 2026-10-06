@@ -4785,6 +4785,209 @@ def _handle_uncaught(exc_type, exc_value, exc_tb):
         except Exception:
             pass
 
+
+# ============================================================
+# ШРИФТ ПЕЧАТИ ТАБЕЛЯ — PT Astra Serif, вшит в программу.
+# Четыре начертания лежат в fonts/ и пакуются в exe. При запуске:
+#   1) добавляем их в базу шрифтов Qt — печать и PDF программы
+#      рисуют табель правильным шрифтом на любой машине;
+#   2) если в Windows шрифта нет (у коллег без шрифта Excel молча
+#      подменяет его системным) — ставим шрифт «для меня», без прав
+#      администратора: файл в %LOCALAPPDATA%\...\Fonts + запись
+#      в реестре HKCU (Windows 10 поддерживает пользовательские шрифты).
+# ============================================================
+PRINT_FONT_FILES = [
+    "PT-Astra-Serif_Regular.ttf",
+    "PT-Astra-Serif_Bold.ttf",
+    "PT-Astra-Serif_Italic.ttf",
+    "PT-Astra-Serif_Bold-Italic.ttf",
+]
+
+
+def _parse_name_table(data, off):
+    """Записи таблицы name: {id: текст}. Windows-имена приоритетнее Mac."""
+    import struct
+    count = struct.unpack(">H", data[off + 2:off + 4])[0]
+    storage = off + struct.unpack(">H", data[off + 4:off + 6])[0]
+    mac, win = {}, {}
+    for i in range(count):
+        rec = off + 6 + 12 * i
+        if rec + 12 > len(data):
+            break
+        platform, encoding, _lang, name_id, str_len, str_off = \
+            struct.unpack(">HHHHHH", data[rec:rec + 12])
+        raw = data[storage + str_off:storage + str_off + str_len]
+        if platform == 3 and encoding in (0, 1):
+            try:
+                win.setdefault(name_id, raw.decode("utf-16-be"))
+            except Exception:
+                pass
+        elif platform == 1:
+            try:
+                mac.setdefault(name_id, raw.decode("mac-roman"))
+            except Exception:
+                pass
+    out = dict(mac)
+    out.update(win)
+    return out
+
+
+def _ttf_font_names(data):
+    """(семейство, полное имя) из файла TTF/OTF (байты).
+
+    Полное имя идёт в запись реестра при установке шрифта в Windows."""
+    import struct
+    if len(data) < 12 or data[:4] not in (b"\x00\x01\x00\x00", b"true", b"OTTO", b"ttcf"):
+        return "", ""
+    num_tables = struct.unpack(">H", data[4:6])[0]
+    for i in range(num_tables):
+        rec = 12 + 16 * i
+        if rec + 16 > len(data):
+            break
+        if data[rec:rec + 4] == b"name":
+            table_off = struct.unpack(">I", data[rec + 8:rec + 12])[0]
+            names = _parse_name_table(data, table_off)
+            family = names.get(1, "")
+            full = names.get(4, "") or family
+            return family, full
+    return "", ""
+
+
+def _print_font_bytes(name):
+    """Байты файла шрифта: из ресурсов exe (qrc) или из папки программы."""
+    try:
+        from PySide6.QtCore import QFile
+        f = QFile(":/fonts/" + name)
+        if f.open(QFile.ReadOnly):
+            data = bytes(f.readAll())
+            f.close()
+            if data:
+                return data
+    except Exception:
+        pass
+    p = Path(ASSETS_DIR) / "fonts" / name
+    try:
+        if p.is_file():
+            return p.read_bytes()
+    except Exception:
+        pass
+    return b""
+
+
+def _excel_fonts_installed_names():
+    """Очищенные имена шрифтов из реестра Windows (HKLM + HKCU), нижний регистр."""
+    names = set()
+    try:
+        import winreg
+    except ImportError:
+        return names
+    for root in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
+        try:
+            with winreg.OpenKey(
+                    root, r"Software\Microsoft\Windows NT\CurrentVersion\Fonts") as key:
+                i = 0
+                while True:
+                    try:
+                        value_name, _data, _type = winreg.EnumValue(key, i)
+                    except OSError:
+                        break
+                    clean = str(value_name).strip().lower()
+                    if clean.endswith(" (truetype)"):
+                        clean = clean[:-len(" (truetype)")]
+                    names.add(clean)
+                    i += 1
+        except Exception:
+            continue
+    return names
+
+
+def _needs_excel_font_install(full_name, installed_names):
+    """Надо ли ставить шрифт: полного имени нет среди установленных."""
+    target = (full_name or "").strip().lower()
+    if not target:
+        return False
+    for existing in installed_names:
+        clean = str(existing).strip().lower()
+        if clean.endswith(" (truetype)"):
+            clean = clean[:-len(" (truetype)")]
+        if clean == target:
+            return False
+    return True
+
+
+def _broadcast_fonts_changed():
+    """Сообщает запущенным программам, что набор шрифтов изменился."""
+    try:
+        import ctypes
+        result = ctypes.c_ulong(0)
+        ctypes.windll.user32.SendMessageTimeoutW(
+            0xFFFF, 0x001D, 0, 0, 2, 1000, ctypes.byref(result))
+    except Exception:
+        pass
+
+
+def _ensure_excel_fonts_windows():
+    """Ставит шрифты печати в Windows «для меня» (без прав администратора).
+
+    Excel печатает табель шрифтом PT Astra Serif только если шрифт есть
+    в Windows. Копируем файл в пользовательскую папку шрифтов и пишем
+    запись в HKCU — так умеет Windows 10. Возвращает число установленных."""
+    if sys.platform != "win32":
+        return 0
+    installed = _excel_fonts_installed_names()
+    fonts_root = Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "Windows" / "Fonts"
+    installed_count = 0
+    import winreg
+    for name in PRINT_FONT_FILES:
+        data = _print_font_bytes(name)
+        if not data:
+            continue
+        _family, full = _ttf_font_names(data)
+        if not _needs_excel_font_install(full, installed):
+            continue
+        fonts_root.mkdir(parents=True, exist_ok=True)
+        dst = fonts_root / name
+        dst.write_bytes(data)
+        value_name = (full or name) + " (TrueType)"
+        try:
+            with winreg.CreateKey(
+                    winreg.HKEY_CURRENT_USER,
+                    r"Software\Microsoft\Windows NT\CurrentVersion\Fonts") as key:
+                winreg.SetValueEx(key, value_name, 0, winreg.REG_SZ, str(dst))
+            installed.add((full or "").strip().lower())
+            installed_count += 1
+        except Exception:
+            try:
+                dst.unlink()
+            except Exception:
+                pass
+    if installed_count:
+        _broadcast_fonts_changed()
+    return installed_count
+
+
+def _register_print_fonts():
+    """Встраивает шрифт печати: в Qt (печать/PDF программы) и в Windows
+    (чтобы Excel печатал табель этим шрифтом на любой машине).
+    Возвращает число начертаний, добавленных в Qt."""
+    added = 0
+    from PySide6.QtGui import QFontDatabase
+    for name in PRINT_FONT_FILES:
+        data = _print_font_bytes(name)
+        if not data:
+            continue
+        try:
+            if QFontDatabase.addApplicationFontFromData(data) != -1:
+                added += 1
+        except Exception:
+            pass
+    try:
+        _ensure_excel_fonts_windows()
+    except Exception:
+        pass
+    return added
+
+
 def main():
     try:
         myappid = 'mycompany.overtimetab.version2'
@@ -4798,6 +5001,14 @@ def main():
     sys.excepthook = _handle_uncaught
 
     app = QApplication(sys.argv)
+
+    # Шрифт печати табеля (PT Astra Serif) вшит в программу: подключаем
+    # к Qt и, если в Windows его нет, ставим «для меня» — Excel печатает
+    # табель правильным шрифтом на любой машине.
+    try:
+        _register_print_fonts()
+    except Exception:
+        pass
 
     # --- ЛОГИКА ОДНОГО ЭКЗЕМПЛЯРА ---
     socket = QLocalSocket()

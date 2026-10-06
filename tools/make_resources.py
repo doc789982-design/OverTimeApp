@@ -30,8 +30,9 @@ ROOT_FILES = ["main.qml", "Template.xlsx", "app_icon.png", "CHANGELOG.md", "vers
 # скрипты и заготовки для ИИ в exe не попадают)
 INCLUDE_EXT = {".qml", ".svg", ".png", ".jpg", ".ttf", ".otf"}
 
-# Шрифты, которые программа реально открывает (см. AppTheme.qml).
-# Остальные файлы в fonts/ — запасные, в exe их не кладём:
+# Шрифты, которые программа реально открывает (см. AppTheme.qml и
+# PRINT_FONT_FILES в Main.py — шрифт печати табеля PT Astra Serif вшит
+# в программу). Остальные файлы в fonts/ — запасные, в exe их не кладём:
 # один только GoogleSans.ttf весит почти 5 МБ.
 FONT_ALLOW = {
     "Roboto-Regular.ttf",
@@ -39,6 +40,10 @@ FONT_ALLOW = {
     "Roboto-Bold.ttf",
     "RobotoCondensed-Regular.ttf",
     "RobotoCondensed-Bold.ttf",
+    "PT-Astra-Serif_Regular.ttf",
+    "PT-Astra-Serif_Bold.ttf",
+    "PT-Astra-Serif_Italic.ttf",
+    "PT-Astra-Serif_Bold-Italic.ttf",
 }
 
 def _short_sha() -> str:
