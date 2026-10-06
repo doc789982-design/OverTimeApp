@@ -212,6 +212,19 @@ def main() -> int:
     assert grew > win.width() * 0.9, "панель не раскрылась на весь экран: %s" % grew
     flew = max(f[0] for f in frames if f[3])
     assert flew > win.width() * 0.8, "панель не улетела вправо: %s" % flew
+    # «живая» инерция — бросок как в дизайне: замах назад и кривая с
+    # выходом на полной скорости (проверяем по коду: замах в 90 мс
+    # покадровая съёмка стенда ловит нестабильно)
+    qml_src = (ROOT / "main.qml").read_text(encoding="utf-8")
+    assert "to: -16; duration: 90" in qml_src, "пропал замах назад"
+    assert "easing.bezierCurve: [0.2, 0.3, 0.7, 0.72]" in qml_src, \
+        "пропала кривая броска"
+    # …и быстрый уход за край: кадров «в полёте» мало, без затухающего
+    # крадущегося хвоста (тормозящая кривая давала бы длинную серию
+    # кадров с уменьшающейся скоростью у края)
+    xs = [f[0] for f in frames if f[3]]
+    flying = [x for x in xs if 0 < x < win.width()]
+    assert 0 < len(flying) <= 6, "панель выползает слишком медленно: %s" % flying
     # страница сменилась мгновенно: под улетающей панелью интерфейс базы
     workspace = None
     for i in walk_items(win):
@@ -232,6 +245,11 @@ def main() -> int:
                 pass
         raise AssertionError("под панелью не рабочий интерфейс базы; предметы: %s"
                              % classes[:40])
+    # интерфейс базы «подъехал»: проявился и принял натуральную величину
+    assert abs(float(workspace.property("opacity")) - 1.0) < 0.01, (
+        "интерфейс не проявился: %s" % workspace.property("opacity"))
+    assert abs(float(workspace.property("scale")) - 1.0) < 0.001, (
+        "интерфейс не дошёл до натуральной величины: %s" % workspace.property("scale"))
     assert not frames[-1][3], "панель не скрылась после улёта"
     print("A: рост на весь экран → улёт вправо; маскот всегда один; "
           "под панелью готовый интерфейс базы ✓")

@@ -494,13 +494,26 @@ ApplicationWindow {
         }
         SequentialAnimation {
             id: coverFly
+            onStopped: { startCover.reset(); mainWindow.startTransition = false }
             NumberAnimation {
+                // замах: короткий ход назад — «взяли, чтобы швырнуть»
                 target: startCover; property: "x"
-                to: mainWindow.width; duration: 520
-                // быстрый старт и плавное торможение — «улетела с инерцией»
-                easing.type: Easing.OutQuart
+                to: -16; duration: 90; easing.type: Easing.OutQuad
             }
-            ScriptAction { script: { startCover.reset(); mainWindow.startTransition = false } }
+            ParallelAnimation {
+                NumberAnimation {
+                    // бросок: скорость от замаха + перенос — выход
+                    // на полной скорости, без торможения у края
+                    target: startCover; property: "x"
+                    to: mainWindow.width + 100; duration: 480
+                    easing.type: Easing.Bezier
+                    easing.bezierCurve: [0.2, 0.3, 0.7, 0.72]
+                }
+                NumberAnimation {
+                    target: startCover; property: "contentOpacity"
+                    to: 0; duration: 240; easing.type: Easing.OutQuad
+                }
+            }
         }
         SequentialAnimation {
             id: coverBack
