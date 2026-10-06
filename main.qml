@@ -407,7 +407,7 @@ ApplicationWindow {
             id: dbPageRoot
             property string targetDbPath: ""
             Component.onCompleted: { 
-                if (backend.dbList.length === 1) { 
+                if (backend.dbList.length === 1 && !backend.dbList[0].missing) { 
                     targetDbPath = backend.dbList[0].path
                     autoStartTimer.start() 
                 } 
@@ -505,8 +505,12 @@ ApplicationWindow {
                             }
                             Text {
                                 width: parent.width
-                                text: modelData.path
-                                color: AppUI.AppTheme.textSecondary
+                                text: modelData.missing === true
+                                      ? "файл не найден — " + modelData.path
+                                      : modelData.path
+                                color: modelData.missing === true
+                                       ? AppUI.AppTheme.textTertiary
+                                       : AppUI.AppTheme.textSecondary
                                 font.pixelSize: AppUI.AppTheme.sizeSmall
                                 elide: Text.ElideMiddle
                             }
@@ -891,7 +895,7 @@ ApplicationWindow {
         }
         onRejected: mainWindow.confirmCallback = null
     }
-    AppUI.SettingsDialog    { id: settingsDialog; onRequestFileAttach: fileDialog.open() }
+    AppUI.SettingsDialog    { id: settingsDialog }
     AppUI.AddGroupDialog    { id: addGroupDialog }
     AppUI.HistoryDialog     { id: historyDialog }
     AppUI.CreateDbDialog    { id: createDbDialog }

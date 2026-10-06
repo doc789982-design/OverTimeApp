@@ -547,6 +547,12 @@ class Backend(QObject):
         # Инициализируем ПЕРЕД загрузкой, чтобы он не затирался пустой строкой.
         self._update_url = ""
         self.load_databases()
+        # Базы, лежащие в папке хранения, подключаем сами: положил файлы
+        # в папку — и они появились в списке (молча, без вопросов)
+        try:
+            self._scan_db_folder()
+        except Exception:
+            pass
 
         self._update_ready = False
         self._update_busy = False
@@ -606,8 +612,13 @@ class Backend(QObject):
         # Источники данных старых версий по приоритету (от новых к самым старым).
         portable = self.app_dir / "data"          # портативный: data рядом с exe
         profile = Path.home() / ".overtimetab"    # самый старый: папка в профиле
+        # Старые версии могли класть данные в «Документы» профиля, даже
+        # когда системная папка «Документы» перенесена в другое место, —
+        # такой источник тоже переносим в каноническое место
+        home_documents = Path.home() / "Documents" / "OverTimeTab"
         sources = [
             (portable, "data"),
+            (home_documents, None),
             (profile, None),
         ]
 
@@ -793,30 +804,14 @@ class Backend(QObject):
     def load_databases(self):
         loaded_dbs = []
         unique_paths = set() # Сет (множество) для защиты от дубликатов!
-        
+        raw_paths = []
+        healed = {}   # пропавший путь -> найденный (файл перенесли руками)
+
         if self.config_path.exists():
             try:
                 data = json.loads(self.config_path.read_text(encoding="utf-8"))
-                for p in data.get("db_paths", []):
-                    path_obj = Path(p)
-                    # Если путь "относительный" (сохранен с флешки), склеиваем его с текущей папкой программы
-                    if not path_obj.is_absolute():
-                        path_obj = (self.app_dir / path_obj).resolve()
-                    else:
-                        path_obj = path_obj.resolve()
-                    
-                    # Если такой путь мы еще не добавляли и файл реально существует
-                    if str(path_obj) not in unique_paths and path_obj.exists():
-                        try:
-                            temp_db = DB(str(path_obj))
-                            dept_name = temp_db.get_department_name()
-                            temp_db.close()
-                            
-                            loaded_dbs.append({"name": dept_name, "path": str(path_obj)})
-                            unique_paths.add(str(path_obj)) # Запоминаем, что этот путь уже есть
-                        except Exception: 
-                            pass
-                        
+                raw_paths = list(data.get("db_paths", []))
+
                 # Читаем настройку интерфейса!
                 ui_cfg = data.get("ui", {})
                 self._time_input_mode = ui_cfg.get("time_input_mode", "tumbler")
@@ -825,12 +820,158 @@ class Backend(QObject):
                 self._startup_update_enabled = bool(ui_cfg.get("startup_update", True))
                 self._tray_hint_shown = ui_cfg.get("tray_hint_shown", False)
                 self._update_url = str(ui_cfg.get("update_url", "") or "").strip()
-                
-            except Exception as e: 
+
+            except Exception as e:
                 print(f"Ошибка чтения конфига: {e}")
+
+        for p in raw_paths:
+            path_obj = Path(p)
+            # Если путь "относительный" (сохранен с флешки), склеиваем его с текущей папкой программы
+            if not path_obj.is_absolute():
+                path_obj = (self.app_dir / path_obj).resolve()
+            else:
+                path_obj = path_obj.resolve()
+
+            if str(path_obj) in unique_paths:
+                continue
+
+            # Файла нет на старом месте — ищем одноимённый в известных папках
+            # (базу могли перенести руками в папку хранения)
+            if not path_obj.exists():
+                alt = self._find_db_by_name(path_obj.name)
+                if alt is not None:
+                    healed[str(path_obj)] = str(alt)
+                    path_obj = alt
+
+            # Всё равно нет — показываем базу с пометкой, а не вычёркиваем молча
+            if not path_obj.exists():
+                loaded_dbs.append({"name": path_obj.stem, "path": str(path_obj), "missing": True})
+                unique_paths.add(str(path_obj))
+                continue
+
+            try:
+                temp_db = DB(str(path_obj))
+                dept_name = temp_db.get_department_name()
+                temp_db.close()
+                loaded_dbs.append({"name": dept_name, "path": str(path_obj)})
+                unique_paths.add(str(path_obj)) # Запоминаем, что этот путь уже есть
+            except Exception:
+                pass
+
+        # Найденные заново пути сохраняем в конфиг — не искать каждый запуск
+        if healed:
+            try:
+                self._persist_healed_paths(raw_paths, healed)
+            except Exception:
+                pass
 
         self._db_list = loaded_dbs
         self.dbListChanged.emit()
+
+    def _known_db_dirs(self):
+        """Папки, где имеет смысл искать базы: папка хранения (выбранная
+        в настройках или стандартная) и папка данных программы."""
+        dirs = []
+        try:
+            d = Path(self._get_db_dir())
+            if d not in dirs:
+                dirs.append(d)
+        except Exception:
+            pass
+        for d in (Path(self._data_dir), Path(self._data_dir) / "databases",
+                  Path(self.app_dir)):
+            if d not in dirs:
+                dirs.append(d)
+        return dirs
+
+    def _find_db_by_name(self, file_name):
+        """Ищет базу с таким именем файла в известных папках (Path или None).
+
+        Так чинятся пути, сломанные переносом файлов руками: после
+        переноса базы в папку хранения программа находит её сама."""
+        if not file_name:
+            return None
+        for d in self._known_db_dirs():
+            cand = Path(d) / file_name
+            try:
+                if cand.is_file():
+                    ok, _err = self._validate_db_file(str(cand))
+                    if ok:
+                        return cand.resolve()
+            except Exception:
+                continue
+        return None
+
+    def _persist_healed_paths(self, raw_paths, healed):
+        """Записывает перепривязанные пути в config.json."""
+        data = {"db_paths": [], "last_db_path": None, "ui": {}}
+        if self.config_path.exists():
+            try:
+                data = json.loads(self.config_path.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+
+        def remap(p):
+            po = Path(p)
+            key = str(po.resolve() if po.is_absolute() else (Path(self.app_dir) / po).resolve())
+            if key in healed:
+                return healed[key].replace("\\", "/")
+            return p
+
+        if isinstance(data.get("db_paths"), list):
+            data["db_paths"] = [remap(x) for x in data["db_paths"]]
+        if isinstance(data.get("last_db_path"), str) and data["last_db_path"]:
+            data["last_db_path"] = remap(data["last_db_path"])
+        self.config_path.parent.mkdir(parents=True, exist_ok=True)
+        self.config_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def _scan_db_folder(self):
+        """Подключает базы, найденные в папке хранения (молча, без вопросов).
+
+        Сценарий: человек кладёт файлы баз в папку (или выбирает её папкой
+        хранения) — базы сами появляются в списке. Чужие файлы и базы не
+        нашего формата пропускаются. Возвращает число подключённых."""
+        known = set()
+        data = {"db_paths": []}
+        if self.config_path.exists():
+            try:
+                data = json.loads(self.config_path.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+        for p in (data.get("db_paths") or []):
+            po = Path(p)
+            if not po.is_absolute():
+                po = (Path(self.app_dir) / po).resolve()
+            known.add(str(po.resolve()).lower())
+
+        added = 0
+        try:
+            folder = Path(self._get_db_dir())
+            for cand in sorted(folder.glob("*.sqlite")) + sorted(folder.glob("*.db")):
+                if not cand.is_file():
+                    continue
+                # Пустые файлы не подключаем: валидатор пустышки пускает
+                # (из них создаются новые базы), а молча тащить в список
+                # всякие пустые файлы не нужно
+                try:
+                    if cand.stat().st_size == 0:
+                        continue
+                except OSError:
+                    continue
+                if str(cand.resolve()).lower() in known:
+                    continue
+                ok, _err = self._validate_db_file(str(cand))
+                if not ok:
+                    continue
+                self.add_to_config(str(cand))
+                known.add(str(cand.resolve()).lower())
+                added += 1
+        except Exception:
+            pass
+        if added:
+            self.load_databases()
+        return added
+
 
     def add_to_config(self, new_path: str):
         data = {"db_paths": [], "last_db_path": None, "ui": {}}
@@ -3971,7 +4112,12 @@ class Backend(QObject):
                         break
                         
             self.load_databases()
-            self.showToast.emit(f"Все базы перенесены в {target_path.name}", "success")
+            # В выбранной папке могли уже лежать базы — подключаем их сами
+            found = self._scan_db_folder()
+            msg = f"Все базы перенесены в {target_path.name}"
+            if found:
+                msg += f" · найдено в папке и подключено: {found}"
+            self.showToast.emit(msg, "success")
             
         except Exception as e:
             self.showToast.emit(f"Ошибка переноса: {e}", "error")

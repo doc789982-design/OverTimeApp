@@ -9,8 +9,6 @@ AppLargeModal {
     id: root
     title: "Настройки программы"
 
-    signal requestFileAttach()
-
     // ==========================================
     // ПРОПОРЦИОНАЛЬНЫЙ РАЗМЕР
     // Окно настроек масштабируется относительно главного окна программы:
@@ -237,6 +235,12 @@ AppLargeModal {
                         nameFilters: ["SQLite файлы (*.sqlite *.db)", "Все файлы (*)"]
                         onAccepted: backend.importDatabaseCopy(importFileDialog.selectedFile)
                     }
+                    FileDialog {
+                        id: attachDbDialog
+                        title: "Выберите файл базы"
+                        nameFilters: ["SQLite файлы (*.sqlite *.db)", "Все файлы (*)"]
+                        onAccepted: backend.attachDatabase(attachDbDialog.selectedFile)
+                    }
                     FolderDialog {
                         id: changeStorageDialog
                         title: "Выберите новую папку хранения"
@@ -401,6 +405,27 @@ AppLargeModal {
                                                                     font.weight: AppTheme.weightBold
                                                                 }
                                                             }
+
+                                                            Rectangle {
+                                                                visible: modelData.missing === true
+                                                                Layout.preferredHeight: 18
+                                                                Layout.preferredWidth: missingLabel.implicitWidth + 12
+                                                                radius: 9
+                                                                color: "transparent"
+                                                                border.width: 1
+                                                                border.color: AppTheme.borderDivider
+                                                                Layout.alignment: Qt.AlignVCenter
+
+                                                                Text {
+                                                                    id: missingLabel
+                                                                    anchors.centerIn: parent
+                                                                    text: "файл не найден"
+                                                                    color: AppTheme.textTertiary
+                                                                    font.family: AppTheme.fontFamily
+                                                                    font.pixelSize: AppTheme.sizeMicro
+                                                                    font.weight: AppTheme.weightBold
+                                                                }
+                                                            }
                                                         }
 
                                                         Text {
@@ -517,7 +542,7 @@ AppLargeModal {
                                             text: "Подключить файл..."
                                             Layout.preferredWidth: 160
                                             variant: "secondary"
-                                            onClicked: root.requestFileAttach()
+                                            onClicked: attachDbDialog.open()
                                         }
                                         AppButton {
                                             text: "Импорт копии..."
