@@ -28,6 +28,19 @@ ApplicationWindow {
     // Колбэк для диалога подтверждения (хранится, пока пользователь думает)
     property var confirmCallback: null
 
+    // Идёт ли анимация заставки при выборе базы (клики по списку запрещены)
+    property bool startTransition: false
+
+    // Запуск анимации выбора базы: панель-заставка растёт на весь экран,
+    // затем (если база открылась) улетает вправо с инерцией, открывая
+    // интерфейс программы; при неудаче — возвращается на место
+    function runStartCover(path) {
+        startCover.reset()
+        startCover.path = path
+        startCover.visible = true
+        coverGrow.restart()
+    }
+
     // ЕДИНАЯ ТОЧКА ВХОДА ДЛЯ ВСЕХ ПОДТВЕРЖДЕНИЙ В ПРОГРАММЕ.
     // Пример: mainWindow.askConfirm("Удалить?", "Точно?", "Удалить", function() { ... })
     function askConfirm(titleText, messageText, confirmText, callback, isDanger) {
@@ -63,6 +76,13 @@ ApplicationWindow {
         target: backend
         function onDatabaseOpened() { 
             stackView.replace(mainWorkspacePage) 
+            // Заставка улетает вправо с инерцией, открывая программу
+            if (startCover.visible) coverFly.restart()
+        }
+        function onDatabaseOpenFailed(message) {
+            // База не открылась (файла нет, повреждена) — панель возвращается
+            // на место и экран выбора снова доступен, программа не висит
+            if (startCover.visible && !coverFly.running) coverBack.restart()
         }
         function onItemDeleted(dateStr, colorHex) {
             let workspace = stackView.currentItem
@@ -399,6 +419,106 @@ ApplicationWindow {
     }
 
     // ==========================================
+    // ПАНЕЛЬ-ЗАСТАВКА: закрывает экран при выборе базы.
+    // Растёт на весь экран (маскот по центру), при успехе улетает вправо
+    // с инерцией — под ней уже виден интерфейс открытой базы.
+    // При неудаче возвращается на место — экран выбора снова доступен.
+    // ==========================================
+    Rectangle {
+        id: startCover
+        z: 50
+        anchors.top: customTitleBar.bottom
+        anchors.bottom: parent.bottom
+        x: 0
+        width: 300
+        visible: false
+        color: AppUI.AppTheme.bgPanel
+        property string path: ""
+
+        // На время анимации держит клики при себе — под панелью ничего не нажимается
+        MouseArea { anchors.fill: parent; onClicked: {} }
+
+        Rectangle {
+            anchors.right: parent.right
+            width: 1; height: parent.height
+            color: AppUI.AppTheme.borderDivider
+        }
+        Column {
+            anchors.centerIn: parent
+            width: 260
+            spacing: AppUI.AppTheme.spaceL
+            AppUI.AppEmptyMascot {
+                anchors.horizontalCenter: parent.horizontalCenter
+                width: 180; height: 180
+            }
+            Column {
+                width: parent.width
+                spacing: AppUI.AppTheme.spaceXXS
+                Text {
+                    width: parent.width
+                    text: "OVERTIMETAB"
+                    color: AppUI.AppTheme.accentBrand
+                    font.family: AppUI.AppTheme.fontFamily
+                    font.pixelSize: AppUI.AppTheme.sizeH4
+                    font.weight: AppUI.AppTheme.weightBold
+                    font.letterSpacing: 1
+                    horizontalAlignment: Text.AlignHCenter
+                }
+                Text {
+                    width: parent.width
+                    text: AppUI.AppTheme.appVersionFull
+                    color: AppUI.AppTheme.textTertiary
+                    font.family: AppUI.AppTheme.fontFamily
+                    font.pixelSize: AppUI.AppTheme.sizeSmall
+                    font.weight: AppUI.AppTheme.weightMedium
+                    horizontalAlignment: Text.AlignHCenter
+                }
+            }
+        }
+
+        function reset() {
+            x = 0
+            width = 300
+            visible = false
+        }
+    }
+
+    SequentialAnimation {
+        id: coverGrow
+        PauseAnimation { duration: 150 }
+        NumberAnimation {
+            target: startCover; property: "width"
+            to: mainWindow.width; duration: 600
+            easing.type: Easing.InOutExpo
+        }
+        ScriptAction { script: backend.openDatabase(startCover.path) }
+    }
+    SequentialAnimation {
+        id: coverFly
+        NumberAnimation {
+            target: startCover; property: "x"
+            to: mainWindow.width; duration: 520
+            // быстрый старт и плавное торможение — «улетела с инерцией»
+            easing.type: Easing.OutQuart
+        }
+        ScriptAction { script: { startCover.reset(); mainWindow.startTransition = false } }
+    }
+    SequentialAnimation {
+        id: coverBack
+        NumberAnimation {
+            target: startCover; property: "width"
+            to: 300; duration: 450
+            easing.type: Easing.InOutExpo
+        }
+        ScriptAction { script: {
+            startCover.reset()
+            mainWindow.startTransition = false
+            let page = stackView.currentItem
+            if (page && page.restoreSelection) page.restoreSelection()
+        } }
+    }
+
+    // ==========================================
     // СТРАНИЦА ВЫБОРА БД
     // ==========================================
     Component {
@@ -407,24 +527,25 @@ ApplicationWindow {
             id: dbPageRoot
             property string targetDbPath: ""
             Component.onCompleted: { 
-                if (backend.dbList.length === 1 && !backend.dbList[0].missing) { 
-                    targetDbPath = backend.dbList[0].path
+                if (backend.dbList.length === 1) { 
                     autoStartTimer.start() 
                 } 
             }
             Timer { 
                 id: autoStartTimer
                 interval: 100
-                onTriggered: { 
-                    rightContentArea.opacity = 0
-                    expandAnim.start() 
-                } 
+                onTriggered: dbPageRoot.openDbAnimated(backend.dbList[0].path)
             }
             function openDbAnimated(path) { 
-                if (expandAnim.running) return
+                if (mainWindow.startTransition) return
+                mainWindow.startTransition = true
                 targetDbPath = path
                 rightContentArea.opacity = 0
-                expandAnim.start() 
+                mainWindow.runStartCover(path)
+            }
+            // Панель-заставка вернулась (база не открылась) — показываем выбор снова
+            function restoreSelection() {
+                rightContentArea.opacity = 1
             }
             
             Item {
@@ -505,12 +626,8 @@ ApplicationWindow {
                             }
                             Text {
                                 width: parent.width
-                                text: modelData.missing === true
-                                      ? "файл не найден — " + modelData.path
-                                      : modelData.path
-                                color: modelData.missing === true
-                                       ? AppUI.AppTheme.textTertiary
-                                       : AppUI.AppTheme.textSecondary
+                                text: modelData.path
+                                color: AppUI.AppTheme.textSecondary
                                 font.pixelSize: AppUI.AppTheme.sizeSmall
                                 elide: Text.ElideMiddle
                             }
@@ -660,16 +777,6 @@ ApplicationWindow {
                 }
             }
 
-            SequentialAnimation {
-                id: expandAnim
-                PauseAnimation { duration: 150 }
-                NumberAnimation {
-                    target: leftPanel; property: "width"
-                    to: dbPageRoot.width; duration: 600
-                    easing.type: Easing.InOutExpo
-                }
-                ScriptAction { script: backend.openDatabase(dbPageRoot.targetDbPath) }
-            }
         }
     }
 

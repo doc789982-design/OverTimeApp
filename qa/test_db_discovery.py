@@ -115,15 +115,19 @@ def main() -> int:
     assert cfg["last_db_path"] == str(dbs_dir / "gamma.sqlite").replace("\\", "/"), cfg
     print("2: перенесённую руками базу программа находит и перепривязывает ✓")
 
-    # ── 3. файл исчез совсем — виден с пометкой, не вычеркнут ──
+    # ── 3. файл исчез совсем — базы в списке нет (путь в конфиге живёт) ──
     write_config(data_dir, [tmp / "nowhere" / "delta.sqlite"])
     h3 = Harness(data_dir, app_dir)
     h3.load_databases()
-    assert len(h3._db_list) == 1, h3._db_list
-    e = h3._db_list[0]
-    assert e.get("missing") is True and e["name"] == "delta", e
+    assert h3._db_list == [], h3._db_list
+    # путь остаётся в конфиге — выбрать пропавшее нельзя
     assert read_paths(data_dir) == [str(tmp / "nowhere" / "delta.sqlite")]
-    print("3: пропавшая база показана с пометкой «файл не найден» ✓")
+    # файл вернулся на старое место — база снова в списке
+    make_db(tmp / "nowhere" / "delta.sqlite")
+    h3b = Harness(data_dir, app_dir)
+    h3b.load_databases()
+    assert len(h3b._db_list) == 1 and "delta" in h3b._db_list[0]["path"], h3b._db_list
+    print("3: пропавшая база не показывается; файл вернулся — база вернулась ✓")
 
     # ── 4. чужой sqlite и пустые файлы не подключаются ──
     import sqlite3
@@ -159,7 +163,43 @@ def main() -> int:
                for e in h6._db_list), h6._db_list
     print("5: выбранная в настройках папка хранения ищется наравне со стандартной ✓")
 
-    print("═══ БАЗЫ НАХОДЯТСЯ, ПУТИ ЛЕЧАТСЯ, ПРОПАВИ ПОКАЗАНЫ ═══")
+    # ── 6. неудача открытия базы — сигнал (QML возвращает экран выбора) ──
+    class FailHarness(QObject):
+        showToast = Signal(str, str)
+        databaseOpenFailed = Signal(str)
+
+        def __init__(self):
+            super().__init__()
+            self.active_db = None
+            for name in ("openDatabase", "_validate_db_file"):
+                setattr(self, name, types.MethodType(
+                    getattr(Main.Backend, name), self))
+
+    fh = FailHarness()
+    captured = []
+    fh.databaseOpenFailed.connect(lambda msg: captured.append(msg))
+
+    # файла нет
+    fh.openDatabase(str(tmp / "no_such" / "x.sqlite"))
+    assert captured and "не найден" in captured[0], captured
+    # файл повреждён (не SQLite)
+    bad = tmp / "broken.sqlite"
+    bad.write_bytes(b"not a database at all")
+    captured.clear()
+    fh.openDatabase(str(bad))
+    assert captured, captured
+    # чужая база (SQLite, но не табель)
+    alien = tmp / "alien.sqlite"
+    import sqlite3
+    con = sqlite3.connect(str(alien))
+    con.execute("CREATE TABLE foo (x INT)")
+    con.commit(); con.close()
+    captured.clear()
+    fh.openDatabase(str(alien))
+    assert captured, captured
+    print("6: неудача открытия (нет файла, повреждена, чужая) — сигнал об ошибке ✓")
+
+    print("═══ БАЗЫ НАХОДЯТСЯ, ПУТИ ЛЕЧАТСЯ, НЕУДАЧА ВОЗВРАЩАЕТ ВЫБОР ═══")
     return 0
 
 

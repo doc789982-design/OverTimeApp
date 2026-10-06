@@ -450,6 +450,7 @@ class Backend(QObject):
     calendarDaysChanged = Signal()
     currentPeriodChanged = Signal()
     databaseOpened = Signal()
+    databaseOpenFailed = Signal(str)   # базу открыть не удалось (нет файла, повреждена)
     activeDepartmentNameChanged = Signal()
     selectedEmployeeChanged = Signal()
     monthSummaryChanged = Signal() # Сигнал для нижней панели итогов
@@ -843,10 +844,10 @@ class Backend(QObject):
                     healed[str(path_obj)] = str(alt)
                     path_obj = alt
 
-            # Всё равно нет — показываем базу с пометкой, а не вычёркиваем молча
+            # Файла нет и не нашёлся — базу не показываем (выбрать всё равно
+            # нельзя); путь остаётся в конфиге: положишь файл на место —
+            # база вернётся в список сама
             if not path_obj.exists():
-                loaded_dbs.append({"name": path_obj.stem, "path": str(path_obj), "missing": True})
-                unique_paths.add(str(path_obj))
                 continue
 
             try:
@@ -1288,12 +1289,14 @@ class Backend(QObject):
         ok, err = self._validate_db_file(path)
         if not ok:
             self.showToast.emit(f"Не удалось открыть базу: {err}", "error")
+            self.databaseOpenFailed.emit(err)
             return
 
         try:
             new_db = DB(path)
         except Exception as e:
             self.showToast.emit(f"Не удалось открыть базу: {e}", "error")
+            self.databaseOpenFailed.emit(str(e))
             return
 
         if self.active_db:

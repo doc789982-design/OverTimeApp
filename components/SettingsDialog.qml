@@ -406,26 +406,6 @@ AppLargeModal {
                                                                 }
                                                             }
 
-                                                            Rectangle {
-                                                                visible: modelData.missing === true
-                                                                Layout.preferredHeight: 18
-                                                                Layout.preferredWidth: missingLabel.implicitWidth + 12
-                                                                radius: 9
-                                                                color: "transparent"
-                                                                border.width: 1
-                                                                border.color: AppTheme.borderDivider
-                                                                Layout.alignment: Qt.AlignVCenter
-
-                                                                Text {
-                                                                    id: missingLabel
-                                                                    anchors.centerIn: parent
-                                                                    text: "файл не найден"
-                                                                    color: AppTheme.textTertiary
-                                                                    font.family: AppTheme.fontFamily
-                                                                    font.pixelSize: AppTheme.sizeMicro
-                                                                    font.weight: AppTheme.weightBold
-                                                                }
-                                                            }
                                                         }
 
                                                         Text {
