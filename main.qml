@@ -75,7 +75,9 @@ ApplicationWindow {
     Connections {
         target: backend
         function onDatabaseOpened() { 
-            stackView.replace(mainWorkspacePage) 
+            // Immediate: страница меняется мгновенно — улетающая панель
+            // открывает уже готовый интерфейс базы, без растворения
+            stackView.replace(mainWorkspacePage, StackView.Immediate) 
             // Заставка улетает вправо с инерцией, открывая программу
             if (startCover.visible) coverFly.restart()
         }
@@ -415,107 +417,106 @@ ApplicationWindow {
                     }
                 }
             }
-        }
-    }
-
-    // ==========================================
-    // ПАНЕЛЬ-ЗАСТАВКА: закрывает экран при выборе базы.
-    // Растёт на весь экран (маскот по центру), при успехе улетает вправо
-    // с инерцией — под ней уже виден интерфейс открытой базы.
-    // При неудаче возвращается на место — экран выбора снова доступен.
-    // ==========================================
-    Rectangle {
-        id: startCover
-        z: 50
-        anchors.top: customTitleBar.bottom
-        anchors.bottom: parent.bottom
-        x: 0
-        width: 300
-        visible: false
-        color: AppUI.AppTheme.bgPanel
-        property string path: ""
-
-        // На время анимации держит клики при себе — под панелью ничего не нажимается
-        MouseArea { anchors.fill: parent; onClicked: {} }
-
+        // ==========================================
+        // ПАНЕЛЬ-ЗАСТАВКА: закрывает экран при выборе базы.
+        // Растёт на весь экран (маскот по центру), при успехе улетает вправо
+        // с инерцией — под ней уже виден интерфейс открытой базы.
+        // При неудаче возвращается на место — экран выбора снова доступен.
+        // ==========================================
         Rectangle {
-            anchors.right: parent.right
-            width: 1; height: parent.height
-            color: AppUI.AppTheme.borderDivider
-        }
-        Column {
-            anchors.centerIn: parent
-            width: 260
-            spacing: AppUI.AppTheme.spaceL
-            AppUI.AppEmptyMascot {
-                anchors.horizontalCenter: parent.horizontalCenter
-                width: 180; height: 180
+            id: startCover
+            z: 50
+            anchors.top: customTitleBar.bottom
+            anchors.bottom: parent.bottom
+            x: 0
+            width: 300
+            visible: false
+            color: AppUI.AppTheme.bgPanel
+            property string path: ""
+
+            // На время анимации держит клики при себе — под панелью ничего не нажимается
+            MouseArea { anchors.fill: parent; onClicked: {} }
+
+            Rectangle {
+                anchors.right: parent.right
+                width: 1; height: parent.height
+                color: AppUI.AppTheme.borderDivider
             }
             Column {
-                width: parent.width
-                spacing: AppUI.AppTheme.spaceXXS
-                Text {
-                    width: parent.width
-                    text: "OVERTIMETAB"
-                    color: AppUI.AppTheme.accentBrand
-                    font.family: AppUI.AppTheme.fontFamily
-                    font.pixelSize: AppUI.AppTheme.sizeH4
-                    font.weight: AppUI.AppTheme.weightBold
-                    font.letterSpacing: 1
-                    horizontalAlignment: Text.AlignHCenter
+                anchors.centerIn: parent
+                width: 260
+                spacing: AppUI.AppTheme.spaceL
+                AppUI.AppEmptyMascot {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    width: 180; height: 180
                 }
-                Text {
+                Column {
                     width: parent.width
-                    text: AppUI.AppTheme.appVersionFull
-                    color: AppUI.AppTheme.textTertiary
-                    font.family: AppUI.AppTheme.fontFamily
-                    font.pixelSize: AppUI.AppTheme.sizeSmall
-                    font.weight: AppUI.AppTheme.weightMedium
-                    horizontalAlignment: Text.AlignHCenter
+                    spacing: AppUI.AppTheme.spaceXXS
+                    Text {
+                        width: parent.width
+                        text: "OVERTIMETAB"
+                        color: AppUI.AppTheme.accentBrand
+                        font.family: AppUI.AppTheme.fontFamily
+                        font.pixelSize: AppUI.AppTheme.sizeH4
+                        font.weight: AppUI.AppTheme.weightBold
+                        font.letterSpacing: 1
+                        horizontalAlignment: Text.AlignHCenter
+                    }
+                    Text {
+                        width: parent.width
+                        text: AppUI.AppTheme.appVersionFull
+                        color: AppUI.AppTheme.textTertiary
+                        font.family: AppUI.AppTheme.fontFamily
+                        font.pixelSize: AppUI.AppTheme.sizeSmall
+                        font.weight: AppUI.AppTheme.weightMedium
+                        horizontalAlignment: Text.AlignHCenter
+                    }
                 }
+            }
+
+            function reset() {
+                x = 0
+                width = 300
+                visible = false
             }
         }
 
-        function reset() {
-            x = 0
-            width = 300
-            visible = false
+        SequentialAnimation {
+            id: coverGrow
+            PauseAnimation { duration: 150 }
+            NumberAnimation {
+                target: startCover; property: "width"
+                to: mainWindow.width; duration: 600
+                easing.type: Easing.InOutExpo
+            }
+            ScriptAction { script: backend.openDatabase(startCover.path) }
         }
-    }
-
-    SequentialAnimation {
-        id: coverGrow
-        PauseAnimation { duration: 150 }
-        NumberAnimation {
-            target: startCover; property: "width"
-            to: mainWindow.width; duration: 600
-            easing.type: Easing.InOutExpo
+        SequentialAnimation {
+            id: coverFly
+            NumberAnimation {
+                target: startCover; property: "x"
+                to: mainWindow.width; duration: 520
+                // быстрый старт и плавное торможение — «улетела с инерцией»
+                easing.type: Easing.OutQuart
+            }
+            ScriptAction { script: { startCover.reset(); mainWindow.startTransition = false } }
         }
-        ScriptAction { script: backend.openDatabase(startCover.path) }
-    }
-    SequentialAnimation {
-        id: coverFly
-        NumberAnimation {
-            target: startCover; property: "x"
-            to: mainWindow.width; duration: 520
-            // быстрый старт и плавное торможение — «улетела с инерцией»
-            easing.type: Easing.OutQuart
+        SequentialAnimation {
+            id: coverBack
+            NumberAnimation {
+                target: startCover; property: "width"
+                to: 300; duration: 450
+                easing.type: Easing.InOutExpo
+            }
+            ScriptAction { script: {
+                startCover.reset()
+                mainWindow.startTransition = false
+                let page = stackView.currentItem
+                if (page && page.restoreSelection) page.restoreSelection()
+            } }
         }
-        ScriptAction { script: { startCover.reset(); mainWindow.startTransition = false } }
-    }
-    SequentialAnimation {
-        id: coverBack
-        NumberAnimation {
-            target: startCover; property: "width"
-            to: 300; duration: 450
-            easing.type: Easing.InOutExpo
         }
-        ScriptAction { script: {
-            startCover.reset()
-            mainWindow.startTransition = false
-            let page = stackView.currentItem
-            if (page && page.restoreSelection) page.restoreSelection()
-        } }
     }
 
     // ==========================================
@@ -541,10 +542,12 @@ ApplicationWindow {
                 mainWindow.startTransition = true
                 targetDbPath = path
                 rightContentArea.opacity = 0
+                leftPanel.visible = false
                 mainWindow.runStartCover(path)
             }
             // Панель-заставка вернулась (база не открылась) — показываем выбор снова
             function restoreSelection() {
+                leftPanel.visible = true
                 rightContentArea.opacity = 1
             }
             
