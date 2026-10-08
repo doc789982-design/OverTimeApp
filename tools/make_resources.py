@@ -23,12 +23,13 @@ ROOT = Path(__file__).resolve().parent.parent
 
 # Что кладём внутрь exe. Папки берутся целиком (кроме мусора),
 # отдельные файлы — поимённо.
-DIRS = ["components", "icons", "fonts", "shadows"]
+DIRS = ["components", "icons", "fonts", "shadows", "shaders"]
 ROOT_FILES = ["main.qml", "Template.xlsx", "app_icon.png", "CHANGELOG.md", "version.json"]
 
 # Какие расширения из папок забираем (всё остальное — мимо кассы:
-# скрипты и заготовки для ИИ в exe не попадают)
-INCLUDE_EXT = {".qml", ".svg", ".png", ".jpg", ".ttf", ".otf"}
+# скрипты и заготовки для ИИ в exe не попадают). .qsb — запечённый шейдер
+# пыли удаления (см. shaders/thanos_dust.frag)
+INCLUDE_EXT = {".qml", ".svg", ".png", ".jpg", ".ttf", ".otf", ".qsb"}
 
 # Шрифты, которые программа реально открывает (см. AppTheme.qml и
 # PRINT_FONT_FILES в Main.py — шрифт печати табеля PT Astra Serif вшит

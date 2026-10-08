@@ -76,4 +76,9 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    rc = main()
+    sys.stdout.flush()
+    # PySide6 6.12 падает при финализации интерпретатора после QML-сцены
+    # (none_dealloc на выходе, проверки при этом все прошли) — выходим
+    # сразу после проверок, код возврата честный
+    os._exit(rc)
