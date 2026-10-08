@@ -1620,6 +1620,16 @@ def whats_new_qml(blocks: list[dict]) -> list[dict]:
     return changelog_for_qml([merge_changelog_blocks(blocks)])
 
 
+# Стандартная фраза для обновления без записей в журнале (все правки
+# внутренние): окно «Что нового» не должно молчать после обновления
+FALLBACK_WHATS_NEW_TEXT = "Мелкие улучшения и исправления"
+
+
+def whats_new_fallback() -> list[dict]:
+    """Порция «Что нового», когда обновлению нечего рассказать."""
+    return changelog_for_qml([{"changed": [FALLBACK_WHATS_NEW_TEXT]}])
+
+
 def changelog_for_qml(blocks: list[dict]) -> list[dict]:
     """Плоские словари для QML Repeater."""
     out = []

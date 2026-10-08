@@ -4335,6 +4335,14 @@ class Backend(QObject):
         text = self._read_changelog_text()
         blocks = app_update.changelog_for_builds(text, since, cur_build)
         self._whats_new = app_update.whats_new_qml(blocks)
+        # Обновление вышло, а записей в журнале нет (правки внутренние) —
+        # показываем стандартную фразу, чтобы окно не молчало
+        if self._whats_new_fresh:
+            has_any = any(b.get("hasAdded") or b.get("hasChanged")
+                          or b.get("hasFixed") or b.get("hasRemoved")
+                          for b in self._whats_new)
+            if not has_any:
+                self._whats_new = app_update.whats_new_fallback()
 
     @Slot()
     def ackWhatsNew(self):

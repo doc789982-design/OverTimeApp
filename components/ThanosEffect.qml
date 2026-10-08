@@ -2,17 +2,12 @@ import QtQuick
 
 // Эффект удаления («танос»): карточка растворяется в пыли.
 //
-// Два пути:
-//  1. GPU (ShaderEffect) — основная дорога, идея из Telegram Desktop
-//     (ui/effects/thanos_effect): случайность не хранят, а вычисляют
-//     хешем от координаты и зерна, цвет пылинка берёт из самого снимка
-//     карточки. CPU в кадре не считает ничего — только время.
-//  2. Canvas — запасной путь для машин без графического ускорителя
-//     (и для песочницы тестов): холст по размеру карточки, траектории
-//     «запечены» (10 вариантов на размер карточки).
-//
-// Общие для обоих путей: запас холста вокруг карточки (вправо пыль летит
-// дальше всего), волна справа налево, время жизни пылинок 1.39–1.94 с.
+// Холст НЕ на всё окно, а по размеру карточки + запас на разлёт:
+// большой Canvas при обновлении каждый кадр перезаливает текстуру
+// размером с окно (см. доку Qt Quick Canvas, раздел Threaded Rendering
+// and Render Target) — именно это грузило машины, а не сама пыль.
+// Траектории пыли «запечены»: 10 вариантов на размер карточки,
+// генерируются один раз, дальше эффект проигрывает готовый вариант.
 Item {
     id: root
     anchors.fill: parent
@@ -31,43 +26,10 @@ Item {
     readonly property real padRight: 150
     readonly property real padBottom: 24
 
-    // Запечённые траектории запасного пути: { "WxH": [вариант, ...] }
+    // Запечённые траектории: { "WxH": [вариант, ...] }
     property var variantCache: ({})
     readonly property int variantLimit: 10
     readonly property int sizeLimit: 12
-
-    // ── GPU-путь ──
-    // Графическое ускорение есть? Software/Null/Unknown — нет,
-    // идём запасным путём (имена значений — из доки GraphicsInfo)
-    readonly property bool gpuOK: GraphicsInfo.api !== GraphicsInfo.Software
-                                  && GraphicsInfo.api !== GraphicsInfo.Null
-                                  && GraphicsInfo.api !== GraphicsInfo.Unknown
-    property real tSec: 0              // время эффекта, с
-    property real seed: 0              // зерно пыли: каждый взрыв новый
-    property bool snapshotReady: false
-    property bool baseReady: false
-    property bool started: false
-    // волна 0.5 с + максимальная жизнь пылинки (1.389 + 0.555 с)
-    readonly property real waveSec: 0.5
-    readonly property real totalSec: waveSec + 1.389 + 0.555 + 0.05
-    // доля волны — кривая торможения OutQuad, как в запасном пути
-    readonly property real waveFrac: {
-        var p = tSec / waveSec
-        if (p > 1) p = 1
-        return 1 - (1 - p) * (1 - p)
-    }
-    // классы пыли: скорость семьи, px/с (vx, vy) + постоянный снос (вправо-вверх)
-    readonly property var dustMotions: [
-        Qt.vector4d(55, -30, 72, -24),
-        Qt.vector4d(90, -55, 72, -24),
-        Qt.vector4d(35, -10, 72, -24)
-    ]
-    // размер пылинок по семьям, px (быстрая — мелкая, ленивая — крупная)
-    // и сколько пылинок на ячейку сетки: мелкой пыли больше, крупной — меньше
-    readonly property var dustSizes: [3.0, 2.3, 4.0]
-    readonly property var dustDensities: [1.7, 2.0, 1.2]
-    readonly property real dustSizeJitter: 1.1
-    readonly property real dustGravity: 10
 
     signal finished()
     signal snapshotTaken()
@@ -76,62 +38,8 @@ Item {
         id: hiddenImage
         visible: false
         onStatusChanged: {
-            if (status === Image.Ready || status === Image.Error) {
-                root.snapshotReady = true
-                root.tryBegin()
-            }
-        }
-    }
-
-    // ── GPU-путь: гаснущий остаток карточки + три слоя пыли ──
-    Item {
-        id: shaderStage
-        visible: root.isExploding && root.gpuOK
-        clip: true
-
-        Image {
-            id: baseImage
-            // остаток карточки гаснет так же, как в запасном пути:
-            // общая прозрачность 1 − волна×1.5
-            opacity: Math.max(0, 1 - root.waveFrac * 1.5)
-            fillMode: Image.Stretch
-            onStatusChanged: {
-                if (status === Image.Ready || status === Image.Error) {
-                    root.baseReady = true
-                    root.tryBegin()
-                }
-            }
-        }
-
-        // Пыль создаём только при графическом ускорении: под софтверным
-        // рендером ShaderEffect не работает и не должен даже создаваться
-        Loader {
-            id: dustLoader
-            anchors.fill: parent
-            active: root.gpuOK
-            sourceComponent: Component {
-                Repeater {
-                    model: root.dustMotions.length
-                    ShaderEffect {
-                        anchors.fill: parent
-                        blending: true
-                        property var src: hiddenImage
-                        property real uT: root.tSec
-                        // зерно у каждого слоя своё: иначе семьи дадут
-                        // коррелированную решётку одинаковых пылинок
-                        property real uSeed: root.seed + index * 0.7371
-                        property vector2d uQuad: Qt.vector2d(shaderStage.width, shaderStage.height)
-                        property vector4d uCard: Qt.vector4d(baseImage.x, baseImage.y,
-                                                             baseImage.width, baseImage.height)
-                        property vector4d uMotion: root.dustMotions[index]
-                        property vector4d uClass: Qt.vector4d(root.dustDensities[index],
-                                                              root.dustGravity,
-                                                              root.dustSizes[index],
-                                                              root.dustSizeJitter)
-                        property vector2d uLife: Qt.vector2d(1.389, 0.555)
-                        fragmentShader: Qt.resolvedUrl("../shaders/thanos_dust.frag.qsb")
-                    }
-                }
+            if (status === Image.Ready) {
+                canvas.initExplosion();
             }
         }
     }
@@ -139,13 +47,11 @@ Item {
     Canvas {
         id: canvas
 
-        property real itemX: 0
-        property real itemY: 0
-        property int iw: 0
+        property real ox: 0      // карточка внутри холста
+        property real oy: 0
+        property int iw: 0       // целый размер карточки
         property int ih: 0
         property int frame: 0
-
-        visible: !root.gpuOK
 
         function initExplosion() {
             var ctx = getContext("2d");
@@ -157,8 +63,8 @@ Item {
             var w = canvas.iw;
             var h = canvas.ih;
 
-            ctx.drawImage(hiddenImage, canvas.itemX, canvas.itemY, w, h);
-            var imgData = ctx.getImageData(canvas.itemX, canvas.itemY, w, h);
+            ctx.drawImage(hiddenImage, canvas.ox, canvas.oy, w, h);
+            var imgData = ctx.getImageData(canvas.ox, canvas.oy, w, h);
             var data = imgData.data;
 
             // Готовый вариант траекторий под этот размер карточки
@@ -179,8 +85,8 @@ Item {
                     var idx = (y * w + x) * 4;
                     if (data[idx + 3] > 10) {
                         pList.push({
-                            currX: canvas.itemX + x,
-                            currY: canvas.itemY + y,
+                            currX: canvas.ox + x,
+                            currY: canvas.oy + y,
                             vx: v.vx[i],
                             vy: v.vy[i],
                             z: 0.0,
@@ -230,7 +136,7 @@ Item {
             var baseAlpha = 1.0 - (root.waveProgress * 1.5);
             if (baseAlpha > 0) {
                 ctx.globalAlpha = baseAlpha;
-                ctx.drawImage(hiddenImage, canvas.itemX, canvas.itemY, canvas.iw, canvas.ih);
+                ctx.drawImage(hiddenImage, canvas.ox, canvas.oy, canvas.iw, canvas.ih);
                 ctx.globalAlpha = 1.0;
             }
 
@@ -274,9 +180,7 @@ Item {
                     }
                     var a = p.life > 1 ? 1 : p.life;
                     ctx.globalAlpha = a;
-                    // пылинка крупная и к концу жизни сжимается — как в шейдере
-                    var s = 0.8 + 1.8 * a;
-                    ctx.fillRect(p.currX, p.currY, s, s);
+                    ctx.fillRect(p.currX, p.currY, 1, 1);
                 }
             }
             ctx.globalAlpha = 1.0;
@@ -289,21 +193,6 @@ Item {
         to: 1.0
         duration: 500
         easing.type: Easing.OutQuad
-    }
-
-    // ── GPU-путь: часы эффекта (линейное время, волна изгибается
-    // в шейдере и в waveFrac) ──
-    NumberAnimation {
-        id: tAnim
-        target: root
-        property: "tSec"
-        from: 0
-        to: root.totalSec
-        duration: root.totalSec * 1000
-        onStopped: {
-            root.isExploding = false
-            root.finished()
-        }
     }
 
     Timer {
@@ -330,22 +219,6 @@ Item {
                     root.finished();
                 }
             }
-        }
-    }
-
-    // Старт эффекта: оба изображения готовы (снимок и его копия для базы)
-    function tryBegin() {
-        if (!isExploding || started || !snapshotReady || !baseReady) return
-        started = true
-        if (gpuOK) {
-            if (root.targetItem) root.targetItem.opacity = 0.0
-            root.snapshotTaken()
-            if (root.targetItem) root.targetItem.opacity = 1.0
-            root.seed = Math.random()
-            root.tSec = 0
-            tAnim.restart()
-        } else {
-            canvas.initExplosion()
         }
     }
 
@@ -416,9 +289,6 @@ Item {
         if (!target) return;
         root.isExploding = true;
         root.targetItem = target;
-        root.started = false;
-        root.snapshotReady = false;
-        root.baseReady = false;
 
         var pt = target.mapToItem(root, 0, 0);
         var ix = Math.floor(pt.x);
@@ -426,35 +296,20 @@ Item {
         canvas.iw = Math.max(1, Math.floor(target.width));
         canvas.ih = Math.max(1, Math.floor(target.height));
 
-        // Холст — карточка плюс запас на разлёт, в пределах окна.
-        // Один и тот же прямоугольник у обоих путей: Canvas и шейдерный слой
+        // Холст — карточка плюс запас на разлёт, в пределах окна
         var cx = Math.max(0, Math.min(root.width - 1, ix - padLeft));
         var cy = Math.max(0, Math.min(root.height - 1, iy - padTop));
         var cw = Math.max(1, Math.min(root.width - cx, canvas.iw + padLeft + padRight));
         var ch = Math.max(1, Math.min(root.height - cy, canvas.ih + padTop + padBottom));
-
         canvas.x = cx;
         canvas.y = cy;
         canvas.width = cw;
         canvas.height = ch;
-        canvas.itemX = ix - cx;
-        canvas.itemY = iy - cy;
-
-        shaderStage.x = cx;
-        shaderStage.y = cy;
-        shaderStage.width = cw;
-        shaderStage.height = ch;
-        baseImage.x = ix - cx;
-        baseImage.y = iy - cy;
-        baseImage.width = canvas.iw;
-        baseImage.height = canvas.ih;
-
-        // База GPU-пути грузит тот же снимок; пыль сэмплерирует hiddenImage
-        baseImage.source = "";
+        canvas.ox = ix - cx;
+        canvas.oy = iy - cy;
 
         target.grabToImage(function(res) {
             hiddenImage.source = res.url;
-            baseImage.source = res.url;
         });
     }
 }
