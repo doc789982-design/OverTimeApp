@@ -5,9 +5,10 @@
 в пыли. Идея шейдерного пути взята из Telegram Desktop (thanos_effect):
 случайность не хранят — вычисляют хешем от координаты и зерна, цвет
 пылинка берёт из самого снимка карточки; CPU в кадре не считает ничего.
-На машинах без графического ускорителя (и в песочнице тестов — софтверный
-рендер) работает запасной путь: Canvas по размеру карточки с запечёнными
-вариантами траекторий.
+Пылинка — мягкая капля, вытянутая по полёту и сжимающаяся к концу жизни
+(не пиксельный шум). На машинах без графического ускорителя (и в
+песочнице тестов — софтверный рендер) работает запасной путь: Canvas
+по размеру карточки с запечёнными вариантами траекторий.
 
 Инварианты:
   - под софтверным рендером эффект идёт запасным путём: шейдерные слои
@@ -19,11 +20,13 @@
   - карточка с дробной шириной рождает столько же пыли, сколько целая;
   - запечённые варианты: пул на размер растёт до 10 и не дальше,
     повторные вызовы возвращают уже запечённые варианты (те же объекты);
-  - шейдер на месте: .frag соблюдает контракт Qt (qt_TexCoord0,
-    qt_Matrix первым в блоке, сэмплер на binding 1), запечённый .qsb
-    валиден (сжатый QShader), шейдеры пакуются в exe (make_resources);
+  - шейдер на месте и «дорогой»: контракт Qt (qt_TexCoord0, qt_Matrix
+    первым в блоке, сэмплер на binding 1, premultiplied), мягкий край
+    (smoothstep), сжатие капли к концу жизни, кольцо соседних ячеек 5x5
+    покрывает радиус капли с вытяжкой, у каждого слоя своё зерно;
   - математика пыли (зеркало формул на Python): пыль гаснет к концу
-    эффекта и не вылетает за запас холста.
+    эффекта, не вылетает за запас холста, и её ДОСТАТОЧНО — капель
+    заметно больше сотни, покрытие кратно больше пиксельного вида.
 
 Запуск:
     LD_LIBRARY_PATH=/tmp/stubs QT_QPA_PLATFORM=offscreen \
@@ -113,23 +116,44 @@ def wait_finished(app, effect, seconds=15.0):
     return False
 
 
+def parse_list(qml_text, name):
+    m = re.search(rf"{name}:\s*\[([^\]]+)\]", qml_text)
+    assert m, f"в ThanosEffect.qml нет списка {name}"
+    return [float(x) for x in m.group(1).split(",")]
+
+
 def check_shader_files():
-    """Контракт шейдера, валидность .qsb и упаковка в exe."""
+    """Контракт шейдера, «дорогой» вид и упаковка в exe."""
     frag_path = os.path.join(ROOT, "shaders", "thanos_dust.frag")
     qsb_path = frag_path + ".qsb"
     assert os.path.exists(frag_path), "нет shaders/thanos_dust.frag"
     assert os.path.exists(qsb_path), "нет запечённого shaders/thanos_dust.frag.qsb"
     frag = open(frag_path, encoding="utf-8").read()
+    effect_qml = open(os.path.join(ROOT, "components", "ThanosEffect.qml"),
+                      encoding="utf-8").read()
 
-    # Контракт Qt для fragment-only шейдера ShaderEffect (дока Qt):
-    # вход с ИМЕНЕМ qt_TexCoord0, блок начинается с qt_Matrix/qt_Opacity,
-    # сэмплер на binding 1, выход premultiplied
+    # Контракт Qt для fragment-only шейдера ShaderEffect (дока Qt)
     assert "in vec2 qt_TexCoord0;" in frag, "вход обязан называться qt_TexCoord0"
     m = re.search(r"uniform buf \{\s*mat4 qt_Matrix;\s*float qt_Opacity;", frag)
     assert m, "блок обязан начинаться с qt_Matrix и qt_Opacity (дока Qt)"
     assert "layout(binding = 1) uniform sampler2D src;" in frag, "сэмплер на binding 1"
-    assert "fragColor = vec4(c.rgb * c.a * a, c.a * a);" in frag, "выход premultiplied"
+    assert "fragColor = vec4(accRGB, accA);" in frag, "выход premultiplied"
     print("шейдер: контракт Qt соблюдён (qt_TexCoord0, qt_Matrix первым, binding 1, premultiplied)")
+
+    # «Дорогой» вид: мягкая капля, сжатие к концу жизни, плотность
+    assert "smoothstep(0.35, 1.0, length(q))" in frag, "у капли нет мягкого края"
+    assert "(0.35 + 0.65 * a)" in frag, "капля не сжимается к концу жизни"
+    assert "for (int j = -2; j <= 2; j++)" in frag, "кольцо соседних ячеек обязано быть 5x5"
+    assert "for (int s = 0; s < 2; s++)" in frag, "в ячейке нет второй пылинки"
+    assert "clamp(uClass.x - float(s), 0.0, 1.0)" in frag, "нет ворот плотности по подп слотам"
+    assert "root.seed + index" in effect_qml, "зерно слоя не сдвинуто по индексу"
+    sizes = parse_list(effect_qml, "dustSizes")
+    densities = parse_list(effect_qml, "dustDensities")
+    assert len(sizes) == 3 and len(densities) == 3, "нужны три семьи пыли"
+    assert all(2.0 <= s <= 6.0 for s in sizes), f"размеры капель вне рынка: {sizes}"
+    assert sum(densities) >= 3.5, f"пыли мало: суммарная плотность {sum(densities)}"
+    print(f"вид: мягкие капли {sizes} px, плотность на ячейку {densities}, "
+          "сжатие к концу жизни, зерно слоя своё")
 
     # .qsb — сжатый QShader: 4 байта размера (big-endian) + zlib-поток
     head = open(qsb_path, "rb").read(6)
@@ -143,30 +167,37 @@ def check_shader_files():
     assert re.search(r'DIRS\s*=\s*\[[^\]]*"shaders"', mr), "shaders не в DIRS генератора ресурсов"
     assert '".qsb"' in mr, ".qsb не в INCLUDE_EXT генератора ресурсов"
     print("упаковка: shaders/ и .qsb едут в exe (make_resources)")
-    return frag
+    return frag, effect_qml
 
 
 def check_math(frag, effect_qml):
-    """Зеркало формул шейдера: пыль гаснет к концу и не вылетает за запас."""
+    """Зеркало формул шейдера: границы, насыщенность, кольцо покрытия."""
     motions = [
         tuple(float(g) for g in m)
         for m in re.findall(r"Qt\.vector4d\(([-\d.]+),\s*([-\d.]+),\s*([-\d.]+),\s*([-\d.]+)\)",
                             effect_qml)
     ]
-    assert len(motions) >= 2, "в эффекте должно быть несколько классов пыли"
+    assert len(motions) >= 2, "в эффекте должно быть несколько семей пыли"
+    sizes = parse_list(effect_qml, "dustSizes")
+    densities = parse_list(effect_qml, "dustDensities")
+    size_jitter = float(re.search(r"dustSizeJitter:\s*([\d.]+)", effect_qml).group(1))
     life_m = re.search(r"uLife:\s*Qt\.vector2d\(([\d.]+),\s*([\d.]+)\)", effect_qml)
     life_base, life_jitter = float(life_m.group(1)), float(life_m.group(2))
     wave = float(re.search(r"waveSec:\s*([\d.]+)", effect_qml).group(1))
     gravity = float(re.search(r"dustGravity:\s*([\d.]+)", effect_qml).group(1))
-    density = float(re.search(r"dustDensity:\s*([\d.]+)", effect_qml).group(1))
-    k = float(re.search(r"float k = ([\d.]+);", frag).group(1))
-    w0 = float(re.search(r"\(1\.0 - clamp\(fx, 0\.0, 1\.0\)\) \* ([\d.]+)", frag).group(1))
-    w1 = float(re.search(r"hash1\(pos \+ vec2\(23\.0, 5\.0\)\) \* ([\d.]+)", frag).group(1))
+    k = float(re.search(r"float kDecay = ([\d.]+);", frag).group(1))
+    cell = float(re.search(r"float cell = ([\d.]+);", frag).group(1))
+    stretch = float(re.search(r"q /= vec2\(r \* ([\d.]+), r \* ([\d.]+)\);", frag).group(1))
     pads = {
         p: float(re.search(rf"property real pad{p}:\s*([\d.]+)", effect_qml).group(1))
         for p in ("Left", "Top", "Right", "Bottom")
     }
-    assert 0 < density <= 0.25, "плотность пыли вне разумных пределов"
+
+    # кольцо 5x5 покрывает радиус капли: центр ячейки ±(сдвиг + вытяжка)
+    # обязан укладываться в полутора ячейках — иначе капли режутся по решётке
+    reach = (max(sizes) + size_jitter) * stretch + 3.0
+    assert reach <= 1.5 * cell + 0.5, \
+        f"капля достаёт на {reach:.1f} px, а кольцо 5x5 покрывает {1.5 * cell:.0f} px"
 
     def wake(th):
         return wave * (1.0 - math.sqrt(max(0.0, 1.0 - th)))
@@ -208,15 +239,64 @@ def check_math(frag, effect_qml):
     print(f"математика: гаснет к {total:.2f} с; разлёт X 99% ≤ {pct(xs, 0.99):.0f} px "
           f"(запас {pads['Right']:.0f}), вверх ≤ {abs(pct(ys, 0.01)):.0f} px (запас {pads['Top']:.0f})")
 
+    # Насыщенность: мини-симуляция сетки в разгар эффекта — сколько капель живо
+    card_w, card_h = 130, 18
+    for t in (0.5, 1.0):
+        alive = 0
+        for cls in range(3):
+            seed = 0.42 + cls * 0.7371
+
+            def h(x, y):
+                return (math.sin(x * 127.1 + y * 311.7 + seed * 17.13) * 43758.5453) % 1.0
+
+            vx, vy, dx, dy = motions[cls]
+            ncy = int((card_h + pads["Top"] + pads["Bottom"]) / cell) + 3
+            ncx = int((card_w + pads["Left"] + pads["Right"]) / cell) + 3
+            for cy in range(-2, ncy):
+                for cx in range(-2, ncx):
+                    for s in range(2):
+                        gate = min(1.0, max(0.0, densities[cls] - s))
+                        if h(cx + s * 0.37, cy + s * 0.71) > gate:
+                            continue
+                        px_ = (cx + 0.5) * cell + (h(cx + s * 0.37 + 11.7, cy + s * 0.71 + 21.3) - 0.5) * 6.0
+                        py_ = (cy + 0.5) * cell + (h(cx + s * 0.37 + 19.1, cy + s * 0.71 + 8.7) - 0.5) * 6.0
+                        fx = min(1.0, max(0.0, (px_ - pads["Left"]) / card_w))
+                        th = (1.0 - fx) * 0.7 + h(cx + s * 0.37 + 23.0, cy + s * 0.71 + 5.0) * 0.3
+                        tau = t - wake(th)
+                        if tau <= 0:
+                            continue
+                        sp = 0.6 + h(cx + s * 0.37 + 7.7, cy + s * 0.71 + 3.1) * 0.8
+                        ang = (h(cx + s * 0.37 + 5.3, cy + s * 0.71 + 9.2) - 0.5) * 0.7
+                        ca, sa = math.cos(ang), math.sin(ang)
+                        rvx = (ca * vx - sa * vy) * sp
+                        rvy = (sa * vx + ca * vy) * sp
+                        e = 1.0 - math.exp(-k * tau)
+                        ox = rvx / k * e + dx * tau + math.sin(tau * 9.0 + ang * 6.2832) * 2.5
+                        oy = (rvy / k * e + dy * tau + 0.5 * gravity * tau * tau
+                              + math.cos(tau * 11.0 + sp * 6.2832) * 2.5)
+                        ux = (px_ - ox - pads["Left"]) / card_w
+                        uy = (py_ - oy - pads["Top"]) / card_h
+                        if not (0.0 <= ux < 1.0 and 0.0 <= uy < 1.0):
+                            continue
+                        life = life_base + h(cx + s * 0.37 + 13.9, cy + s * 0.71 + 27.4) * life_jitter
+                        if tau < life:
+                            alive += 1
+        if t == 0.5:
+            peak = alive
+        else:
+            mid = alive
+    assert 120 <= peak <= 420, f"капель в разгар неожиданно мало/много: {peak}"
+    assert mid >= 0.35 * peak, f"пыль гаснет слишком рано: {mid} из {peak}"
+    print(f"насыщенность: в разгар {peak} капель, к середине {mid} — "
+          f"в {(peak * math.pi * 1.44 * (sum(sizes)/3)**2) / 2340:.1f}× площади карточки")
+
 
 def main() -> int:
     from PySide6.QtGui import QGuiApplication
     from PySide6.QtQml import QQmlApplicationEngine
     from PySide6.QtQuick import QQuickItem
 
-    frag = check_shader_files()
-    effect_qml = open(os.path.join(ROOT, "components", "ThanosEffect.qml"),
-                      encoding="utf-8").read()
+    frag, effect_qml = check_shader_files()
     check_math(frag, effect_qml)
 
     app = QGuiApplication([])
@@ -325,24 +405,13 @@ def main() -> int:
         print(f"пул вариантов 130x18: {len(pool['130x18'])} (лимит), размеров в кэше: {len(pool)}")
 
         print("═══ ТАНОС ЦЕЛ ═══")
-
-        # PySide6 падает при финализации сцены с Loader/Canvas на выходе
-        # (none_dealloc) — аккуратно разбираем всё до конца интерпретатора
-        effect.snapshotTaken.disconnect(on_snap)
-        effect.finished.disconnect(on_fin)
-        del effect, card, card_frac, badge, win
-        import gc
-        gc.collect()
-        engine.deleteLater()
-        app.processEvents()
-        del engine, app
-        gc.collect()
-        return 0
     finally:
         try:
             os.remove(wrapper)
         except OSError:
             pass
+
+    return 0
 
 
 if __name__ == "__main__":

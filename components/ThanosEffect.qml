@@ -62,7 +62,11 @@ Item {
         Qt.vector4d(90, -55, 72, -24),
         Qt.vector4d(35, -10, 72, -24)
     ]
-    readonly property real dustDensity: 0.16
+    // размер пылинок по семьям, px (быстрая — мелкая, ленивая — крупная)
+    // и сколько пылинок на ячейку сетки: мелкой пыли больше, крупной — меньше
+    readonly property var dustSizes: [3.0, 2.3, 4.0]
+    readonly property var dustDensities: [1.7, 2.0, 1.2]
+    readonly property real dustSizeJitter: 1.1
     readonly property real dustGravity: 10
 
     signal finished()
@@ -113,14 +117,17 @@ Item {
                         blending: true
                         property var src: hiddenImage
                         property real uT: root.tSec
-                        property real uSeed: root.seed
+                        // зерно у каждого слоя своё: иначе семьи дадут
+                        // коррелированную решётку одинаковых пылинок
+                        property real uSeed: root.seed + index * 0.7371
                         property vector2d uQuad: Qt.vector2d(shaderStage.width, shaderStage.height)
                         property vector4d uCard: Qt.vector4d(baseImage.x, baseImage.y,
                                                              baseImage.width, baseImage.height)
                         property vector4d uMotion: root.dustMotions[index]
-                        property vector4d uClass: Qt.vector4d(index / root.dustMotions.length,
-                                                              (index + 1) / root.dustMotions.length,
-                                                              root.dustDensity, root.dustGravity)
+                        property vector4d uClass: Qt.vector4d(root.dustDensities[index],
+                                                              root.dustGravity,
+                                                              root.dustSizes[index],
+                                                              root.dustSizeJitter)
                         property vector2d uLife: Qt.vector2d(1.389, 0.555)
                         fragmentShader: Qt.resolvedUrl("../shaders/thanos_dust.frag.qsb")
                     }
@@ -267,7 +274,9 @@ Item {
                     }
                     var a = p.life > 1 ? 1 : p.life;
                     ctx.globalAlpha = a;
-                    ctx.fillRect(p.currX, p.currY, 1, 1);
+                    // пылинка крупная и к концу жизни сжимается — как в шейдере
+                    var s = 0.8 + 1.8 * a;
+                    ctx.fillRect(p.currX, p.currY, s, s);
                 }
             }
             ctx.globalAlpha = 1.0;
