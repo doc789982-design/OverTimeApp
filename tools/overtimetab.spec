@@ -83,20 +83,23 @@ _history = ROOT / "BUILD_HISTORY.md"
 if _history.exists():
     _datas.append((str(_history), "."))
 
-# version.json внутрь сборки. В AppTheme лежит честная версия с каналом
-# («2.0.0-beta.1»). Обновлятор самых старых сборок сравнивает строки
+# version.json внутрь сборки. В AppTheme лежат имя для человека
+# (appVersion, «BETA.1») и семвер (appSemver, «2.0.0-beta.1» — теги
+# и сравнение версий). Обновлятор самых старых сборок сравнивает строки
 # «X.Y.Z-ИМЯ.N», не зная номера сборки, — поэтому в пакет кладётся
-# машинная строка, где счётчик канала = номер сборки (2.0.0-beta.294;
+# машинная строка, где счётчик канала = номер сборки (2.0.0-beta.295;
 # сборки нумеруются сквозняком и всегда растут), плюс поле display
-# с настоящим именем — его показывают окна и тосты.
+# с именем для человека — его показывают окна и тосты.
 _theme_src = (ROOT / "components" / "AppTheme.qml").read_text(encoding="utf-8")
 import json as _json
 import re as _re
 sys.path.insert(0, str(ROOT))
 from app_update import scan_version  # noqa: E402
 _m_ver = _re.search(r'appVersion:\s*"([^"]+)"', _theme_src)
+_m_sem = _re.search(r'appSemver:\s*"([^"]+)"', _theme_src)
 _m_bld = _re.search(r"appBuild:\s*(\d+)", _theme_src)
 _app_name = _m_ver.group(1) if _m_ver else ""
+_app_semver = _m_sem.group(1) if _m_sem else _app_name
 _app_build = int(_m_bld.group(1)) if _m_bld else 0
 _meta_dir = ROOT / "build"
 _meta_dir.mkdir(exist_ok=True)
@@ -107,7 +110,7 @@ _meta_file = _meta_dir / "version.json"
 # хранилищем, где файл лежит. В сборке по ветке имени ещё нет — поле не пишется.
 _meta = {
     "name": "OVERTIMETAB",
-    "version": scan_version(_app_name, _app_build),
+    "version": scan_version(_app_semver, _app_build),
     "build": _app_build,
     "display": _app_name,
 }
@@ -117,8 +120,9 @@ if _asset_url:
 _meta_file.write_text(_json.dumps(_meta, ensure_ascii=False, indent=2) + "\n",
                       encoding="utf-8")
 _datas.append((str(_meta_file), "."))
-print("[версия] имя=%s сборка=%d машинная=%s"
-      % (_app_name, _app_build, scan_version(_app_name, _app_build)))
+print("[версия] имя=%s семвер=%s сборка=%d машинная=%s"
+      % (_app_name, _app_semver, _app_build,
+         scan_version(_app_semver, _app_build)))
 
 a = Analysis(
     [str(ROOT / "Main.py")],

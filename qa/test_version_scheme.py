@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""Тест схемы версий: семвер с каналом + непрерывные сборки.
+"""Тест схемы версий: имя для человека + семвер + непрерывные сборки.
 
-Версия программы живёт в одном месте — appVersion в AppTheme.qml —
-и везде одна: окна и тосты, имена файлов релиза, тег, установщик.
-Формат: 2.0.0-alpha.1 → 2.0.0-beta.1 → 2.0.0 → 2.1.0-alpha.1 → …
-Сборки непрерывные, никогда не сбрасываются; «новее ли» обновление
-решает сборка, а у самых старых клиентов — машинная строка, где
-счётчик канала = номер сборки.
+В AppTheme.qml живут два поля: appVersion — имя для человека (до релиза
+просто «BETA.1», без номера версии: версия появится на релизе, дальше —
+нумерация; его же берут имена файлов релиза и установщик) и appSemver —
+семвер для механики (тег v<семвер>, сравнение версий, машинная строка).
+Сборки непрерывные, никогда не сбрасываются; «новее ли» обновление решает
+сборка, а у самых старых клиентов — машинная строка, где счётчик канала =
+номер сборки.
 
 Проверяется:
   A. Парсер: каналы по старшинству alpha < beta < rc < релиз,
@@ -16,9 +17,11 @@
   C. Обновление со старых сборок: клиент с номером сборки видит
      новую версию любой канальности; строковый клиент ALPHA видит
      beta/релиз/2.1.0 новее и не видит отката;
-  D. Согласованность проекта: appVersion — семвер, updates/version.json
-     совпадает с AppTheme (машинная строка, display, build),
-     в spec и workflow нет зашитой версии, тег в RELEASING = v<версия>;
+  D. Согласованность проекта: appVersion — имя (не семвер), appSemver —
+     семвер; updates/version.json совпадает с AppTheme (машинная строка
+     из семвера, display = имя, build); spec читает оба поля; установщик
+     получает имя через сгенерированный include; тег релиза = v + семвер,
+     заголовок — из имени; в нигде нет зашитой версии;
   E. Зип-сканер видит машинную строку (и не видит человеческие имена);
   F. Ключ чейнджлога «ВЕРСИЯ+сборка» читается (включая старый формат).
 
@@ -40,16 +43,17 @@ from release_url import asset_url  # noqa: E402
 SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+(-(alpha|beta|rc)\.\d+)?$")
 
 
-def read_identity() -> tuple[str, int]:
+def read_identity() -> tuple[str, str, int]:
     theme = (ROOT / "components" / "AppTheme.qml").read_text(encoding="utf-8")
     m = re.search(r'appVersion:\s*"([^"]+)"', theme)
+    s = re.search(r'appSemver:\s*"([^"]+)"', theme)
     b = re.search(r"appBuild:\s*(\d+)", theme)
-    assert m and b, "в AppTheme.qml нет appVersion/appBuild"
-    return m.group(1), int(b.group(1))
+    assert m and s and b, "в AppTheme.qml нет appVersion/appSemver/appBuild"
+    return m.group(1), s.group(1), int(b.group(1))
 
 
 def main() -> int:
-    version, build = read_identity()
+    name, semver, build = read_identity()
 
     # ── A. Парсер ──
     p = app_update.parse_version
@@ -82,11 +86,11 @@ def main() -> int:
 
     # ── C. Обновление со старых сборок ──
     # клиент со сборкой (все недавние): решает сборка, канал не важен
-    assert app_update.is_newer("2.0.0-beta.1", "2.0.0-ALPHA.20", 294, 293)
-    assert app_update.is_newer("2.0.0", "2.0.0-beta.1", 300, 294)
+    assert app_update.is_newer("2.0.0-beta.1", "BETA.1", 295, 294)
+    assert app_update.is_newer("2.0.0", "BETA.1", 300, 295)
     assert app_update.is_newer("2.1.0-alpha.1", "2.0.0", 310, 300)
-    assert not app_update.is_newer("2.0.0-beta.2", "2.0.0-beta.1", 294, 294)
-    assert not app_update.is_newer("2.0.0-beta.2", "2.0.0-beta.1", 293, 294)
+    assert not app_update.is_newer("2.0.0-beta.2", "BETA.1", 295, 295)
+    assert not app_update.is_newer("2.0.0-beta.2", "BETA.1", 294, 295)
     # строковый клиент (самые старые, сборки не знают): машинная строка
     # против их «2.0.0-ALPHA.N» — канал растёт, счётчик = сборка
     assert app_update.is_newer("2.0.0-beta.294", "2.0.0-ALPHA.293")
@@ -97,49 +101,64 @@ def main() -> int:
     print("C: старые клиенты видят новую версию, откат запрещён ✓")
 
     # ── D. Согласованность проекта ──
-    assert SEMVER_RE.match(version), \
-        f"appVersion «{version}» — не семвер с каналом (см. RELEASING.md)"
+    # имя — не семвер (просто «BETA.1»), семвер — семвер
+    assert name and not SEMVER_RE.match(name), \
+        f"appVersion «{name}» — это семвер, а должно быть имя «BETA.1» " \
+        "(без номера версии — версия появится на релизе)"
+    assert SEMVER_RE.match(semver), \
+        f"appSemver «{semver}» — не семвер с каналом (см. RELEASING.md)"
     assert build > 0
     vj = json.loads((ROOT / "updates" / "version.json")
                     .read_text(encoding="utf-8"))
     assert vj.get("build") == build, \
         f"build в version.json ({vj.get('build')}) != appBuild ({build})"
-    assert vj.get("display") == version, \
+    assert vj.get("display") == name, \
         f"display в version.json ({vj.get('display')}) != appVersion"
-    assert vj.get("version") == app_update.scan_version(version, build), \
+    assert vj.get("version") == app_update.scan_version(semver, build), \
         f"version в version.json ({vj.get('version')}) — не машинная строка"
-    assert re.fullmatch(r"OVERTIMETAB_[^\s/]+\.zip", str(vj.get("url") or "")), \
+    url = str(vj.get("url") or "")
+    assert re.fullmatch(r"OVERTIMETAB_[^\s/]+\.zip", url), \
         "url в version.json — не имя архива (правило: имя, не адрес)"
-    # spec вычисляет машинную строку, а не вшивает литерал
+    assert url.startswith(f"OVERTIMETAB_{name}_"), \
+        f"имя архива строится из appVersion: {url}"
+    # spec читает оба поля и вычисляет машинную строку из семвера
     spec = (ROOT / "tools" / "overtimetab.spec").read_text(encoding="utf-8")
-    assert "scan_version" in spec, "spec не вычисляет машинную версию"
+    assert "appSemver" in spec, "spec не читает appSemver"
+    assert "_app_semver" in spec and "scan_version(_app_semver" in spec, \
+        "машинная версия в spec считается не из семвера"
     assert "2.0.0-ALPHA" not in spec, "в spec осталась зашитая версия"
-    # установщик берёт версию из AppTheme через сгенерированный include:
-    # make_resources.py пишет build/product_version.iss, а overtimetab.iss
-    # подключает его ПОСЛЕ аргументов командной строки CI — версия из
-    # /D перекрывается (workflow менять из песочницы нельзя: токен без
-    # права workflows, поэтому честная версия доезжает с этой стороны)
+    # установщик получает имя через сгенерированный include:
+    # make_resources.py пишет build/product_version.iss из appVersion,
+    # а overtimetab.iss подключает его ПОСЛЕ аргументов командной строки
+    # CI — версия из /D перекрывается (workflow менять из песочницы нельзя)
     mr = (ROOT / "tools" / "make_resources.py").read_text(encoding="utf-8")
     assert "product_version.iss" in mr and "appVersion" in mr, \
-        "make_resources не доводит версию до установщика"
+        "make_resources не доводит имя до установщика"
     iss = (ROOT / "tools" / "overtimetab.iss").read_text(encoding="utf-8")
     assert '#include "..\\build\\product_version.iss"' in iss, \
         "установщик не подключает сгенерированную версию"
     assert "#undef ProductVersion" in mr, \
         "сгенерированный файл не перекрывает аргументы командной строки"
     assert "2.0.0-ALPHA" not in iss, "в установщике осталась зашитая версия"
-    # имя архива строится из версии
-    assert asset_url(version, "87f3711") == f"OVERTIMETAB_{version}_87f3711.zip"
-    # RELEASING объясняет схему и тег v<версия>
+    # публикатор: тег из семвера, заголовок из имени
+    pub = (ROOT / "tools" / "publish_release.py").read_text(encoding="utf-8")
+    assert "def read_semver" in pub, "публикатор не читает семвер"
+    assert 'f"v{semver}"' in pub, "тег релиза строится не из семвера"
+    assert 'title = f"OVERTIMETAB {version}"' in pub, \
+        "заголовок релиза строится не из имени"
+    # имя архива строится из имени
+    assert asset_url(name, "87f3711") == f"OVERTIMETAB_{name}_87f3711.zip"
+    # RELEASING объясняет схему: два поля, каналы, сборки, тег
     doc = (ROOT / "RELEASING.md").read_text(encoding="utf-8")
-    for word in ("Схема версий", "alpha", "beta", "сборк", "v` + версия"):
+    for word in ("Схема версий", "appVersion", "appSemver", "alpha", "beta",
+                 "сборк", "v` + семвер"):
         assert word in doc, "RELEASING.md не объясняет: " + word
-    print(f"D: проект согласован — версия {version}, сборка {build}, "
-          "нигде нет зашитой версии ✓")
+    print(f"D: проект согласован — имя {name}, семвер {semver}, "
+          f"сборка {build}, нигде нет зашитой версии ✓")
 
     # ── E. Зип-сканер ──
     looks = app_update._looks_like_app_version
-    assert looks(app_update.scan_version(version, build)), \
+    assert looks(app_update.scan_version(semver, build)), \
         "сканер зипов не видит машинную строку"
     assert looks("2.0.0") and not looks("BETA.1"), \
         "сканер зипов понимает только X.Y.Z-версии"
@@ -147,12 +166,12 @@ def main() -> int:
 
     # ── F. Ключ чейнджлога ──
     key = app_update.build_from_version_key
-    assert key(f"{version}+{build}") == build
+    assert key(f"{name}+{build}") == build
     assert key("BETA.1+239") == 239, "старый формат ключа должен читаться"
     assert key("2.0.0-beta.1") == 0
     print("F: ключ «ВЕРСИЯ+сборка» читается (и старый формат тоже) ✓")
 
-    print("═══ СХЕМА ВЕРСИЙ: СЕМВЕР + КАНАЛ + НЕПРЕРЫВНЫЕ СБОРКИ ═══")
+    print("═══ СХЕМА ВЕРСИЙ: ИМЯ + СЕМВЕР + НЕПРЕРЫВНЫЕ СБОРКИ ═══")
     return 0
 
 

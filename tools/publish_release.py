@@ -29,12 +29,24 @@ CHANGELOG = ROOT / "CHANGELOG.md"
 
 
 def read_identity() -> tuple[str, int]:
+    """(имя для человека, сборка) — имя показывают окна и заголовок релиза."""
     text = THEME.read_text(encoding="utf-8")
     m = re.search(r'appVersion:\s*"([^"]+)"', text)
     if not m:
         sys.exit("Не нашли appVersion в AppTheme.qml")
     bm = re.search(r"appBuild:\s*(\d+)", text)
     return m.group(1), int(bm.group(1)) if bm else 0
+
+
+def read_semver() -> str:
+    """Семвер из AppTheme (appSemver) — механика: тег v<семвер>,
+    машинная строка обновления. До введения поля семвером считалось
+    само имя — оставлен запасной вариант."""
+    text = THEME.read_text(encoding="utf-8")
+    m = re.search(r'appSemver:\s*"([^"]+)"', text)
+    if m:
+        return m.group(1)
+    return read_identity()[0]
 
 
 def read_version() -> str:
@@ -253,7 +265,9 @@ def main() -> int:
               file=sys.stderr)
         return 1
 
-    tag = args.tag.strip() or f"v{version}"
+    # Тег — из семвера (механика), заголовок — из имени для человека
+    semver = read_semver()
+    tag = args.tag.strip() or f"v{semver}"
     title = f"OVERTIMETAB {version}" + (f" · сборка {build}" if build else "")
     notes = changelog_section(version)
     branch = current_branch()

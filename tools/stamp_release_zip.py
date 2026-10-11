@@ -35,18 +35,26 @@ def read_identity() -> tuple[str, int]:
     return m.group(1), int(bm.group(1)) if bm else 0
 
 
+def read_semver() -> str:
+    text = THEME.read_text(encoding="utf-8")
+    m = re.search(r'appSemver:\s*"([^"]+)"', text)
+    return m.group(1) if m else read_identity()[0]
+
+
 def read_version() -> str:
     return read_identity()[0]
 
 
-def version_payload(version: str, build: int = 0) -> bytes:
+def version_payload(version: str, semver: str = "", build: int = 0) -> bytes:
+    """version — имя для человека, semver — для машинной строки."""
     sys.path.insert(0, str(ROOT))
+    base = semver or version
     try:
         from app_update import scan_version
 
-        scan = scan_version(version, build)
+        scan = scan_version(base, build)
     except Exception:
-        scan = version
+        scan = base
     payload = {"name": "OVERTIMETAB", "version": scan}
     if int(build or 0) > 0:
         payload["build"] = int(build)
@@ -59,9 +67,10 @@ def _norm(name: str) -> str:
     return name.replace("\\", "/").lstrip("/").lower()
 
 
-def stamp_zip(zip_path: Path, version: str, build: int = 0) -> list[str]:
+def stamp_zip(zip_path: Path, version: str, build: int = 0,
+              semver: str = "") -> list[str]:
     """Добавляет version.json в корень архива и в _internal/, если их ещё нет."""
-    payload = version_payload(version, build)
+    payload = version_payload(version, semver=semver, build=build)
     added: list[str] = []
     with zipfile.ZipFile(zip_path, "r") as zf:
         names = {_norm(n) for n in zf.namelist()}
@@ -116,14 +125,15 @@ def main() -> int:
         if not zip_path.is_file():
             sys.exit(f"Нет файла {zip_path}")
         ver, bld = read_identity()
-        added = stamp_zip(zip_path, ver, bld)
+        added = stamp_zip(zip_path, ver, bld, semver=read_semver())
         if added:
             print("дописали:", ", ".join(added))
         else:
             print("version.json уже был в архиве")
         return 0
     version, build = read_identity()
-    tag = sys.argv[1] if len(sys.argv) > 1 else f"v{version}"
+    semver = read_semver()
+    tag = sys.argv[1] if len(sys.argv) > 1 else f"v{semver}"
     print(f"релиз:  {tag}")
     print(f"версия: {version}" + (f" · сборка {build}" if build else ""))
 
@@ -153,7 +163,7 @@ def main() -> int:
             if not found:
                 sys.exit("Скачали релиз, но zip не нашли")
             zip_path = found[0]
-        added = stamp_zip(zip_path, version, build)
+        added = stamp_zip(zip_path, version, build, semver=semver)
         if not added:
             print("version.json уже был в архиве — ничего не меняли")
             return 0

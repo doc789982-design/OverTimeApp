@@ -33,15 +33,15 @@ from release_url import asset_url, from_ci_env  # noqa: E402
 
 import app_update  # noqa: E402
 
-WANT = "OVERTIMETAB_2.0.0-beta.1_87f3711.zip"
+WANT = "OVERTIMETAB_BETA.1_87f3711.zip"
 
 
 def test_asset_url():
-    got = asset_url("2.0.0-beta.1", "87f3711abc")
+    got = asset_url("BETA.1", "87f3711abc")
     assert got == WANT, got
-    assert asset_url("2.0.0-beta.1", "87f3711") == WANT
+    assert asset_url("BETA.1", "87f3711") == WANT
     assert asset_url("", "87f3711") == ""
-    assert asset_url("2.0.0-beta.1", "") == ""
+    assert asset_url("BETA.1", "") == ""
     print("asset_url: точное имя архива и пустые случаи ✓")
 
 
@@ -49,31 +49,31 @@ def test_from_ci_env():
     tag_env = {"GITHUB_REF": "refs/tags/v2.0.0-ALPHA.20",
                "GITHUB_SHA": "87f3711abcde",
                "GITHUB_REPOSITORY": "doc789982-design/OverTimeApp"}
-    assert from_ci_env("2.0.0-beta.1", tag_env) == WANT
+    assert from_ci_env("BETA.1", tag_env) == WANT
     branch_env = dict(tag_env, GITHUB_REF="refs/heads/arena/01a043e7-overtimeapp")
-    assert from_ci_env("2.0.0-beta.1", branch_env) == ""
+    assert from_ci_env("BETA.1", branch_env) == ""
     print("from_ci_env: по тегу — имя, по ветке — пусто ✓")
 
 
 def test_preserve_url():
     tmp = Path(tempfile.mkdtemp(prefix="vjson_")) / "version.json"
     shipped = {"name": "OVERTIMETAB", "version": "2.0.0-beta.228",
-               "build": 228, "display": "2.0.0-beta.1", "url": WANT}
+               "build": 228, "display": "BETA.1", "url": WANT}
     tmp.write_text(json.dumps(shipped, ensure_ascii=False, indent=2),
                    encoding="utf-8")
     # программа при запуске переписывает файл (как Main._init_updates)
-    app_update.write_version_json(tmp, "2.0.0-beta.1", 228)
+    app_update.write_version_json(tmp, "BETA.1", 228)
     after = json.loads(tmp.read_text(encoding="utf-8"))
     assert after.get("url") == WANT, "url потерян при перезаписи: %s" % after
-    assert after["build"] == 228 and after["version"] == "2.0.0-beta.1"
+    assert after["build"] == 228 and after["version"] == "BETA.1"
     # явный url имеет приоритет
-    other = "OVERTIMETAB_2.0.0-beta.1_deadbee.zip"
-    app_update.write_version_json(tmp, "2.0.0-beta.1", 229, url=other)
+    other = "OVERTIMETAB_BETA.1_deadbee.zip"
+    app_update.write_version_json(tmp, "BETA.1", 229, url=other)
     after2 = json.loads(tmp.read_text(encoding="utf-8"))
     assert after2.get("url") == other, after2
     # нового файла без url — поле не появляется
     tmp2 = tmp.with_name("v2.json")
-    app_update.write_version_json(tmp2, "2.0.0-beta.1", 229)
+    app_update.write_version_json(tmp2, "BETA.1", 229)
     assert "url" not in json.loads(tmp2.read_text(encoding="utf-8"))
     print("write_version_json: имя архива переносится/не теряется ✓")
 
@@ -81,21 +81,21 @@ def test_preserve_url():
 def test_resolve_download_url():
     # запасной сервер (post.mvd.ru): имя склеивается с его адресом
     got = app_update.resolve_download_url(
-        "OVERTIMETAB_2.0.0-beta.1_87f3711.zip",
+        "OVERTIMETAB_BETA.1_87f3711.zip",
         "https://post.mvd.ru/~mgrigorev46@mvd.ru/")
-    assert got == "https://post.mvd.ru/~mgrigorev46@mvd.ru/OVERTIMETAB_2.0.0-beta.1_87f3711.zip", got
+    assert got == "https://post.mvd.ru/~mgrigorev46@mvd.ru/OVERTIMETAB_BETA.1_87f3711.zip", got
     # GitHub «latest»: постоянный адрес последнего релиза
     got = app_update.resolve_download_url(
-        "OVERTIMETAB_2.0.0-beta.1_87f3711.zip",
+        "OVERTIMETAB_BETA.1_87f3711.zip",
         "https://github.com/doc789982-design/OverTimeApp/releases/latest/download")
     assert got == ("https://github.com/doc789982-design/OverTimeApp/"
-                   "releases/latest/download/OVERTIMETAB_2.0.0-beta.1_87f3711.zip"), got
+                   "releases/latest/download/OVERTIMETAB_BETA.1_87f3711.zip"), got
     # GitHub с тегом
     got = app_update.resolve_download_url(
-        "OVERTIMETAB_2.0.0-beta.1_87f3711.zip",
+        "OVERTIMETAB_BETA.1_87f3711.zip",
         "https://github.com/doc789982-design/OverTimeApp/releases/download/v2.0.0-beta.1")
     assert got == ("https://github.com/doc789982-design/OverTimeApp/"
-                   "releases/download/v2.0.0-beta.1/OVERTIMETAB_2.0.0-beta.1_87f3711.zip"), got
+                   "releases/download/v2.0.0-beta.1/OVERTIMETAB_BETA.1_87f3711.zip"), got
     # полный адрес остаётся как есть
     full = "https://example.com/x.zip"
     assert app_update.resolve_download_url(full, "https://other/y") == full
@@ -122,7 +122,7 @@ def test_latest_base_url():
     saved = app_update.urllib.request.urlopen
     payload = json.dumps({
         "name": "OVERTIMETAB", "version": "2.0.0-beta.231", "build": 231,
-        "display": "2.0.0-beta.1", "url": WANT,
+        "display": "BETA.1", "url": WANT,
     }).encode("utf-8")
 
     def fake_urlopen(url, timeout=0, data=None, context=None):
