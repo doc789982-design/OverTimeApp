@@ -11,8 +11,9 @@ import QtQuick.Layouts
 // и курсивными ссылками на нормативные акты. Примеры расчётов
 // убраны в раскрывающиеся карточки-спойлеры.
 // ============================================================
-Popup {
+AppModalShell {
     id: root
+    closeOnOutside: true   // читалка: клик мимо закрывает
 
     property string pageTitle: "Методические рекомендации"
     property var reco: ({ title: "", sections: [] })
@@ -24,33 +25,6 @@ Popup {
     height: Math.min(
         (ApplicationWindow.window ? ApplicationWindow.window.height : 800) * 0.9,
         (ApplicationWindow.window ? ApplicationWindow.window.height : 800) - 60)
-    z: AppTheme.zModal
-    modal: true
-    dim: true
-    focus: true
-    closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
-
-    enter: Transition {
-        ParallelAnimation {
-            NumberAnimation { property: "opacity"; from: 0.0; to: 1.0; duration: AppTheme.durFast; easing.type: AppTheme.easeEnter }
-            NumberAnimation { property: "scale"; from: 0.92; to: 1.0; duration: AppTheme.durStandard; easing.type: AppTheme.easeEnter }
-        }
-    }
-    exit: Transition {
-        ParallelAnimation {
-            NumberAnimation { property: "opacity"; from: 1.0; to: 0.0; duration: AppTheme.durFast; easing.type: AppTheme.easeExit }
-            NumberAnimation { property: "scale"; from: 1.0; to: 0.96; duration: AppTheme.durFast; easing.type: AppTheme.easeExit }
-        }
-    }
-
-    background: Rectangle {
-        color: AppTheme.bgModal
-        radius: AppTheme.radiusModal
-        border.color: AppTheme.borderDivider
-        border.width: 1
-        AppShadow { level: 4 }
-    }
-
     function openReco() {
         reco = backend.getRecoSections()
         var a = []
@@ -101,36 +75,12 @@ Popup {
         anchors.fill: parent
 
         // ================= ШАПКА =================
-        Item {
+        AppDialogHeader {
             id: headerBar
-            anchors.top: parent.top
-            anchors.left: parent.left
-            anchors.right: parent.right
-            height: 60
-
-            Text {
-                anchors.left: parent.left
-                anchors.leftMargin: AppTheme.spaceL
-                anchors.verticalCenter: parent.verticalCenter
-                text: root.pageTitle
-                color: AppTheme.textPrimary
-                font.family: AppTheme.fontCondensed
-                font.pixelSize: AppTheme.sizeH4
-                font.weight: AppTheme.weightBold
-            }
-
-            Rectangle {
-                width: 32; height: 32; radius: AppTheme.radiusPill
-                anchors.right: parent.right
-                anchors.rightMargin: AppTheme.spaceM
-                anchors.verticalCenter: parent.verticalCenter
-                color: closeHov.pressed ? AppTheme.statePress : (closeHov.containsMouse ? AppTheme.stateHover : "transparent")
-                IconImage { anchors.centerIn: parent; source: "../icons/close.svg"; width: AppTheme.iconMedium; height: AppTheme.iconMedium; color: AppTheme.textSecondary }
-                HoverHandler { cursorShape: Qt.PointingHandCursor }
-                MouseArea { id: closeHov; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.close() }
-            }
+            anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right
+            title: root.pageTitle
+            onCloseRequested: root.close()
         }
-
         Rectangle {
             anchors.left: parent.left; anchors.right: parent.right
             anchors.top: headerBar.bottom

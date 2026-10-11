@@ -4,7 +4,13 @@ import QtQuick.Layouts
 import QtQuick.Controls.impl
 import Qt5Compat.GraphicalEffects
 
-Popup {
+// ============================================================
+// ДИАЛОГ-ФОРМА — базовое окно программы: шапка, прокручиваемый
+// контент, подвал с кнопками. Механика появления/затемнения/
+// страховки живёт в AppModalShell. Дочерние элементы падают
+// в прокручиваемую зону (default property dialogContent).
+// ============================================================
+AppModalShell {
     id: root
 
     // --- Настройки интерфейса окна ---
@@ -16,19 +22,23 @@ Popup {
     property bool showFooter: true
     property bool showAccept: true
     property bool showReject: true
-    
+
     // --- Сигналы ---
     signal accepted()
     signal rejected()
 
-    // Режим «морфинга»: диалог открывается сразу в заданном месте
-    // без анимации масштаба, чтобы плавно продолжить рост ячейки дня.
-    property bool morphOpen: false
+    // Подтверждение закрывает окно сразу (окна «Вы уверены?»);
+    // формы по умолчанию закрывают себя сами в onAccepted
+    property bool closeOnAccept: false
+    function _accept() {
+        root.accepted()
+        if (root.closeOnAccept) root.close()
+    }
 
     // Зона для вставки контента
     default property alias dialogContent: contentArea.data
 
-    width: 380 
+    width: 380
     // По умолчанию окно подстраивает высоту под содержимое (не выше экрана).
     // Если задать heightFraction > 0 — фиксированная высота = доля высоты экрана.
     property real heightFraction: 0
@@ -36,70 +46,6 @@ Popup {
         ? Math.max(200, (ApplicationWindow.window ? ApplicationWindow.window.height : 720) * heightFraction)
         : Math.min(mainLayout.implicitHeight + 40, ApplicationWindow.window ? ApplicationWindow.window.height - 100 : 800)
     height: effectiveHeight
-    
-    z: AppTheme.zModal
-
-    // Попап — Item в overlay главного окна, а не нативное ОС-окно:
-    // нативное окно с модальностью и анимациями закрывается нестабильно
-    // (может оставить невидимую зону, блокирующую клики)
-    popupType: Popup.Item
-
-    // Страховка: если выходная анимация по какой-то причине не завершилась,
-    // принудительно докрываем попап — иначе его невидимый прямоугольник
-    // блокирует клики в зоне, где окно было
-    Timer {
-        id: closeSafety
-        interval: 600
-        onTriggered: if (!root.opened) root.visible = false
-    }
-    onAboutToHide: closeSafety.restart()
-    // Окно открыли снова — страховка закрытия отменяется. Без этого она
-    // могла выстрелить посреди входного перехода нового открытия
-    // (opened становится true только ПОСЛЕ перехода) и убить окно:
-    // быстро закрыли и открыли — и диалог завис видимым, но не открытым
-    onAboutToShow: closeSafety.stop()
-    modal: true   // MD3/HIG: форма блокирует остальной интерфейс до решения 
-    dim: true  
-    focus: true
-    // Закрываем только по Esc / крестику / «Отмена».
-    // Клик мимо окна НЕ закрывает форму: случайный щелчок больше не сжигает
-    // введённые дежурства, перерывы и балансы (стандарт Apple/Google для форм).
-    closePolicy: Popup.CloseOnEscape
-
-    // Затемнение фона — единое с окнами подтверждения
-    Overlay.modal: Rectangle {
-        color: AppTheme.bgOverlay
-        opacity: root.opened ? 1.0 : 0.0
-        Behavior on opacity {
-            NumberAnimation { duration: AppTheme.durStandard; easing.type: root.opened ? AppTheme.easeEnter : AppTheme.easeExit }
-        }
-    }
-
-    // Анимации появления
-    enter: Transition {
-        ParallelAnimation {
-            NumberAnimation { property: "opacity"; from: 0.0; to: 1.0; duration: AppTheme.durFast; easing.type: AppTheme.easeEnter }
-            // При морфинге масштаб уже 1.0 (from == to) — анимации роста нет,
-            // окно просто продолжает рост ячейки как единое целое.
-            NumberAnimation { property: "scale"; from: root.morphOpen ? 1.0 : 0.92; to: 1.0; duration: AppTheme.durStandard; easing.type: AppTheme.easeEnter }
-        }
-    }
-    exit: Transition {
-        ParallelAnimation {
-            NumberAnimation { property: "opacity"; from: 1.0; to: 0.0; duration: AppTheme.durFast; easing.type: AppTheme.easeExit }
-            NumberAnimation { property: "scale"; from: 1.0; to: 0.95; duration: AppTheme.durFast; easing.type: AppTheme.easeExit }
-        }
-    }
-
-    background: Rectangle {
-        color: AppTheme.bgModal 
-        radius: AppTheme.radiusModal 
-        border.color: AppTheme.borderDivider
-        border.width: 1
-        
-        // Тень-картинка вместо вычисляемой (легко для видеокарты)
-        AppShadow { level: 4 }
-    }
 
     // Тряска при ошибке
     property real baseShakeX: 0
@@ -160,51 +106,23 @@ Popup {
     }
 
     contentItem: ColumnLayout {
-        // Фокус сюда: активным его делает popап (обёртка QQuickPopupItem
+        // Фокус сюда: активным его делает попап (обёртка QQuickPopupItem
         // держит фокус-скоуп), иначе Keys не увидят клавиши.
         // Enter — «Сохранить» (когда фокус не в поле ввода: там Enter
         // завершает ввод поля, как принято), Esc — «Отмена».
         // Раньше Esc закрывал окно молча, не сообщая «отмены».
         focus: true
-        Keys.onReturnPressed: if (root.showAccept) root.accepted()
-        Keys.onEnterPressed: if (root.showAccept) root.accepted()
+        Keys.onReturnPressed: if (root.showAccept) root._accept()
+        Keys.onEnterPressed: if (root.showAccept) root._accept()
         Keys.onEscapePressed: { root.rejected(); root.close() }
         id: mainLayout
         spacing: 0
 
         // ================= ШАПКА =================
-        Item {
+        AppDialogHeader {
             Layout.fillWidth: true
-            Layout.preferredHeight: 60
-
-            Text {
-                anchors.left: parent.left
-                anchors.leftMargin: AppTheme.spaceL
-                anchors.verticalCenter: parent.verticalCenter
-                anchors.right: parent.right
-                anchors.rightMargin: 56
-                text: root.title
-                color: AppTheme.textPrimary
-                // Тот же конденсатный жирный шрифт, что и дата в меню дня
-                font.family: AppTheme.fontCondensed
-                font.pixelSize: AppTheme.sizeH4
-                font.weight: AppTheme.weightBold
-                visible: text !== ""
-                elide: Text.ElideRight
-                verticalAlignment: Text.AlignVCenter
-            }
-
-            Rectangle {
-                width: 32; height: 32; radius: AppTheme.radiusPill
-                anchors.right: parent.right
-                anchors.rightMargin: AppTheme.spaceM
-                anchors.verticalCenter: parent.verticalCenter
-
-                color: closeHov.pressed ? AppTheme.statePress : (closeHov.containsMouse ? AppTheme.stateHover : "transparent")
-                IconImage { anchors.centerIn: parent; source: "../icons/close.svg"; width: AppTheme.iconMedium; height: AppTheme.iconMedium; color: AppTheme.textSecondary }
-                HoverHandler { cursorShape: Qt.PointingHandCursor }
-                MouseArea { id: closeHov; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: { root.rejected(); root.close() } }
-            }
+            title: root.title
+            onCloseRequested: { root.rejected(); root.close() }
         }
 
         Rectangle {
@@ -256,10 +174,11 @@ Popup {
                     onClicked: { root.rejected(); root.close() }
                 }
                 AppButton {
+                    id: acceptBtn
                     visible: root.showAccept
                     text: root.acceptText
                     variant: root.acceptVariant
-                    onClicked: root.accepted()
+                    onClicked: root._accept()
                 }
             }
         }
@@ -268,6 +187,9 @@ Popup {
     // Автофокус первого поля: открыв форму, можно сразу печатать
     // (значение поля выделяется — ввод заменит его)
     property bool autoFocusFirst: true
+    // Фокус сразу на кнопке подтверждения (окна «Вы уверены?»):
+    // Enter/Space работают нативно, кольцо фокуса подсвечивает кнопку
+    property bool focusAcceptOnOpen: false
 
     function findField(item) {
         if (!item || !item.visible || !item.enabled) return null
@@ -305,7 +227,7 @@ Popup {
         root.height = h
         root.open()
     }
-    
+
     function showCentered() {
         if (ApplicationWindow.window) {
             root.x = (ApplicationWindow.window.width - root.width) / 2
@@ -321,6 +243,7 @@ Popup {
     onOpened: {
         // автофокус первого поля — после пересчёта геометрии
         if (root.autoFocusFirst) Qt.callLater(focusFirstField)
+        if (root.focusAcceptOnOpen) Qt.callLater(function() { acceptBtn.forceActiveFocus() })
         Qt.callLater(function() {
             // Высота снова становится привязкой и дорастает вместе
             // с контентом: тексты «Что нового» досчитываются дольше

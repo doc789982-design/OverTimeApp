@@ -515,31 +515,6 @@ def _zip_has_exe(names: list[str]) -> bool:
             return True
     return False
 
-
-def _version_from_zip_bytes(raw: bytes, as_json: bool) -> str:
-    text = raw.decode("utf-8", errors="replace")
-    if as_json:
-        try:
-            return str(json.loads(text).get("version") or "").strip()
-        except Exception:
-            return ""
-    return _read_version_from_text(text)
-
-
-# GitHub zip (сборка --collect-all) часто без loose version.json:
-# номер живёт внутри resources_rc (QML AppTheme). Имя файла zip не смотрим.
-_JSON_VERSION_RE = re.compile(r'"version"\s*:\s*"([^"]+)"')
-_ZIP_VERSION_CACHE: dict[str, tuple[int, int, str]] = {}
-_VERSION_MEMBER_HINTS = (
-    "version.json",
-    "apptheme.qml",
-    "changelog.md",
-    "resources_rc.py",
-    "resources_rc.pyc",
-    "version_info.py",
-)
-
-
 def _looks_like_app_version(ver: str) -> bool:
     ver = (ver or "").strip()
     if not ver:
@@ -1520,34 +1495,6 @@ def split_version_key(raw: str) -> tuple[str, int]:
             return ver, 0
     return s, 0
 
-
-def changelog_since(text: str, from_version: str, to_version: str, to_build: int = 0) -> list[dict]:
-    """
-    Записи новее from_version, не новее to_version (+ сборка).
-    Если from_version пустой — только текущая (чтобы не вывалить всю историю).
-    """
-    from_ver, from_bld = split_version_key(from_version)
-    out: list[dict] = []
-    for b in parse_changelog(text):
-        ver = (b.get("version") or "").strip()
-        bld = int(b.get("build_num") or 0)
-        if not ver:
-            continue
-        if to_version and is_newer(ver, to_version, bld, to_build):
-            continue
-        if from_version:
-            if not is_newer(ver, from_ver, bld, from_bld):
-                continue
-        elif to_version and ver != to_version:
-            continue
-        elif to_build and bld and bld != to_build:
-            continue
-        if not (b["added"] or b["changed"] or b["fixed"] or b["removed"]):
-            continue
-        out.append(b)
-    return out
-
-
 def _merge_changelog_blocks(blocks: list[dict]) -> dict:
     """Склеивает несколько блоков одной версии в один список без повторов."""
     out = {
@@ -1571,24 +1518,6 @@ def _merge_changelog_blocks(blocks: list[dict]) -> dict:
                 seen[key].add(item)
                 out[key].append(item)
     return out
-
-
-def changelog_for_version(text: str, version: str) -> list[dict]:
-    """
-    Один накопленный блок текущей версии — все сборки этой версии вместе.
-    Новая версия в CHANGELOG начинается с пустого раздела и сюда не попадает.
-    """
-    ver = (version or "").strip()
-    if not ver:
-        return []
-    hits = [b for b in parse_changelog(text) if (b.get("version") or "").strip() == ver]
-    if not hits:
-        return []
-    merged = _merge_changelog_blocks(hits)
-    if not (merged["added"] or merged["changed"] or merged["fixed"] or merged["removed"]):
-        return []
-    return [merged]
-
 
 def _md_inline(text: str) -> str:
     """**жирный** из журнала -> <b>жирный</b>, остальное экранируется.
@@ -2501,14 +2430,6 @@ def resolve_download_url(zip_ref: str, base_url: str) -> str:
         return ref
     base = (base_url or "").strip().rstrip("/")
     return base + "/" + ref.lstrip("/")
-
-
-def _fmt_mb(n: int) -> str:
-    try:
-        return f"{n / (1024 * 1024):.1f} МБ"
-    except Exception:
-        return str(n)
-
 
 def download_zip(
     download_url: str,

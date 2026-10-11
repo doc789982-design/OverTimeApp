@@ -1,15 +1,14 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Controls.impl
-import Qt5Compat.GraphicalEffects
 
-// ==========================================
-// УНИВЕРСАЛЬНЫЙ ДИАЛОГ ПОДТВЕРЖДЕНИЯ
-// Стиль: как у современных приложений —
-// затемнение фона, иконка, внятный вопрос,
-// опасная кнопка выделена красным.
-// ==========================================
-Popup {
+// ============================================================
+// УНИВЕРСАЛЬНОЕ ДИАЛОГ ПОДТВЕРЖДЕНИЯ
+// Обычный AppDialog: вопрос в шапке, иконка и описание в центре,
+// опасная кнопка выделена красным. Enter — подтвердить,
+// Esc/крестик — отменить.
+// ============================================================
+AppDialog {
     id: root
 
     property string dialogTitle: "Вы уверены?"
@@ -17,149 +16,51 @@ Popup {
     property string confirmLabel: "Подтвердить"
     property bool dangerMode: true   // true = красная кнопка (удаление и т.п.)
 
-    signal accepted()
-    signal rejected()
-
-    anchors.centerIn: parent
+    title: root.dialogTitle
+    closeOnAccept: true
+    acceptText: root.confirmLabel
+    acceptVariant: root.dangerMode ? "danger" : "primary"
+    rejectText: "Отмена"
+    rejectVariant: "secondary"
 
     width: 420
-    height: contentColumn.implicitHeight + AppTheme.spaceL * 2 + 60
+    anchors.centerIn: parent
 
-    modal: true
-    dim: true
-    focus: true
-    closePolicy: Popup.CloseOnEscape   // Клик мимо окна НЕ закрывает (защита от случайностей)
+    // Нет полей ввода — фокус сразу на кнопке подтверждения:
+    // Enter/Space работают нативно, кольцо фокуса подсвечивает её
+    autoFocusFirst: false
+    focusAcceptOnOpen: true
 
-    z: AppTheme.zModal
+    // ИКОНКА В КРУЖКЕ
+    Rectangle {
+        width: 44
+        height: 44
+        radius: AppTheme.radiusPill
+        anchors.horizontalCenter: parent.horizontalCenter
+        color: root.dangerMode ? AppTheme.bgDangerSoft : AppTheme.bgBrandSoft
 
-    // Попап — Item в overlay главного окна, а не нативное ОС-окно:
-    // нативное окно с модальностью и анимациями закрывается нестабильно
-    // (может оставить невидимую зону, блокирующую клики)
-    popupType: Popup.Item
-
-    // Страховка: если выходная анимация по какой-то причине не завершилась,
-    // принудительно докрываем попап — иначе его невидимый прямоугольник
-    // блокирует клики в зоне, где окно было
-    Timer {
-        id: closeSafety
-        interval: 600
-        onTriggered: if (!root.opened) root.visible = false
-    }
-    onAboutToHide: closeSafety.restart()
-
-    // Затемнение фона — как у больших модальных окон программы
-    Overlay.modal: Rectangle {
-        color: AppTheme.bgOverlay
-        opacity: root.opened ? 1.0 : 0.0
-        Behavior on opacity {
-            NumberAnimation { duration: AppTheme.durStandard; easing.type: root.opened ? AppTheme.easeEnter : AppTheme.easeExit }
+        IconImage {
+            anchors.centerIn: parent
+            source: root.dangerMode ? "../icons/trash.svg" : "../icons/help.svg"
+            width: AppTheme.iconLarge
+            height: AppTheme.iconLarge
+            color: root.dangerMode ? AppTheme.accentDanger : AppTheme.accentBrand
         }
     }
 
-    enter: Transition {
-        ParallelAnimation {
-            NumberAnimation { property: "opacity"; from: 0.0; to: 1.0; duration: AppTheme.durFast; easing.type: AppTheme.easeEnter }
-            NumberAnimation { property: "scale"; from: 0.92; to: 1.0; duration: AppTheme.durStandard; easing.type: AppTheme.easeEnter }
-        }
-    }
-    exit: Transition {
-        ParallelAnimation {
-            NumberAnimation { property: "opacity"; from: 1.0; to: 0.0; duration: 100; easing.type: Easing.InQuad }
-            NumberAnimation { property: "scale"; from: 1.0; to: 0.95; duration: 150; easing.type: AppTheme.easeExit }
-        }
-    }
-
-    background: Rectangle {
-        color: AppTheme.bgModal
-        radius: AppTheme.radiusModal
-        border.color: AppTheme.borderDivider
-        border.width: 1
-        AppShadow { level: 4 }
+    // ОПИСАНИЕ
+    Text {
+        width: parent.width
+        text: root.dialogMessage
+        visible: root.dialogMessage !== ""
+        color: AppTheme.textSecondary
+        font.family: AppTheme.fontFamily
+        font.pixelSize: AppTheme.sizeBody
+        horizontalAlignment: Text.AlignHCenter
+        wrapMode: Text.WordWrap
+        lineHeight: 1.25
     }
 
-    contentItem: Item {
-        // Enter — подтвердить (backup, если фокус не на кнопке),
-        // Esc — отменить. Раньше Esc закрывал окно молча, не сообщая
-        // «отмены» — теперь поведение единое с кнопкой «Отмена».
-        Keys.onReturnPressed: confirmBtn.click()
-        Keys.onEnterPressed: confirmBtn.click()
-        Keys.onEscapePressed: { root.rejected(); root.close() }
-
-        Column {
-            id: contentColumn
-            x: AppTheme.spaceL
-            width: root.width - AppTheme.spaceL * 2
-            spacing: AppTheme.spaceM
-
-            Item { width: 1; height: AppTheme.spaceS }
-
-            // ИКОНКА В КРУЖКЕ
-            Rectangle {
-                width: 44
-                height: 44
-                radius: AppTheme.radiusPill
-                anchors.horizontalCenter: parent.horizontalCenter
-                color: root.dangerMode ? AppTheme.bgDangerSoft : AppTheme.bgBrandSoft
-
-                IconImage {
-                    anchors.centerIn: parent
-                    source: root.dangerMode ? "../icons/trash.svg" : "../icons/help.svg"
-                    width: AppTheme.iconLarge
-                    height: AppTheme.iconLarge
-                    color: root.dangerMode ? AppTheme.accentDanger : AppTheme.accentBrand
-                }
-            }
-
-            // ЗАГОЛОВОК
-            Text {
-                width: parent.width
-                text: root.dialogTitle
-                color: AppTheme.textPrimary
-                font.family: AppTheme.fontFamily
-                font.pixelSize: AppTheme.sizeH3
-                font.weight: AppTheme.weightBold
-                horizontalAlignment: Text.AlignHCenter
-                wrapMode: Text.WordWrap
-            }
-
-            // ОПИСАНИЕ
-            Text {
-                width: parent.width
-                text: root.dialogMessage
-                visible: root.dialogMessage !== ""
-                color: AppTheme.textSecondary
-                font.family: AppTheme.fontFamily
-                font.pixelSize: AppTheme.sizeBody
-                horizontalAlignment: Text.AlignHCenter
-                wrapMode: Text.WordWrap
-                lineHeight: 1.25
-            }
-        }
-
-        // КНОПКИ
-        Row {
-            anchors.horizontalCenter: parent.horizontalCenter
-            anchors.bottom: parent.bottom
-            anchors.bottomMargin: AppTheme.spaceL
-            spacing: AppTheme.spaceM
-
-            AppButton {
-                text: "Отмена"
-                variant: "secondary"
-                onClicked: { root.rejected(); root.close() }
-            }
-
-            AppButton {
-                id: confirmBtn
-                // фокус сразу на подтверждении: Enter/Space работают
-                // нативно, кольцо фокуса подсвечивает кнопку по умолчанию
-                focus: true
-                text: root.confirmLabel
-                variant: root.dangerMode ? "danger" : "primary"
-                onClicked: { root.accepted(); root.close() }
-            }
-        }
-    }
 
     function showCentered() {
         root.open()

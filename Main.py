@@ -4033,8 +4033,8 @@ class Backend(QObject):
         except Exception:
             return {}
 
-    @Slot(str, str, result="QVariant")
-    def getShiftDatesForPeriod(self, start_date_str: str, end_date_str: str):
+    @Slot(str, str, result="QVariant")
+    def getShiftDatesForPeriod(self, start_date_str: str, end_date_str: str):
         """
         Анализирует паттерн сменщика и возвращает даты его рабочих дней
         в заданном периоде. Вызывается из окна компенсации (DayCompDialog).

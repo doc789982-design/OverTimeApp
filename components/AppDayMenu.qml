@@ -11,20 +11,8 @@ import Qt5Compat.GraphicalEffects
 // (прозрачность + масштаб), закрытие по клику вне меню.
 // Внутри — шапка с датой, круглые статусы К/Б/О и пункты действий.
 // ============================================================
-Menu {
+AppMenu {
     id: root
-
-    z: AppTheme.zDropdown
-    transformOrigin: Item.TopLeft
-    padding: 0
-    topPadding: AppTheme.spaceXS
-    bottomPadding: AppTheme.spaceXS
-    leftPadding: AppTheme.spaceXXS
-    rightPadding: AppTheme.spaceXXS
-
-    // Меню — Item-попап в overlay главного окна, а не нативное окно
-    popupType: Popup.Item
-
     // Фиксированная ширина меню (как у старых меню дня): пункты и шапка
     // выравниваются по ней, а не по авто-размеру содержимого.
     width: 240
@@ -53,26 +41,13 @@ Menu {
     // волну меток (сборку по порядку выделения) к обновлению данных
     signal bulkApplyRequested(var dates)
 
-    enter: Transition {
-        ParallelAnimation {
-            NumberAnimation { property: "opacity"; from: 0.0; to: 1.0; duration: AppTheme.durFast; easing.type: AppTheme.easeEnter }
-            NumberAnimation { property: "scale"; from: 0.96; to: 1.0; duration: AppTheme.durFast; easing.type: AppTheme.easeEnter }
-        }
-    }
-    exit: Transition {
-        ParallelAnimation {
-            NumberAnimation { property: "opacity"; from: 1.0; to: 0.0; duration: AppTheme.durMicro; easing.type: AppTheme.easeExit }
-            NumberAnimation { property: "scale"; from: 1.0; to: 0.96; duration: AppTheme.durMicro; easing.type: AppTheme.easeExit }
-        }
-    }
-
     background: Rectangle {
         implicitWidth: 240
         color: AppTheme.bgElevated
         radius: AppTheme.radiusMedium
         border.color: AppTheme.borderDivider
         border.width: 1
-        AppShadow { level: 3 }
+        AppShadow { level: 2 }   // уровень как у всех меню
 
         // ЕДИНЫЙ тултип кнопок меню. Живёт в overlay главного окна:
         // содержимое меню клипуется его ListView (clip: true в стиле

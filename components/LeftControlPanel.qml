@@ -227,7 +227,7 @@ Item {
     }
     
     // МЕНЮ БАЗ ДАННЫХ (вне основного Rectangle)
-    AppDatabaseMenu {
+    AppMenu {
         id: dbSwitchMenu
         
         Repeater {

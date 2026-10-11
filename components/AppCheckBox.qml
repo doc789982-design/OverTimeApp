@@ -7,7 +7,8 @@ CheckBox {
 
     // Цвета по умолчанию из темы
     property color activeColor: AppTheme.accentBrand
-    // невыбранная обводка — как onSurfaceVariant в MD3 (контрастнее бледной рамки полей)    property color inactiveColor: AppTheme.textSecondary
+    // невыбранная обводка — как onSurfaceVariant в MD3 (контрастнее бледной рамки полей)
+    property color inactiveColor: AppTheme.textSecondary
     property color checkColor: AppTheme.textOnAccent
     
     implicitHeight: 36 
