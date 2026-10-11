@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """Тест схемы версий: имя для человека + семвер + непрерывные сборки.
 
-В AppTheme.qml живут два поля: appVersion — имя для человека (до релиза
-просто «BETA.1», без номера версии: версия появится на релизе, дальше —
-нумерация; его же берут имена файлов релиза и установщик) и appSemver —
-семвер для механики (тег v<семвер>, сравнение версий, машинная строка).
-Сборки непрерывные, никогда не сбрасываются; «новее ли» обновление решает
-сборка, а у самых старых клиентов — машинная строка, где счётчик канала =
-номер сборки.
+В AppTheme.qml живут два поля: appVersion — имя для человека (пока версии
+нет — просто «BETA.1», потом «RC.1»; с релиза имя = версии: «1.0.0»,
+«1.0.1»; его же берут имена файлов релиза и установщик) и appSemver —
+семвер для механики (тег v<семвер>, сравнение версий). Первый релиз —
+1.0.0 (никакого 2.0.0). Сборки непрерывные, никогда не сбрасываются;
+«новее ли» решает сборка, а самым старым клиентам служит машинная
+строка-мост в историческом ядре 2.0.0: «2.0.0-<канал>.<сборка>»,
+релизы — голое «2.0.0».
 
 Проверяется:
   A. Парсер: каналы по старшинству alpha < beta < rc < релиз,
@@ -75,29 +76,32 @@ def main() -> int:
     assert not app_update.is_newer("2.0.0-beta.2", "2.0.0-beta.10")
     print("A: парсер — каналы alpha < beta < rc < релиз, ядро, счётчики ✓")
 
-    # ── B. Машинная строка ──
+    # ── B. Машинная строка-мост (для самых старых, строковых клиентов) ──
     scan = app_update.scan_version
-    assert scan("2.0.0-beta.1", 294) == "2.0.0-beta.294"
+    assert scan("1.0.0-beta.1", 296) == "2.0.0-beta.296"
+    assert scan("1.0.0-rc.1", 298) == "2.0.0-rc.298"
+    assert scan("1.0.0", 300) == "2.0.0", "релиз — голое историческое ядро"
+    assert scan("1.6.0-alpha.1", 400) == "2.0.0-alpha.400"
     assert scan("2.0.0-alpha.5", 70) == "2.0.0-alpha.70"
-    assert scan("2.0.0", 300) == "2.0.0", "релиз не меняется"
-    assert scan("2.1.0-alpha.1", 310) == "2.1.0-alpha.310"
-    assert scan("", 5) == "" and scan("2.0.0-beta.1", 0) == "2.0.0-beta.1"
-    print("B: машинная строка — счётчик канала = сборка, релиз как есть ✓")
+    assert scan("", 5) == "" and scan("1.0.0-beta.1", 0) == "1.0.0-beta.1"
+    print("B: мост — ядро 2.0.0, канал настоящий, счётчик = сборка ✓")
 
     # ── C. Обновление со старых сборок ──
     # клиент со сборкой (все недавние): решает сборка, канал не важен
-    assert app_update.is_newer("2.0.0-beta.1", "BETA.1", 295, 294)
-    assert app_update.is_newer("2.0.0", "BETA.1", 300, 295)
-    assert app_update.is_newer("2.1.0-alpha.1", "2.0.0", 310, 300)
-    assert not app_update.is_newer("2.0.0-beta.2", "BETA.1", 295, 295)
-    assert not app_update.is_newer("2.0.0-beta.2", "BETA.1", 294, 295)
-    # строковый клиент (самые старые, сборки не знают): машинная строка
-    # против их «2.0.0-ALPHA.N» — канал растёт, счётчик = сборка
-    assert app_update.is_newer("2.0.0-beta.294", "2.0.0-ALPHA.293")
-    assert app_update.is_newer("2.0.0", "2.0.0-ALPHA.293")
-    assert app_update.is_newer("2.1.0-alpha.310", "2.0.0")
-    assert not app_update.is_newer("2.0.0-beta.294", "2.0.0-beta.294")
-    assert not app_update.is_newer("2.0.0-alpha.5", "2.0.0-beta.2")
+    assert app_update.is_newer("1.0.0-beta.1", "BETA.1", 296, 295)
+    assert app_update.is_newer("1.0.0", "BETA.1", 300, 296)
+    assert app_update.is_newer("1.1.0-alpha.1", "1.0.0", 310, 300)
+    assert not app_update.is_newer("1.0.0-beta.2", "BETA.1", 296, 296)
+    assert not app_update.is_newer("1.0.0-beta.2", "BETA.1", 295, 296)
+    # строковый клиент (самые старые, сборки не знают): мост против их
+    # «2.0.0-ALPHA.N» — канал настоящий, счётчик = сборка, монотонно
+    # даже при возврате канала (alpha.400 > ALPHA.220)
+    assert app_update.is_newer("2.0.0-beta.296", "2.0.0-ALPHA.220")
+    assert app_update.is_newer("2.0.0-rc.298", "2.0.0-beta.296")
+    assert app_update.is_newer("2.0.0", "2.0.0-ALPHA.220")
+    assert app_update.is_newer("2.0.0-alpha.400", "2.0.0-ALPHA.220")
+    assert not app_update.is_newer("2.0.0-alpha.400", "2.0.0-beta.296")
+    assert not app_update.is_newer("2.0.0-beta.296", "2.0.0-beta.296")
     print("C: старые клиенты видят новую версию, откат запрещён ✓")
 
     # ── D. Согласованность проекта ──
@@ -107,6 +111,9 @@ def main() -> int:
         "(без номера версии — версия появится на релизе)"
     assert SEMVER_RE.match(semver), \
         f"appSemver «{semver}» — не семвер с каналом (см. RELEASING.md)"
+    # бета без версии — предрелиз 1.0.0 (первый релиз 1.0.0, не 2.0.0)
+    assert app_update.parse_version(semver)[0] == (1, 0, 0), \
+        "семвер до релиза обязан быть предрелизом 1.0.0 (см. RELEASING.md)"
     assert build > 0
     vj = json.loads((ROOT / "updates" / "version.json")
                     .read_text(encoding="utf-8"))

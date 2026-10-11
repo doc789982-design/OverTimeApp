@@ -262,24 +262,30 @@ def parse_version(raw: str) -> tuple:
 
 def scan_version(version: str, build: int = 0) -> str:
     """
-    Машинная строка для самых старых клиентов, которые сравнивают версии
-    строкой, не зная номера сборки: счётчик канала = номер сборки
-    (2.0.0-beta.1 + сборка 294 → 2.0.0-beta.294; сборки сквозные и всегда
-    растут). На экране по-прежнему честная version из поля display.
-    Релизная версия без канала не меняется («2.0.0» и так старше любого
-    пре-релиза).
+    Машинная строка-мост для самых старых клиентов, которые сравнивают
+    версии строкой и не знают номера сборки. Их исторические строки живут
+    в ядре «2.0.0-ALPHA.N», поэтому мост живёт там же:
+
+      ядро всегда 2.0.0, канал настоящий, счётчик = номер сборки
+      (1.0.0-beta.1 + сборка 296 → 2.0.0-beta.296), релизы — голое «2.0.0».
+
+    Счётчик = сборка делает мост монотонным всегда — даже когда канал
+    следующей версии снова «alpha» (2.0.0-alpha.400 новее 2.0.0-ALPHA.220:
+    счётчик вырос). После первого обновления клиент современный (сравнивает
+    сборки) и мост ему больше не нужен. Настоящий семвер в мост не входит —
+    он живёт в тегах и заголовках релиза. На экране — честное имя из display.
     """
     ver = (version or "").strip()
     bld = int(build or 0)
     if not ver or bld <= 0:
         return ver
-    core, sep, tail = ver.partition("-")
+    _core, sep, tail = ver.partition("-")
     if not sep or not tail:
-        return ver
+        return "2.0.0"
     name, _, _num = tail.partition(".")
     if not name:
-        return ver
-    return f"{core}-{name}.{bld}"
+        return "2.0.0"
+    return f"2.0.0-{name}.{bld}"
 
 
 def is_newer(candidate: str, current: str, candidate_build: int = 0, current_build: int = 0) -> bool:
@@ -1802,9 +1808,9 @@ def parse_github_release_url(url: str) -> Optional[dict]:
 def _github_display_from_title(title: str) -> str:
     """Отображаемое имя версии из заголовка релиза.
 
-    Заголовок релиза выглядит как «OVERTIMETAB 2.0.0-beta.1 · сборка 294» —
-    для уведомлений нужно именно отображаемое имя («2.0.0-beta.1»), а не
-    машинная версия из тега (2.0.0-beta.294).
+    Заголовок релиза выглядит как «OVERTIMETAB BETA.1 · сборка 296» —
+    для уведомлений нужно именно отображаемое имя («BETA.1»), а не
+    машинная версия из тега (2.0.0-beta.296).
     """
     m = re.search(r"OVERTIMETAB\s+(.+?)\s*·", title or "", flags=re.IGNORECASE)
     return m.group(1).strip() if m else ""

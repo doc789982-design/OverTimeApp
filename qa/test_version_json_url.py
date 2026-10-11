@@ -93,9 +93,9 @@ def test_resolve_download_url():
     # GitHub с тегом
     got = app_update.resolve_download_url(
         "OVERTIMETAB_BETA.1_87f3711.zip",
-        "https://github.com/doc789982-design/OverTimeApp/releases/download/v2.0.0-beta.1")
+        "https://github.com/doc789982-design/OverTimeApp/releases/download/v1.0.0-beta.1")
     assert got == ("https://github.com/doc789982-design/OverTimeApp/"
-                   "releases/download/v2.0.0-beta.1/OVERTIMETAB_BETA.1_87f3711.zip"), got
+                   "releases/download/v1.0.0-beta.1/OVERTIMETAB_BETA.1_87f3711.zip"), got
     # полный адрес остаётся как есть
     full = "https://example.com/x.zip"
     assert app_update.resolve_download_url(full, "https://other/y") == full
@@ -139,11 +139,11 @@ def test_latest_base_url():
         assert info["url"] == WANT, info
         # ссылка с тегом
         info2, err2 = app_update._raw_github_version_json(
-            {"owner": "doc789982-design", "repo": "OverTimeApp", "tag": "v2.0.0-beta.1"})
+            {"owner": "doc789982-design", "repo": "OverTimeApp", "tag": "v1.0.0-beta.1"})
         assert info2, err2
         assert info2["base_url"] == (
             "https://github.com/doc789982-design/OverTimeApp/"
-            "releases/download/v2.0.0-beta.1"), info2
+            "releases/download/v1.0.0-beta.1"), info2
     finally:
         app_update.urllib.request.urlopen = saved
     print("_raw_github_version_json: latest без тега не даёт битую ссылку ✓")
