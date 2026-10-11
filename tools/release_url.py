@@ -16,7 +16,7 @@ import os
 def asset_url(display: str, sha: str, tag: str = "", repo: str = "") -> str:
     """Имя zip-архива релиза или пустая строка.
 
-    display — имя версии для человека («BETA.1», из AppTheme),
+    display — версия из AppTheme («2.0.0-beta.1»; семвер с каналом),
     sha     — короткий хеш коммита (7 знаков).
     tag и repo не нужны для имени, оставлены для совместимости вызова.
     """

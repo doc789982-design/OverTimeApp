@@ -6,7 +6,10 @@
 ; программы. Сборка на CI (GitHub Actions, windows-latest):
 ;
 ;   choco install innosetup -y
-;   iscc /DProductVersion="2.0.0-ALPHA.<сборка>" /F"<имя_файла>" tools\overtimetab.iss
+;   iscc /F"<имя_файла>" tools\overtimetab.iss
+; Версию скрипт берёт из build/product_version.iss — его генерирует
+; tools/make_resources.py из AppTheme.qml (шаг «Сгенерировать ресурсы»
+; в CI идёт раньше). /DProductVersion с командной строки перекрывается.
 ;
 ; /F задаёт имя итогового exe (совпадает с именем zip релиза), сам файл
 ; кладётся в корень репозитория (OutputDir=..). Версию сборки CI читает
@@ -29,6 +32,10 @@
 #ifndef ProductVersion
 #define ProductVersion "dev"
 #endif
+; Честная версия программы — из components/AppTheme.qml (файл генерирует
+; tools/make_resources.py при сборке). Подключается ПОСЛЕ аргументов
+; командной строки CI и перекрывает их: версия живёт в одном месте.
+#include "..\build\product_version.iss"
 ; папка с собранной программой (относительно этого файла)
 #ifndef SourceDir
 #define SourceDir "..\dist\OVERTIMETAB"
@@ -38,7 +45,7 @@
 AppId={{7E4C1D52-9A63-4B18-B0F4-6C2D8E5A1F93}
 AppName=OVERTIMETAB
 AppVersion={#ProductVersion}
-AppVerName=OVERTIMETAB (сборка {#ProductVersion})
+AppVerName=OVERTIMETAB {#ProductVersion}
 AppPublisher=OVERTIMETAB
 DefaultDirName={autopf}\OVERTIMETAB
 DefaultGroupName=OVERTIMETAB

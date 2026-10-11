@@ -83,14 +83,17 @@ _history = ROOT / "BUILD_HISTORY.md"
 if _history.exists():
     _datas.append((str(_history), "."))
 
-# version.json внутрь сборки. В AppTheme лежит имя для человека (например
-# «BETA.1»), а обновлятор старых сборок понимает только «X.Y.Z-ИМЯ.N».
-# Поэтому в пакет кладётся машинная строка 2.0.0-ALPHA.<сборка> (сборки
-# нумеруются сквозняком и старым клиентам сравниваются по номеру сборки)
-# плюс поле display с настоящим именем — его показывают окна и тосты.
+# version.json внутрь сборки. В AppTheme лежит честная версия с каналом
+# («2.0.0-beta.1»). Обновлятор самых старых сборок сравнивает строки
+# «X.Y.Z-ИМЯ.N», не зная номера сборки, — поэтому в пакет кладётся
+# машинная строка, где счётчик канала = номер сборки (2.0.0-beta.294;
+# сборки нумеруются сквозняком и всегда растут), плюс поле display
+# с настоящим именем — его показывают окна и тосты.
 _theme_src = (ROOT / "components" / "AppTheme.qml").read_text(encoding="utf-8")
 import json as _json
 import re as _re
+sys.path.insert(0, str(ROOT))
+from app_update import scan_version  # noqa: E402
 _m_ver = _re.search(r'appVersion:\s*"([^"]+)"', _theme_src)
 _m_bld = _re.search(r"appBuild:\s*(\d+)", _theme_src)
 _app_name = _m_ver.group(1) if _m_ver else ""
@@ -100,11 +103,11 @@ _meta_dir.mkdir(exist_ok=True)
 _meta_file = _meta_dir / "version.json"
 # Имя архива релиза внутрь version.json: файл читают разные хранилища
 # (GitHub, запасной сервер post.mvd.ru), поэтому в url лежит только имя
-# архива (OVERTIMETAB_<имя>_<sha7>.zip), а полный адрес склеивается с тем
+# архива (OVERTIMETAB_<версия>_<sha7>.zip), а полный адрес склеивается с тем
 # хранилищем, где файл лежит. В сборке по ветке имени ещё нет — поле не пишется.
 _meta = {
     "name": "OVERTIMETAB",
-    "version": "2.0.0-ALPHA.%d" % _app_build,
+    "version": scan_version(_app_name, _app_build),
     "build": _app_build,
     "display": _app_name,
 }
@@ -114,8 +117,8 @@ if _asset_url:
 _meta_file.write_text(_json.dumps(_meta, ensure_ascii=False, indent=2) + "\n",
                       encoding="utf-8")
 _datas.append((str(_meta_file), "."))
-print("[версия] имя=%s сборка=%d машинная=2.0.0-ALPHA.%d"
-      % (_app_name, _app_build, _app_build))
+print("[версия] имя=%s сборка=%d машинная=%s"
+      % (_app_name, _app_build, scan_version(_app_name, _app_build)))
 
 a = Analysis(
     [str(ROOT / "Main.py")],

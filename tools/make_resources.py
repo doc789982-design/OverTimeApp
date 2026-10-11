@@ -222,6 +222,28 @@ def main():
         sys.exit(1)
     print(f"resources_rc.py: {out.stat().st_size / 1024:.0f} КБ — готово")
 
+    # Версия программы для установщика (Inno Setup). Версия живёт в одном
+    # месте — appVersion в components/AppTheme.qml — и до установщика её
+    # доводит этот файл: build/product_version.iss подключается скриптом
+    # tools/overtimetab.iss ПОСЛЕ аргументов командной строки и перекрывает
+    # их (CI передаёт устаревший /D, но он не имеет силы).
+    import re as _re
+    theme = (ROOT / "components" / "AppTheme.qml").read_text(encoding="utf-8")
+    m = _re.search(r'appVersion:\s*"([^"]+)"', theme)
+    if not m:
+        print("ERROR: appVersion не найден в AppTheme.qml")
+        sys.exit(1)
+    ver_dir = ROOT / "build"
+    ver_dir.mkdir(exist_ok=True)
+    (ver_dir / "product_version.iss").write_text(
+        "; Сгенерировано tools/make_resources.py из components/AppTheme.qml — "
+        "не править руками.\n"
+        "; Перекрывает версию, переданную установщику с командной строки.\n"
+        '#undef ProductVersion\n'
+        '#define ProductVersion "%s"\n' % m.group(1),
+        encoding="utf-8")
+    print(f"product_version.iss: {m.group(1)}")
+
     # На GitHub: подменить вызов `pyinstaller --collect-all` на spec.
     # YAML на этой ветке трогать нельзя — токен без права workflows.
     # Установленный PySide6 не трогаем: если выкинуть файлы из site-packages,

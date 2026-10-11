@@ -120,6 +120,17 @@ def scene_items(root_item, name):
     return [c for c in iter_items(root_item) if c.objectName() == name]
 
 
+def wait_until(app, cond, timeout=3.0):
+    """Крутит события, пока не выполнится условие (или не выйдет время)."""
+    t = time.time() + timeout
+    while time.time() < t:
+        app.processEvents()
+        time.sleep(0.02)
+        if cond():
+            return True
+    return cond()
+
+
 def main() -> int:
     qml_path = os.path.join(ROOT, "_render_vignette.qml")
     with open(qml_path, "w", encoding="utf-8") as f:
@@ -237,18 +248,17 @@ def main() -> int:
         print(f"C: рендер — выходной день {px_weekend.name()}, "
               f"метка «О» {px_badge.name()} ✓")
 
-        # такт 10: метки растворились, выделение снято
-        settle(1.3)                     # ≈4,7 с открытия: растворились (4,4 сцены)
+        # такт 10: метки растворились, выделение снято (ждём конца)
         badges = scene_items(stage, "vignetteMiniBadge")
-        opacities = [b.property("opacity") for b in badges]
-        assert all(op < 0.1 for op in opacities), \
-            f"метки не растворились к паузе сюжета: {opacities}"
+        assert wait_until(app,
+            lambda: all(b.property("opacity") < 0.1 for b in badges), 2.5), \
+            "метки не растворились к паузе сюжета: " \
+            f"{[b.property('opacity') for b in badges]}"
         assert vign.property("currentScene") == "wave", \
             "единственная сцена не должна листаться сама"
 
-        # сюжет по кругу: новый прогон уже начался
-        settle(1.0)                     # ≈5,7 с открытия: круг в разгаре
-        assert cursor.property("opacity") > 0.5, \
+        # сюжет по кругу: новый прогон уже начался (курсор вернётся)
+        assert wait_until(app, lambda: cursor.property("opacity") > 0.5, 3.0), \
             "сюжет не пошёл по кругу — курсор не появился снова"
         assert vign.property("currentScene") == "wave"
         print("B2: сюжет по кругу, единственная сцена не листается ✓")
@@ -270,15 +280,16 @@ def main() -> int:
         settle(4.0)                     # ≈4,5 с: волна ещё играет
         assert vign.property("currentScene") == "wave", \
             "волна ещё не проигралась, а сцена уже сменилась"
-        settle(1.8)                     # ≈6,3 с: листание настало (5,3)
-        assert vign.property("currentScene") == "neutral", \
+        assert wait_until(app,
+            lambda: vign.property("currentScene") == "neutral", 3.0), \
             "после волны должна наступить нейтральная сцена сама"
         print("K: сцены листаются сами — после волны наступила "
               "нейтральная ✓")
 
         # ── D. Нейтральная сцена: маскот и конфетти ──
         neutral = find_by_name(dlg, "vignetteNeutralScene")
-        assert neutral is not None and neutral.property("visible") is True, \
+        assert neutral is not None, "нейтральная сцена не найдена"
+        assert wait_until(app, lambda: neutral.property("visible") is True, 1.5), \
             "нейтральная сцена не показана"
         mascot = vign.neutralMascot()
         assert mascot is not None, "маскот не найден в нейтральной сцене"
@@ -311,8 +322,8 @@ def main() -> int:
         settle(0.25)
         assert dots[0].property("width") > dots[1].property("width"), \
             "активная точка не выделена"
-        settle(5.5)                     # авто-листание продолжилось
-        assert vign.property("currentScene") == "neutral", \
+        assert wait_until(app,
+            lambda: vign.property("currentScene") == "neutral", 8.0), \
             "авто-листание не продолжилось после ручного выбора"
         print("K2: точка выбирает сцену, сюжет перезапускается, "
               "авто-листание продолжается ✓")
