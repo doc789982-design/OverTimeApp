@@ -2955,9 +2955,15 @@ class Backend(QObject):
             except Exception as e:
                 self.showToast.emit(f"Ошибка: {e}", "error")
 
-    @Slot(str)
-    def createNewDatabase(self, name):
-        """Создает новый файл .sqlite в стандартной папке и открывает его"""
+    @Slot(str, str, str, str, str, str)
+    def createNewDatabase(self, name, resp_position="", resp_rank="",
+                          resp_last="", resp_first="", resp_middle=""):
+        """Создает новый файл .sqlite в стандартной папке и открывает его.
+
+        Вместе с названием отдела сразу пишется ответственное лицо
+        (должность, звание, ФИО) — те же поля, что в настройках
+        «Данные подразделения»: они идут в шапки экспортируемых
+        документов, заполнять их после создания уже не нужно."""
         if not name.strip():
             self.showToast.emit("Имя базы не может быть пустым", "error")
             return
@@ -2981,7 +2987,15 @@ class Backend(QObject):
                 
             # Создаем пустую базу и пишем в нее имя отдела
             new_db = DB(str(db_path))
-            new_db.update_department_settings(department_name=name.strip())
+            # Сразу пишем и ответственное лицо, если указано в окне
+            new_db.update_department_settings(
+                department_name=name.strip(),
+                resp_position=resp_position.strip() or None,
+                resp_rank=resp_rank.strip() or None,
+                resp_last_name=resp_last.strip() or None,
+                resp_first_name=resp_first.strip() or None,
+                resp_middle_name=resp_middle.strip() or None
+            )
             new_db.conn.commit()
             new_db.close()
             

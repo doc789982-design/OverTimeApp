@@ -14,14 +14,15 @@ import QtQuick.Controls
 //   клик        — прокрут на полный оборот (проверка обновлений)
 //   нет обновл. — просто остановилась
 //   есть        — прокрутившись, складывается и раскрывается
-//                 стрелкой «скачать» (download.svg, зелёная)
-//   загрузка    — снова прокрут, «скачать» складывается
-//                 и раскрывается кольцом, которое заполняется
-//                 прогрессом (тонкая дуга)
+//                 стрелкой «скачать» (download.svg, синяя, как радар);
+//                 в правом верхнем углу — радар: точка и исходящие
+//                 кольца «нажми на меня»
+//   загрузка    — снова прокрут, «скачать» складывается и раскрывается
+//                 кольцом, которое заполняется прогрессом (тонкая дуга);
+//                 радар скрыт — говорит кольцо
 //   загружено   — кольцо ДОЗАЛИВАЕТСЯ до полного (его конец)
-//                 и зеленеет, внутри вырастает стрелка
-//                 «установить» — начало следующего состояния
-//                 то же кольцо, разрыва нет
+//                 и зеленеет, внутри вырастает стрелка «установить»
+//                 (зелёная — «можно установить»), радар возвращается
 //
 // Слоями управляет только switchVis(): у слоёв нет биндингов
 // на xScale/opacity (императивные анимации их бы отцепили).
@@ -49,8 +50,11 @@ Item {
                                        : "refresh"
 
     // ---- Цвет иконок: состояние + ховер ----
-    readonly property color stateColor: root.downloading ? AppTheme.accentBrand
-                                   : (root.hasUpdate || root.ready) ? AppTheme.accentSuccess
+    // До загрузки стрелка синяя — в цвет радара; когда обновление
+    // загружено и можно установить — зелёная. Радар в обоих
+    // состояниях акцентно-синий: различает их стрелка.
+    readonly property color stateColor: root.ready ? AppTheme.accentSuccess
+                                   : (root.hasUpdate || root.downloading) ? AppTheme.accentBrand
                                    : (hover.containsMouse ? AppTheme.textPrimary : AppTheme.textSecondary)
 
     readonly property string tipText: {
@@ -63,11 +67,17 @@ Item {
         return "Проверить обновления"
     }
 
-    // ---- Искры-стрелочки: есть что скачать/установить ----
-    UpdateSparkles {
-        anchors.centerIn: parent
+    // ---- Радар: есть что скачать/установить ----
+    // Точка в правом верхнем углу и исходящие кольца — «нажми на меня».
+    // Скрыт, пока идёт загрузка: там говорит кольцо прогресса.
+    UpdateRadar {
+        anchors.right: parent.right
+        anchors.rightMargin: 4
+        anchors.top: parent.top
+        anchors.topMargin: 4
         z: 10
         active: (root.hasUpdate && !root.downloading) || root.ready
+        waveColor: AppTheme.accentBrand
     }
 
     // ---- Подложка (hover/нажатие) ----
@@ -227,9 +237,10 @@ Item {
         root.vis = to
         if (to === "refresh") rShow.restart()
         else if (to === "download") dShow.restart()
-        else if (to === "ring") gShow.restart()
-        // "install" не раскрывает новый слой: кольцо уже на месте
-        // (бесшовность), вырастает только стрелка — её ведёт vis
+        else if (to === "ring" || to === "install") gShow.restart()
+        // при живом переходе ring→install кольцо уже на месте
+        // (этот путь switchVis не вызывает) — здесь же gShow нужен
+        // для холодного старта сразу в «установить»: стрелку ведёт vis
     }
 
     // Смена состояния бэкенда -> хореография.
@@ -258,6 +269,12 @@ Item {
         }
     }
     onTargetVisChanged: stateDebounce.restart()
+
+    // Холодный старт сразу в «есть/скачано» (обновление нашли до
+    // построения кнопки): смены состояния не было, debounce не сработал
+    // бы — кнопка осталась бы «перезагрузкой». Запускаем вручную:
+    // при совпадении с prevVis он ничего не делает.
+    Component.onCompleted: stateDebounce.restart()
 
     // ---- Мышь ----
     HoverHandler { cursorShape: (root.ready || (root.hasUpdate && !root.downloading) || root.idleCheck) }
