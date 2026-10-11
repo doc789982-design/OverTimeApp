@@ -79,17 +79,22 @@ def write_version_json():
     import re
     m = re.search(r'appVersion:\s*"([^"]+)"', text)
     version = m.group(1) if m else "dev"
+    # Машинная строка строится из СЕМВЕРА (appSemver): scan("BETA.1")
+    # давал бы голое «2.0.0» без канала и сборки — строковые клиенты
+    # остались бы на месте
+    sm = re.search(r'appSemver:\s*"([^"]+)"', text)
+    semver = sm.group(1) if sm else version
     bm = re.search(r"appBuild:\s*(\d+)", text)
     build = int(bm.group(1)) if bm else 0
-    scan = version
+    scan = semver
     try:
         sys.path.insert(0, str(ROOT))
         from app_update import scan_version as _scan_version
 
-        scan = _scan_version(version, build)
+        scan = _scan_version(semver, build)
     except Exception:
-        if build and version:
-            scan = version.rsplit(".", 1)[0] + f".{build}" if "-" in version else version
+        if build and semver:
+            scan = semver.rsplit(".", 1)[0] + f".{build}" if "-" in semver else semver
     payload = {"name": "OVERTIMETAB", "version": scan}
     if build:
         payload["build"] = build
@@ -143,7 +148,12 @@ def plant_version_in_collected_packages(version: str, build: int = 0):
                 try:
                     from app_update import scan_version as _scan_version
 
-                    planted = _scan_version(version, build)
+                    # машинная строка — из семвера (см. write_version_json)
+                    text2 = theme.read_text(encoding="utf-8")
+                    import re as _re2
+                    _sm = _re2.search(r'appSemver:\s*"([^"]+)"', text2)
+                    _sem = _sm.group(1) if _sm else version
+                    planted = _scan_version(_sem, build)
                 except Exception:
                     planted = version
                 lines = [f'appVersion: "{planted}"']

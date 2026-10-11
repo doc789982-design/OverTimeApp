@@ -41,6 +41,12 @@
 #define SourceDir "..\dist\OVERTIMETAB"
 #endif
 
+; Гарантия версии в релизном zip (баг сборок 294-298: в архиве не было
+; номера версии, клиенты не могли обновиться). К этому моменту шаг
+; «Собрать ZIP» уже прошёл, а загрузка релиза ещё нет — скрипт
+; докладывает version.json в корень архива и сверяет содержимое.
+#exec 'python "' + SourcePath + '/stamp_zip_ci.py"
+
 [Setup]
 AppId={{7E4C1D52-9A63-4B18-B0F4-6C2D8E5A1F93}
 AppName=OVERTIMETAB
@@ -78,6 +84,11 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; \
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; \
     Flags: recursesubdirs createallsubdirs ignoreversion
+; version.json в корень установленной программы: обновлятор любого
+; поколения читает свою версию именно отсюда (спека кладёт копию
+; и в _internal — это вторая страховка)
+Source: "{#SourcePath}\..\build\version.json"; DestDir: "{app}"; \
+    Flags: ignoreversion skipifsourcedoesntexist
 
 [Icons]
 Name: "{autoprograms}\OVERTIMETAB\OVERTIMETAB"; Filename: "{app}\OVERTIMETAB.exe"

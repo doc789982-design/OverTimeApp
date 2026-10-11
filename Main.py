@@ -4185,6 +4185,14 @@ class Backend(QObject):
             self._app_version = qrc_ver
         if qrc_bld:
             self._app_build = qrc_bld
+        # Обновление прошло успешно: наша сборка не меньше той, что
+        # отмечали как «пробуем поставить» — журнал попыток чистим
+        try:
+            log = json.loads((self._data_dir / "update_apply.log").read_text(encoding="utf-8"))
+            if int(self._app_build or 0) >= int(log.get("build") or 0):
+                (self._data_dir / "update_apply.log").unlink(missing_ok=True)
+        except Exception:
+            pass
         if self._app_version:
             try:
                 root = app_update.install_root(self.app_dir)
@@ -4675,6 +4683,39 @@ class Backend(QObject):
             pass
 
     @Slot()
+    def _apply_log_path(self):
+        try:
+            return self._data_dir / "update_apply.log"
+        except Exception:
+            return Path(self.app_dir) / "update_apply.log"
+
+    def _apply_attempts(self, build):
+        """Сколько раз уже пробовали поставить эту сборку (защита от петли)."""
+        try:
+            data = json.loads(self._apply_log_path().read_text(encoding="utf-8"))
+            if int(data.get("build") or 0) == int(build):
+                return int(data.get("count") or 0)
+        except Exception:
+            pass
+        return 0
+
+    def _record_apply_attempt(self, build):
+        """Помечаем попытку установки; чистится при успехе (см. _init_updates)."""
+        try:
+            p = self._apply_log_path()
+            p.parent.mkdir(parents=True, exist_ok=True)
+            count = self._apply_attempts(build) + 1
+            p.write_text(json.dumps({"build": int(build), "count": count}),
+                         encoding="utf-8")
+        except Exception:
+            pass
+
+    def _clear_apply_log(self):
+        try:
+            self._apply_log_path().unlink(missing_ok=True)
+        except Exception:
+            pass
+
     def applyReadyUpdate(self):
         """Кнопка «Обновить»: переодеваем коробку и перезапускаемся. data/ не трогаем."""
         staged = app_update.staged_info(self.app_dir)
@@ -4686,6 +4727,17 @@ class Backend(QObject):
         if not staged_ver or not app_update.is_newer(staged_ver, self._app_version, staged_bld, self._app_build):
             self.showToast.emit("Откат на старую версию запрещён", "error")
             return
+        # Защита от петли: если эту сборку уже дважды пробовали поставить и
+        # программа всё ещё на старой — обновление не приклеивается (битый
+        # архив, заблокированные файлы). Крутить «скачать → перезапуск»
+        # бесконечно нельзя: предлагаем установщик.
+        if self._apply_attempts(staged_bld) >= 2:
+            self.showToast.emit(
+                "Обновление до этой сборки уже дважды не устанавливалось. "
+                "Скачайте установщик с сайта и запустите его — данные и базы останутся на месте.",
+                "error")
+            return
+        self._record_apply_attempt(staged_bld)
         dest_root = app_update.install_root(self.app_dir)
         if not (dest_root / "OVERTIMETAB.exe").exists() and not IS_FROZEN:
             self.showToast.emit("Обновление ставится в собранную программу, не из редактора кода", "error")

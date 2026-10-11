@@ -589,6 +589,23 @@ def _extract_version_from_bytes(raw: bytes) -> str:
     return ""
 
 
+# GitHub zip (сборка --collect-all) часто без loose version.json:
+# номер живёт внутри resources_rc (QML AppTheme). Имя файла zip не смотрим.
+# ВАЖНО: без этих констант сканер молча возвращает пустую версию — так
+# ломались сборки 297–298 («в архиве нет номера версии»). Их удалили
+# вместе с «мёртвым» _version_from_zip_bytes; восстановлены в 299.
+_JSON_VERSION_RE = re.compile(r'"version"\s*:\s*"([^"]+)"')
+_ZIP_VERSION_CACHE: dict[str, tuple[int, int, str]] = {}
+_VERSION_MEMBER_HINTS = (
+    "version.json",
+    "apptheme.qml",
+    "changelog.md",
+    "resources_rc.py",
+    "resources_rc.pyc",
+    "version_info.py",
+)
+
+
 def _zip_member_priority(name: str) -> tuple:
     low = name.lower()
     if low.endswith("version.json") and "/data/" not in ("/" + low):
