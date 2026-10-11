@@ -311,6 +311,31 @@ Item {
                         property alias compBadgeItemRef: compBadgeItem
                         property alias dutyColItemRef: dutyColItem
                         property alias cellAnim: dayCellAnim
+
+                        // Какие дежурства в этом дне уже показаны (id).
+                        // Нужны, чтобы «собиралась» только НОВАЯ карточка,
+                        // а не весь столбик заново при любом обновлении данных
+                        property var knownDutyIds: ({})
+
+                        onDayInfoChanged: dutyIdSweep.restart()
+
+                        // Сверка после смены содержимого дня: исчезнувшие
+                        // id забываются — тогда дежурство, возвращённое
+                        // отменой действия, снова «соберётся»
+                        Timer {
+                            id: dutyIdSweep
+                            interval: 50
+                            onTriggered: {
+                                var fresh = ({})
+                                if (isValid && dayInfo && dayInfo.duties) {
+                                    for (var i = 0; i < dayInfo.duties.length; i++) {
+                                        var did = dayInfo.duties[i].id
+                                        if (did !== undefined) fresh[did] = true
+                                    }
+                                }
+                                dayCell.knownDutyIds = fresh
+                            }
+                        }
                         
                         property var dayInfo: backend.calendarDays.length > index
                                               ? backend.calendarDays[index]
@@ -499,62 +524,128 @@ Item {
                                               : AppTheme.textSecondary)
                                 }
                                 
-                                Rectangle { 
+                                Item {
                                     id: compBadgeItem
                                     visible: isValid && dayInfo.has_comp
                                     width: 18
                                     height: 18
-                                    radius: AppTheme.radiusPill
                                     anchors.horizontalCenter: parent.horizontalCenter
-                                    color: AppTheme.bgTealSoft 
-                                    Text {
-                                        anchors.centerIn: parent
-                                        text: "В"
-                                        font.pixelSize: AppTheme.sizeMicro
-                                        font.weight: AppTheme.weightBold
-                                        color: AppTheme.accentTeal
+
+                                    // Появление метки — «собирается» на месте:
+                                    // проявление и рост. При смене месяца вход
+                                    // уже показывает сетка — вторая анимация не нужна.
+                                    // Решение — отложенно (Qt.callLater): ячейки
+                                    // пересобираются раньше, чем обработчик сигнала
+                                    // выставит флаг сетки
+                                    onVisibleChanged: {
+                                        if (!visible) return
+                                        compBody.opacity = 0
+                                        compBody.scale = 0.55
+                                        Qt.callLater(compBadgeItem.finishAssemble)
                                     }
-                                    // Нажатие на метку — окно правок компенсации этого дня
-                                    HoverHandler { cursorShape: Qt.PointingHandCursor }
-                                    MouseArea {
-                                        anchors.fill: parent
-                                        hoverEnabled: true
-                                        cursorShape: Qt.PointingHandCursor
-                                        onClicked: {
-                                            if (!isValid || isLocked || !dayInfo.is_current_month) return
-                                            backend.loadDayDetails(dayInfo.date_str)
-                                            if (backend.dayComps.length > 0)
-                                                dayCompDialog.openForCompEdit(backend.dayComps[0], dayInfo.date_str, parent, parent.width / 2, parent.height)
+
+                                    function finishAssemble() {
+                                        if (root.needAnimation) {
+                                            compBody.opacity = 1
+                                            compBody.scale = 1
+                                        } else {
+                                            compAssemble.restart()
                                         }
+                                    }
+
+                                    Rectangle {
+                                        id: compBody
+                                        anchors.fill: parent
+                                        radius: AppTheme.radiusPill
+                                        color: AppTheme.bgTealSoft
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: "В"
+                                            font.pixelSize: AppTheme.sizeMicro
+                                            font.weight: AppTheme.weightBold
+                                            color: AppTheme.accentTeal
+                                        }
+                                        // Нажатие на метку — окно правок компенсации этого дня
+                                        HoverHandler { cursorShape: Qt.PointingHandCursor }
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: {
+                                                if (!isValid || isLocked || !dayInfo.is_current_month) return
+                                                backend.loadDayDetails(dayInfo.date_str)
+                                                if (backend.dayComps.length > 0)
+                                                    dayCompDialog.openForCompEdit(backend.dayComps[0], dayInfo.date_str, parent, parent.width / 2, parent.height)
+                                            }
+                                        }
+                                    }
+
+                                    ParallelAnimation {
+                                        id: compAssemble
+                                        NumberAnimation { target: compBody; property: "opacity"; to: 1; duration: AppTheme.durStandard; easing.type: AppTheme.easeEnter }
+                                        NumberAnimation { target: compBody; property: "scale"; to: 1; duration: AppTheme.durStandard; easing.type: AppTheme.easeEnter }
                                     }
                                 }
                                 
-                                Rectangle {
+                                Item {
                                     id: statusBarItem
                                     visible: isValid && dayInfo.status !== ""
                                     width: 18
                                     height: 18
-                                    radius: AppTheme.radiusPill
                                     anchors.horizontalCenter: parent.horizontalCenter
-                                    color: !isValid
-                                           ? "transparent"
-                                           : (dayInfo.status === "Б"
-                                              ? AppTheme.bgDangerSoft
-                                              : (dayInfo.status === "О"
-                                                 ? AppTheme.bgWarningSoft
-                                                 : AppTheme.bgPurpleSoft))
-                                    Text { 
-                                        anchors.centerIn: parent
-                                        text: isValid ? dayInfo.status : ""
-                                        font.pixelSize: AppTheme.sizeMicro
-                                        font.weight: AppTheme.weightBold
+
+                                    // Появление метки — «собирается» на месте:
+                                    // проявление и рост. При смене месяца вход
+                                    // уже показывает сетка — вторая анимация не нужна.
+                                    // Решение — отложенно (Qt.callLater): ячейки
+                                    // пересобираются раньше, чем обработчик сигнала
+                                    // выставит флаг сетки
+                                    onVisibleChanged: {
+                                        if (!visible) return
+                                        statusBody.opacity = 0
+                                        statusBody.scale = 0.55
+                                        Qt.callLater(statusBarItem.finishAssemble)
+                                    }
+
+                                    function finishAssemble() {
+                                        if (root.needAnimation) {
+                                            statusBody.opacity = 1
+                                            statusBody.scale = 1
+                                        } else {
+                                            statusAssemble.restart()
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        id: statusBody
+                                        anchors.fill: parent
+                                        radius: AppTheme.radiusPill
                                         color: !isValid
                                                ? "transparent"
                                                : (dayInfo.status === "Б"
-                                                  ? AppTheme.accentDanger
+                                                  ? AppTheme.bgDangerSoft
                                                   : (dayInfo.status === "О"
-                                                     ? AppTheme.accentWarning
-                                                     : AppTheme.accentPurple))
+                                                     ? AppTheme.bgWarningSoft
+                                                     : AppTheme.bgPurpleSoft))
+                                        Text { 
+                                            anchors.centerIn: parent
+                                            text: isValid ? dayInfo.status : ""
+                                            font.pixelSize: AppTheme.sizeMicro
+                                            font.weight: AppTheme.weightBold
+                                            color: !isValid
+                                                   ? "transparent"
+                                                   : (dayInfo.status === "Б"
+                                                      ? AppTheme.accentDanger
+                                                      : (dayInfo.status === "О"
+                                                         ? AppTheme.accentWarning
+                                                         : AppTheme.accentPurple))
+                                        }
+                                    }
+
+                                    ParallelAnimation {
+                                        id: statusAssemble
+                                        NumberAnimation { target: statusBody; property: "opacity"; to: 1; duration: AppTheme.durStandard; easing.type: AppTheme.easeEnter }
+                                        NumberAnimation { target: statusBody; property: "scale"; to: 1; duration: AppTheme.durStandard; easing.type: AppTheme.easeEnter }
                                     }
                                 }
                             }
@@ -591,48 +682,88 @@ Item {
                                     
                                     Repeater {
                                         model: isValid ? dayInfo.duties : null
-                                        delegate: Rectangle {
-                                            required property var modelData 
+                                        delegate: Item {
+                                            id: dutyChip
+                                            required property var modelData
                                             property int dutyId: modelData.id !== undefined
                                                                  ? modelData.id
                                                                  : -1
                                             width: parent.width
                                             height: 18
-                                            radius: AppTheme.radiusSmall 
-                                            color: modelData.is_shift
-                                                   ? AppTheme.bgBrandSoft
-                                                   : AppTheme.statePress
-                                            Text {
-                                                anchors.centerIn: parent
-                                                text: modelData.text
-                                                font.family: AppTheme.fontFamily
-                                                font.pixelSize: AppTheme.sizeMicro
-                                                font.weight: AppTheme.weightBold
-                                                color: modelData.is_shift
-                                                       ? AppTheme.accentBrand
-                                                       : AppTheme.textPrimary
+
+                                            // Новая карточка «собирается» на месте:
+                                            // проявление и подъём — пара к растворению
+                                            // при удалении. Только для новых дежурств
+                                            // (id ещё не видели) и только вне смены
+                                            // месяца/сотрудника — там вход уже
+                                            // показывает шахматная анимация сетки.
+                                            // Решение — отложенно (Qt.callLater):
+                                            // ячейки пересобираются раньше, чем
+                                            // обработчик сигнала выставит флаг сетки
+                                            Component.onCompleted: {
+                                                if (dayInfo !== null
+                                                        && dayCell.knownDutyIds[dutyChip.dutyId] !== true) {
+                                                    chipBody.opacity = 0
+                                                    chipLift.y = 8
+                                                    Qt.callLater(dutyChip.finishAssemble)
+                                                }
                                             }
 
-                                            // Нажатие на карточку — окно правок именно
-                                            // этого дежурства (полные данные — из базы)
-                                            HoverHandler { cursorShape: Qt.PointingHandCursor }
-                                            MouseArea {
-                                                anchors.fill: parent
-                                                hoverEnabled: true
-                                                cursorShape: Qt.PointingHandCursor
-                                                onClicked: {
-                                                    if (!isValid || isLocked || !dayInfo.is_current_month) return
-                                                    backend.loadDayDetails(dayInfo.date_str)
-                                                    let full = null
-                                                    for (let i = 0; i < backend.dayDuties.length; ++i) {
-                                                        if (backend.dayDuties[i].id === modelData.id) {
-                                                            full = backend.dayDuties[i]
-                                                            break
-                                                        }
-                                                    }
-                                                    if (full !== null)
-                                                        dayDutyDialog.openForDutyEdit(full, dayInfo.date_str, parent, parent.width / 2, parent.height)
+                                            function finishAssemble() {
+                                                if (root.needAnimation) {
+                                                    chipBody.opacity = 1
+                                                    chipLift.y = 0
+                                                } else {
+                                                    chipAssemble.restart()
                                                 }
+                                            }
+
+                                            Rectangle {
+                                                id: chipBody
+                                                anchors.fill: parent
+                                                radius: AppTheme.radiusSmall
+                                                color: modelData.is_shift
+                                                       ? AppTheme.bgBrandSoft
+                                                       : AppTheme.statePress
+                                                transform: Translate { id: chipLift; y: 0 }
+                                                Text {
+                                                    anchors.centerIn: parent
+                                                    text: modelData.text
+                                                    font.family: AppTheme.fontFamily
+                                                    font.pixelSize: AppTheme.sizeMicro
+                                                    font.weight: AppTheme.weightBold
+                                                    color: modelData.is_shift
+                                                           ? AppTheme.accentBrand
+                                                           : AppTheme.textPrimary
+                                                }
+
+                                                // Нажатие на карточку — окно правок именно
+                                                // этого дежурства (полные данные — из базы)
+                                                HoverHandler { cursorShape: Qt.PointingHandCursor }
+                                                MouseArea {
+                                                    anchors.fill: parent
+                                                    hoverEnabled: true
+                                                    cursorShape: Qt.PointingHandCursor
+                                                    onClicked: {
+                                                        if (!isValid || isLocked || !dayInfo.is_current_month) return
+                                                        backend.loadDayDetails(dayInfo.date_str)
+                                                        let full = null
+                                                        for (let i = 0; i < backend.dayDuties.length; ++i) {
+                                                            if (backend.dayDuties[i].id === modelData.id) {
+                                                                full = backend.dayDuties[i]
+                                                                break
+                                                            }
+                                                        }
+                                                        if (full !== null)
+                                                            dayDutyDialog.openForDutyEdit(full, dayInfo.date_str, parent, parent.width / 2, parent.height)
+                                                    }
+                                                }
+                                            }
+
+                                            ParallelAnimation {
+                                                id: chipAssemble
+                                                NumberAnimation { target: chipBody; property: "opacity"; to: 1; duration: AppTheme.durStandard; easing.type: AppTheme.easeEnter }
+                                                NumberAnimation { target: chipLift; property: "y"; to: 0; duration: AppTheme.durStandard; easing.type: AppTheme.easeEnter }
                                             }
                                         }
                                     }
