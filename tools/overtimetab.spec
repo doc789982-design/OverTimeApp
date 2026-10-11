@@ -198,6 +198,14 @@ coll = COLLECT(
 # На случай, если хуки PyInstaller всё-таки положили WebEngine в dist.
 slim_dist_tree(ROOT / "dist" / "OVERTIMETAB")
 
+# version.json В КОРНЕ папки программы (не только в _internal через datas):
+# его читают ВСЕ поколения обновлятора — и из корня релизного zip
+# (Compress-Archive пакует dist/*), и установленной программой.
+# Баг сборок 297–298 показал, чем заканчивается единственная копия.
+import shutil as _shutil
+_shutil.copy2(_meta_file, ROOT / "dist" / "OVERTIMETAB" / "version.json")
+print("[version.json] докладываем в корень dist для zip и установщика")
+
 # Манифест файлов сборки: при старте программа сверяет с ним свою папку
 # и убирает файлы прошлых версий (установка «поверх» старой — с заменой).
 _dist_root = ROOT / "dist" / "OVERTIMETAB"
