@@ -1,24 +1,23 @@
 #!/usr/bin/env python3
-"""Тест живой виньетки окна «Что нового».
+"""Тест живой виньетки окна «Что нового» (сцена-театр).
 
-Сверху окна после обновления появляется маленькая живая сцена,
-показывающая «показывающие» новинки выпуска. Питон отдаёт список сцен
-(backend.whatsNewScenes); если их несколько, виньетка листает их сама:
-одна проигралась — наступает следующая. Точки под сценой показывают,
-какая сейчас, и позволяют выбрать любую.
+Сверху окна после обновления появляется маленькая живая сцена. Спектакль
+собран из актёров (дни, курсор, меню статусов, мини-окно) и «плеера
+тактов»: сцена — это список «что за чем происходит», плеер проигрывает
+его по кругу. Сцены листаются сами, точки под сценой выбирают любую.
 
 Проверяется:
-  A. Виньетка показывается, только когда есть что рассказать:
-     записи есть — сцена видна; «всё уже видели» — сцены нет;
-  H. Окно подстраивается по высоте под виньетку и записи (не микро-
-     окошко), и дорастает при смене содержимого;
-  B. Сцена «волна»: семь мини-дней, сюжет идёт по кругу — метки
-     собираются по одной и растворяются; курсор гаснет после прохода;
-     единственная сцена не листается сама;
+  A. Виньетка показывается, только когда есть что рассказать;
+  H. Окно подстраивается по высоте под виньетку и записи;
+  B. Сцена «волна»: ВЕСЬ сюжет — курсор ведёт по дням, открывается
+     меню статусов, «О» прожимается, меню складывается, метки
+     собираются волной; сюжет по кругу; единственная сцена
+     не листается сама;
   C. Рендер: мини-дни и собранные метки видны на экране (пиксели);
-  K. Карусель: сцены сменяют друг друга сами по очереди; точки
-     показывают текущую и выбирают любую вручную; возврат к сцене
-     перезапускает её сюжет;
+  K. Карусель: сцены сменяют друг друга сами; точки выбирают любую;
+     возврат к сцене перезапускает сюжет; авто-листание продолжается;
+  W. Актёр «мини-окно»: открывается, кнопка прожимается, закрывается
+     (грамматика для будущих сцен);
   D. Нейтральная сцена: маскот и конфетти;
   E. Закрытие окна зовёт ackWhatsNew (порция считается прочитанной).
 
@@ -155,17 +154,16 @@ def main() -> int:
         assert vign.property("active") is True, "виньетка не активна"
         assert vign.property("visible") is True, "виньетка не видна"
         assert vign.property("currentScene") == "wave"
-
-        # появление виньетки: проявление и подъём
         assert vign.property("opacity") > 0.9, \
             "виньетка не проявилась после открытия окна"
-        print("A: окно открыто — виньетка сверху, проявилась ✓")
+        stage = find_by_name(dlg, "whatsNewStage")
+        assert stage is not None, "сцена-театр не найдена"
+        assert stage.property("playing") is True, "плеер не играет"
+        print("A: окно открыто — виньетка с театром, плеер играет ✓")
 
         # ── H. Высота окна подстраивается под содержимое ──
-        # (окно 700x600: потолок 500; виньетка + запись ≈ 460–500)
         h1 = dlg.property("height")
         assert h1 > 420, f"окно микро (высота {h1:.0f}), а не по контенту"
-        # записей стало больше — окно дорастает до потолка
         dlg.close()
         settle(0.3)
         stub._wn = make_entries(5)
@@ -176,7 +174,6 @@ def main() -> int:
         h2 = dlg.property("height")
         assert h2 >= h1 and h2 >= 495, \
             f"окно не доросло до потолка (было {h1:.0f}, стало {h2:.0f})"
-        # вернём одну запись для сюжетных проверок
         dlg.close()
         settle(0.3)
         stub._wn = make_entries(1)
@@ -186,32 +183,40 @@ def main() -> int:
         settle(0.4)
         print(f"H: высота окна по контенту ({h1:.0f} → {h2:.0f} по записям) ✓")
 
-        # ── B. Сцена «волна»: сюжет идёт по кругу ──
-        wave = find_by_name(dlg, "vignetteWaveScene")
-        assert wave is not None and wave.property("visible") is True, \
-            "сцена-волна не показана"
-        cells = scene_items(wave, "vignetteMiniCell")
-        badges = scene_items(wave, "vignetteMiniBadge")
+        # ── B. Сцена «волна»: весь сюжет, с меню статусов ──
+        stage = find_by_name(dlg, "whatsNewStage")
+        cells = scene_items(stage, "vignetteMiniCell")
+        badges = scene_items(stage, "vignetteMiniBadge")
         assert len(cells) == 7, f"мини-дней {len(cells)}, а не 7"
         assert len(badges) == 7, f"меток {len(badges)}, а не 7"
+        menu = find_by_name(dlg, "vignetteMenu")
+        assert menu is not None, "меню статусов не найдено"
+        cursor = scene_items(stage, "vignetteCursor")[0]
 
         # единственная сцена — точек не видно
-        dots_row = find_by_name(dlg, "vignetteDots")
-        assert dots_row is not None and dots_row.property("visible") is False, \
-            "точки у единственной сцены не нужны"
+        assert find_by_name(dlg, "vignetteDots").property("visible") is False
 
-        # метки собираются по одной: к 2,4 с все на месте (волна кончилась
-        # в 1,9 с), к 4,3 с все растворились (пауза сюжета до 5,4 с)
-        t0 = time.time()
-        settle(2.4)
-        badges = scene_items(wave, "vignetteMiniBadge")
+        # сценарий длинный: полный прогон больше 4 с (карусель по нему)
+        total = stage.property("totalMs")
+        assert total > 4000, f"прогон сцены подозрительно короткий: {total}"
+        assert vign.property("sceneCycleMs") >= total + 400
+
+        # такт 3–6: меню открыто, курсор у него
+        settle(1.2)                     # ≈1,6 с от открытия (1,3 с сцены)
+        assert menu.property("opacity") > 0.9, \
+            "меню статусов не открылось после выделения дней"
+
+        # такты 7–8: меню сложилось, метки собираются волной
+        settle(1.8)                     # ≈3,4 с открытия: волна собралась (3,1 сцены)
+        badges = scene_items(stage, "vignetteMiniBadge")
         opacities = [b.property("opacity") for b in badges]
         assert all(op > 0.99 for op in opacities), \
             f"метки волны не собрались: {opacities}"
-        cursor = scene_items(wave, "vignetteCursor")[0]
+        assert menu.property("opacity") < 0.05, \
+            "меню не сложилось после выбора статуса"
         assert cursor.property("opacity") < 0.1, \
-            "курсор не погас после прохода по дням"
-        print("B: волна — метки собрались по одной, курсор погас ✓")
+            "курсор не погас после выбора"
+        print("B: сюжет — выделение, меню, «О», волна меток ✓")
 
         # ── C. Рендер: мини-дни и метки видны на экране ──
         img = qwin.grabWindow()
@@ -223,53 +228,49 @@ def main() -> int:
             pt = item.mapToScene(QPointF(item.width() / 2, item.height() / 2))
             return img.pixelColor(int(pt.x()), int(pt.y()))
 
-        # выходной мини-день (числа 10–11) — красноватая подложка,
-        # красный канал выше синего
         px_weekend = center_color(cells[5])
         assert px_weekend.red() > px_weekend.blue() + 8, \
             f"выходной мини-день не подсвечен: {px_weekend.name()}"
-        # метка «О» — оранжевая буква в центре
         px_badge = center_color(badges[3])
         assert px_badge.red() > px_badge.blue() + 8, \
             f"метка «О» не видна на экране: {px_badge.name()}"
         print(f"C: рендер — выходной день {px_weekend.name()}, "
               f"метка «О» {px_badge.name()} ✓")
 
-        # сюжет по кругу: метки растворились к паузе; сцена одна —
-        # авто-листания нет, волна остаётся
-        settle(4.3 - (time.time() - t0))
-        badges = scene_items(wave, "vignetteMiniBadge")
+        # такт 10: метки растворились, выделение снято
+        settle(1.3)                     # ≈4,7 с открытия: растворились (4,4 сцены)
+        badges = scene_items(stage, "vignetteMiniBadge")
         opacities = [b.property("opacity") for b in badges]
         assert all(op < 0.1 for op in opacities), \
             f"метки не растворились к паузе сюжета: {opacities}"
         assert vign.property("currentScene") == "wave", \
             "единственная сцена не должна листаться сама"
-        print("B2: сюжет идёт по кругу, единственная сцена не листается ✓")
+
+        # сюжет по кругу: новый прогон уже начался
+        settle(1.0)                     # ≈5,7 с открытия: круг в разгаре
+        assert cursor.property("opacity") > 0.5, \
+            "сюжет не пошёл по кругу — курсор не появился снова"
+        assert vign.property("currentScene") == "wave"
+        print("B2: сюжет по кругу, единственная сцена не листается ✓")
 
         # ── K. Карусель: сцены сменяют друг друга сами ──
-        # Короткая пауза — НАМЕРЕННО: повторное открытие раньше, чем
-        # истечёт страховка закрытия (600 мс), когда-то убивало окно
-        # посреди входного перехода
         dlg.close()
-        settle(0.3)
+        settle(0.3)                     # намеренно коротко: гонка страховки
         stub._scenes = ["wave", "neutral"]
         stub.whatsNewChanged.emit()
         settle(0.2)
         dlg.open()
-        t0 = time.time()
-        settle(0.5)                     # входной переход окна (250 мс)
-        assert vign.property("active") is True, "окно не открылось"
+        settle(0.5)
         assert vign.property("currentScene") == "wave", \
             "после открытия — первая сцена"
         dots = scene_items(vign, "vignetteDot")
-        assert len(dots) == 2, f"точек {len(dots)}, а не 2"
-        assert dots[0].property("visible") is True and \
-            dots[1].property("visible") is True, "точки не видны"
+        assert len(dots) == 2 and dots[0].property("visible") is True, \
+            "точек нет, а сцен две"
 
-        settle(3.0)                     # ≈3,5 с от открытия: волна ещё идёт
+        settle(4.0)                     # ≈4,5 с: волна ещё играет
         assert vign.property("currentScene") == "wave", \
-            "волна не проигралась ещё полностью"
-        settle(1.2)                     # ≈4,7 с: авто-листание настало
+            "волна ещё не проигралась, а сцена уже сменилась"
+        settle(1.8)                     # ≈6,3 с: листание настало (5,3)
         assert vign.property("currentScene") == "neutral", \
             "после волны должна наступить нейтральная сцена сама"
         print("K: сцены листаются сами — после волны наступила "
@@ -285,12 +286,9 @@ def main() -> int:
         pieces = scene_items(neutral, "vignetteConfetti")
         assert len(pieces) == 8, f"конфетти {len(pieces)}, а не 8"
 
-        # конфетти медленно сыплется (первый лоскут стартовал и виден)
         settle(1.4)
         top = max(p.property("opacity") for p in pieces)
         assert top > 0.05, "конфетти не сыплется"
-
-        # рендер: первый лоскут — синий цвет программы
         piece0 = min(pieces, key=lambda p: p.property("baseX"))
         img = qwin.grabWindow()
         pt = piece0.mapToScene(QPointF(piece0.width() / 2,
@@ -306,22 +304,38 @@ def main() -> int:
         app.processEvents()
         assert vign.property("currentScene") == "wave", \
             "точка не вернула сцену-волну"
-        badges = scene_items(wave, "vignetteMiniBadge")
+        badges = scene_items(stage, "vignetteMiniBadge")
         fresh = [b.property("opacity") for b in badges]
         assert all(op < 0.1 for op in fresh), \
             f"возврат к сцене не перезапустил сюжет: {fresh}"
-        # активная точка — шире остальных (растёт через Behavior, ждём)
         settle(0.25)
         assert dots[0].property("width") > dots[1].property("width"), \
             "активная точка не выделена"
-        # авто-листание продолжается с выбранной сцены
-        settle(0.4)
-        assert vign.property("currentScene") == "wave"
-        settle(3.8)
+        settle(5.5)                     # авто-листание продолжилось
         assert vign.property("currentScene") == "neutral", \
             "авто-листание не продолжилось после ручного выбора"
         print("K2: точка выбирает сцену, сюжет перезапускается, "
               "авто-листание продолжается ✓")
+
+        # ── W. Актёр «мини-окно»: грамматика для будущих сцен ──
+        stage.stopPlay()
+        stage.windowOpen()
+        settle(0.15)
+        mini_window = find_by_name(dlg, "vignetteWindow")
+        assert mini_window is not None, "мини-окно не найдено"
+        assert mini_window.property("opacity") > 0.9 and \
+            mini_window.property("scale") > 0.9, "мини-окно не открылось"
+        stage.windowPressSave()
+        settle(0.35)
+        save_btn = find_by_name(dlg, "vignetteSaveButton")
+        assert save_btn is not None and \
+            abs(save_btn.property("pressScale") - 1.0) < 0.05, \
+            "прожатие кнопки не отработало"
+        stage.windowClose()
+        settle(0.15)
+        assert mini_window.property("opacity") < 0.05, \
+            "мини-окно не закрылось"
+        print("W: мини-окно — открытие, прожатие, закрытие ✓")
 
         # ── A2. Записей нет («всё уже видели») — сцены нет ──
         stub._wn = []
@@ -337,7 +351,7 @@ def main() -> int:
         assert stub.acked, "закрытие окна не отметило порцию прочитанной"
         print("E: закрытие окна отметило порцию прочитанной ✓")
 
-        print("═══ ЖИВАЯ ВИНЬЕТКА «ЧТО НОВОГО»: КАРУСЕЛЬ СЦЕН ═══")
+        print("═══ ЖИВАЯ ВИНЬЕТКА «ЧТО НОВОГО»: ТЕАТР СЦЕНАРИЕВ ═══")
     finally:
         try:
             os.remove(qml_path)

@@ -172,6 +172,20 @@ def main() -> int:
     assert "sceneAdvance" in vign_src and \
         'objectName: "vignetteDot"' in vign_src, \
         "у виньетки нет авто-листания и точек выбора"
+    # сцена-театр: актёры + плеер тактов; сцена — сценарий, а не ручные
+    # анимации (новая сцена = список тактов из существующих глаголов)
+    stage_src = open(os.path.join(ROOT, "components", "WhatsNewStage.qml"),
+                     encoding="utf-8").read()
+    assert "function playFromStart" in stage_src and \
+        "property var steps" in stage_src, \
+        "у театра нет плеера тактов"
+    assert 'objectName: "vignetteMenu"' in stage_src and \
+        'objectName: "vignetteWindow"' in stage_src, \
+        "в театре нет меню статусов и мини-окна"
+    assert "function waveScript()" in open(
+        os.path.join(ROOT, "components", "WhatsNewVignette.qml"),
+        encoding="utf-8").read(), \
+        "сцена волны не записана сценарием"
     print("H: сцены виньетки собираются по сборкам интервала, "
           "листаются сами и точками ✓")
 
