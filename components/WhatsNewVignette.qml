@@ -6,10 +6,13 @@ import "."
 // ЖИВАЯ ВИНЬЕТКА ОКНА «ЧТО НОВОГО»
 //
 // Сверху окна после обновления появляется маленькая живая сцена,
-// показывающая главное изменение выпуска в действии. Сцену выбирает
-// питон по номеру сборки (backend.whatsNewScene): «wave» — волна
-// меток по дням, выделенным протяжкой; всё остальное и обновления
-// без записей — нейтральная сцена: маскот и лёгкое конфетти
+// показывающая главное изменение выпуска в действии. Питон отдаёт
+// СПИСОК сцен — по одной на каждую «показывающую» новинку обновления
+// (backend.whatsNewScenes): «wave» — волна меток по дням, выделенным
+// протяжкой. Если сцен несколько, они листаются сами: одна проигралась
+// — наступает следующая, по кругу. Точки под сценой показывают, какая
+// сейчас, и позволяют выбрать любую. Обновлениям без «показывающих»
+// новинок достаётся нейтральная сцена: маскот и лёгкое конфетти
 // в цветах программы.
 //
 // Сцена спокойная: те же длительности и кривые, что у остального
@@ -20,18 +23,60 @@ Item {
     id: root
     objectName: "whatsNewVignette"
 
-    property string scene: "neutral"
+    // Сцены этого обновления (имена, в порядке сборок)
+    property var scenes: []
+    property int currentIndex: 0
     // Окно открыто и рассказывать есть о чём — только тогда сцена живёт
     property bool active: false
 
-    visible: active
+    readonly property string currentScene: scenes.length > 0
+                                            ? scenes[currentIndex] : ""
+    // Сколько длится один полный прогон сцены — после него авто-листание
+    // показывает следующую. Волна — 150 + 800 + 100 + 300 + (80 + 240 +
+    // 250) + 1200 + 150 + 700 ≈ 4 с; нейтральная — фоновая, 6 с
+    readonly property int sceneCycleMs: currentScene === "wave" ? 4000 : 6000
+
+    visible: active && scenes.length > 0
     width: parent ? parent.width : 0
     height: 132
 
     onActiveChanged: {
-        if (!active) return
+        if (!active) {
+            sceneAdvance.stop()
+            return
+        }
+        currentIndex = 0
         waveScene.resetScene()
         vignetteEnter.restart()
+        startAutoAdvance()
+    }
+
+    onScenesChanged: if (currentIndex >= scenes.length) currentIndex = 0
+
+    function startAutoAdvance() {
+        if (scenes.length > 1) sceneAdvance.restart()
+        else sceneAdvance.stop()
+    }
+
+    // Выбор сцены по точке (и для проверок): перезапускает её сюжет
+    function goToScene(i) {
+        if (i < 0 || i >= scenes.length || i === currentIndex) return
+        currentIndex = i
+    }
+
+    onCurrentIndexChanged: {
+        if (currentScene === "wave") waveScene.resetScene()
+        startAutoAdvance()
+    }
+
+    // Авто-листание: сцена проигралась один раз — следующая, по кругу
+    Timer {
+        id: sceneAdvance
+        interval: root.sceneCycleMs
+        onTriggered: {
+            if (root.scenes.length > 1)
+                root.currentIndex = (root.currentIndex + 1) % root.scenes.length
+        }
     }
 
     readonly property bool animsAlive: active && visible
@@ -81,7 +126,12 @@ Item {
             id: waveScene
             objectName: "vignetteWaveScene"
             anchors.fill: parent
-            visible: root.scene === "wave"
+            // мягкая смена сцен: проявление вместо щелчка
+            visible: opacity > 0
+            opacity: root.currentScene === "wave" ? 1 : 0
+            Behavior on opacity {
+                NumberAnimation { duration: AppTheme.durMicro }
+            }
 
             readonly property int cellCount: 7
             readonly property real cellW: 48
@@ -94,7 +144,8 @@ Item {
                 return cellsRow.x + i * (cellW + cellGap) + cellW / 2
             }
 
-            // Возврат к началу сюжета (окно открыли заново)
+            // Возврат к началу сюжета (окно открыли заново или вернулись
+            // к сцене точкой)
             function resetScene() {
                 cursor.sweeping = false
                 cursor.opacity = 0
@@ -203,7 +254,7 @@ Item {
                             }
 
                             // Сборка метки: проявление и рост (та же пара,
-                            // что у меток календаря)
+                            // что у меток календаря), очередь — как в волне
                             SequentialAnimation {
                                 id: badgeIn
                                 PauseAnimation { duration: 80 + index * 40 }
@@ -288,7 +339,11 @@ Item {
             id: neutralScene
             objectName: "vignetteNeutralScene"
             anchors.fill: parent
-            visible: root.scene !== "wave"
+            visible: opacity > 0
+            opacity: root.currentScene === "neutral" ? 1 : 0
+            Behavior on opacity {
+                NumberAnimation { duration: AppTheme.durMicro }
+            }
 
             AppEmptyMascot {
                 id: mascot
@@ -329,6 +384,44 @@ Item {
                                 NumberAnimation { target: piece; property: "opacity"; to: 0; duration: piece.fallDur * 0.7; easing.type: Easing.InQuad }
                             }
                         }
+                    }
+                }
+            }
+        }
+
+        // ============================================================
+        // ТОЧКИ: какая сцена сейчас и выбор любой
+        // ============================================================
+        Row {
+            id: dotsRow
+            objectName: "vignetteDots"
+            visible: root.scenes.length > 1
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: 8
+            spacing: 6
+
+            Repeater {
+                model: root.scenes.length
+
+                Rectangle {
+                    id: dot
+                    objectName: "vignetteDot"
+                    readonly property bool isCurrent: index === root.currentIndex
+                    width: isCurrent ? 16 : 6
+                    height: 6
+                    radius: 3
+                    color: isCurrent ? AppTheme.accentBrand
+                                     : AppTheme.stateHover
+                    Behavior on width {
+                        NumberAnimation { duration: AppTheme.durMicro; easing.type: AppTheme.easeEnter }
+                    }
+                    HoverHandler { cursorShape: Qt.PointingHandCursor }
+                    MouseArea {
+                        anchors.fill: parent
+                        anchors.margins: -8     // щедрая зона нажатия
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.goToScene(index)
                     }
                 }
             }

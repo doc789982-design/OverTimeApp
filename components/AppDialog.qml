@@ -53,6 +53,11 @@ Popup {
         onTriggered: if (!root.opened) root.visible = false
     }
     onAboutToHide: closeSafety.restart()
+    // Окно открыли снова — страховка закрытия отменяется. Без этого она
+    // могла выстрелить посреди входного перехода нового открытия
+    // (opened становится true только ПОСЛЕ перехода) и убить окно:
+    // быстро закрыли и открыли — и диалог завис видимым, но не открытым
+    onAboutToShow: closeSafety.stop()
     modal: true   // MD3/HIG: форма блокирует остальной интерфейс до решения 
     dim: true  
     focus: true
@@ -317,7 +322,11 @@ Popup {
         // автофокус первого поля — после пересчёта геометрии
         if (root.autoFocusFirst) Qt.callLater(focusFirstField)
         Qt.callLater(function() {
-            root.height = root.effectiveHeight
+            // Высота снова становится привязкой и дорастает вместе
+            // с контентом: тексты «Что нового» досчитываются дольше
+            // одного кадра, и окно, застывшее на раннем значении,
+            // оказывалось меньше содержимого
+            root.height = Qt.binding(function() { return root.effectiveHeight })
             if (ApplicationWindow.window) {
                 var maxY = ApplicationWindow.window.height - root.height - AppTheme.spaceL
                 if (root.y > maxY)

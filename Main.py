@@ -574,7 +574,7 @@ class Backend(QObject):
         self._remote_saw_reachable = False      # хоть одно хранилище ответило «не новее»
         self._update_checking = False           # идёт ли полная последовательность проверки
         self._whats_new = []
-        self._whats_new_scene = "neutral"
+        self._whats_new_scenes = ["neutral"]
         self._scan_running = False
         self._app_version = app_update.current_app_version(self.app_dir)
         self._app_build = app_update.current_app_build(self.app_dir)
@@ -4259,11 +4259,11 @@ class Backend(QObject):
         # при старте); False — прочитано, но из справки можно перечитать
         return bool(getattr(self, "_whats_new_fresh", False))
 
-    @Property(str, notify=whatsNewChanged)
-    def whatsNewScene(self):
-        # Какая живая сцена играет в виньетке окна «Что нового»
-        # (выбирается по сборке; «neutral» — маскот и конфетти)
-        return getattr(self, "_whats_new_scene", "neutral")
+    @Property(list, notify=whatsNewChanged)
+    def whatsNewScenes(self):
+        # Живые сцены окна «Что нового»: по одной на каждую «показывающую»
+        # новинку обновления — виньетка листает их по очереди
+        return getattr(self, "_whats_new_scenes", ["neutral"])
 
     @Property(int, notify=updateReadyChanged)
     def updateChromeExtra(self):
@@ -4334,17 +4334,17 @@ class Backend(QObject):
         self._whats_new_fresh = bool(cur_build and last_build < cur_build)
         if not cur_build:
             self._whats_new = []
-            self._whats_new_scene = "neutral"
+            self._whats_new_scenes = ["neutral"]
             return
         since = last_build if last_build < cur_build else prev_build
         if since >= cur_build:
             self._whats_new = []
-            self._whats_new_scene = "neutral"
+            self._whats_new_scenes = ["neutral"]
             return
         text = self._read_changelog_text()
         blocks = app_update.changelog_for_builds(text, since, cur_build)
         self._whats_new = app_update.whats_new_qml(blocks)
-        self._whats_new_scene = app_update.whats_new_scene(cur_build)
+        self._whats_new_scenes = app_update.whats_new_scenes_for_builds(since, cur_build)
         # Обновление вышло, а записей в журнале нет (правки внутренние) —
         # показываем стандартную фразу, чтобы окно не молчало
         if self._whats_new_fresh:
@@ -4353,7 +4353,7 @@ class Backend(QObject):
                           for b in self._whats_new)
             if not has_any:
                 self._whats_new = app_update.whats_new_fallback()
-                self._whats_new_scene = "neutral"
+                self._whats_new_scenes = ["neutral"]
 
     @Slot()
     def ackWhatsNew(self):

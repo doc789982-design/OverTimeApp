@@ -1629,12 +1629,24 @@ WHATS_NEW_SCENES: dict[int, str] = {
 }
 
 
-def whats_new_scene(build: int) -> str:
-    """Сцена винетки для сборки (нет записи — нейтральная)."""
+def whats_new_scenes_for_builds(since: int, cur: int) -> list[str]:
+    """Сцены виньетки за интервал сборок (since, cur], по порядку сборок.
+
+    В обновлении может быть несколько «показывающих» новинок — окно
+    листает их сцены по очереди. Повторы не показываем дважды;
+    пустой список означает нейтральную сцену.
+    """
     try:
-        return WHATS_NEW_SCENES.get(int(build or 0), "neutral")
+        lo, hi = int(since or 0), int(cur or 0)
     except (TypeError, ValueError):
-        return "neutral"
+        return ["neutral"]
+    out: list[str] = []
+    for build in sorted(WHATS_NEW_SCENES):
+        if lo < build <= hi:
+            scene = WHATS_NEW_SCENES[build]
+            if scene not in out:
+                out.append(scene)
+    return out or ["neutral"]
 
 
 # Стандартная фраза для обновления без записей в журнале (все правки

@@ -144,34 +144,36 @@ def main() -> int:
     print("G: пустое обновление → стандартная фраза ✓")
 
     # ── H. Живая виньетка: сцена выбирается по сборке ──
-    # сборка со сценой — своя сцена, неизвестная и пустая — нейтральная
-    assert app_update.whats_new_scene(291) == "wave"
-    assert app_update.whats_new_scene(0) == "neutral"
-    assert app_update.whats_new_scene(999) == "neutral"
-    assert app_update.whats_new_scene(None) == "neutral"
-    assert app_update.whats_new_scene("291") == "wave"
-    # каждая сцена карты — реальная сцена винетки
+    # ── H. Живая виньетка: сцены собираются по сборкам интервала ──
+    # в обновлении может быть несколько «показывающих» новинок —
+    # окно листает их сцены по очереди; пусто — нейтральная сцена
+    assert app_update.whats_new_scenes_for_builds(290, 291) == ["wave"]
+    assert app_update.whats_new_scenes_for_builds(286, 291) == ["wave"]
+    assert app_update.whats_new_scenes_for_builds(291, 292) == ["neutral"]
+    assert app_update.whats_new_scenes_for_builds(0, 999) == ["wave"]
+    assert app_update.whats_new_scenes_for_builds(None, None) == ["neutral"]
     vign_src = open(os.path.join(ROOT, "components", "WhatsNewVignette.qml"),
                     encoding="utf-8").read()
-    for build, scene in app_update.WHATS_NEW_SCENES.items():
-        assert scene in ("wave", "neutral"), \
-            f"неизвестная сцена «{scene}» (сборка {build})"
-        assert 'root.scene === "%s"' % scene in vign_src or \
-               'scene !== "%s"' % scene in vign_src, \
-            f"сцена «{scene}» (сборка {build}) не живёт в виньетке"
-    # Main отдаёт сцену окну и гасит её у пустого обновления
-    assert "def whatsNewScene(self)" in main_src, \
-        "Main не отдаёт окну выбранную сцену"
-    assert main_src.count("whats_new_scene(cur_build)") == 1, \
-        "сцена обязана выбираться по сборке обновления"
-    # нейтральная сцена: init, ранние выходы и пустое обновление
-    assert main_src.count('_whats_new_scene = "neutral"') >= 4, \
-        "пустое обновление и выходы без записей — нейтральная сцена"
-    assert 'scene: backend.whatsNewScene' in open(
-        os.path.join(ROOT, "components", "WhatsNewDialog.qml"),
-        encoding="utf-8").read(), "окно не спрашивает сцену у бэкенда"
-    print("H: сцена виньетки выбирается по сборке, пустое обновление — "
-          "нейтральная ✓")
+    for scene in set(app_update.WHATS_NEW_SCENES.values()):
+        assert scene in ("wave", "neutral"), f"неизвестная сцена «{scene}»"
+    # Main отдаёт окну список сцен интервала
+    assert "def whatsNewScenes(self)" in main_src, \
+        "Main не отдаёт окну сцены обновления"
+    assert main_src.count(
+        "whats_new_scenes_for_builds(since, cur_build)") == 1, \
+        "сцены обязаны собираться по сборкам интервала обновления"
+    # пустое обновление и выходы без записей — нейтральная сцена
+    assert main_src.count('_whats_new_scenes = ["neutral"]') >= 4
+    dialog_src = open(os.path.join(ROOT, "components", "WhatsNewDialog.qml"),
+                      encoding="utf-8").read()
+    assert "scenes: backend.whatsNewScenes" in dialog_src, \
+        "окно не спрашивает сцены у бэкенда"
+    # сцены листаются сами и выбираются точками
+    assert "sceneAdvance" in vign_src and \
+        'objectName: "vignetteDot"' in vign_src, \
+        "у виньетки нет авто-листания и точек выбора"
+    print("H: сцены виньетки собираются по сборкам интервала, "
+          "листаются сами и точками ✓")
 
     print("═══ «ЧТО НОВОГО» ПОКАЗЫВАЕТ ТОЛЬКО СВЕЖИЕ СБОРКИ ═══")
     return 0
