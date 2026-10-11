@@ -27,6 +27,15 @@ AppDialog {
     // изменения с прошлого просмотра (не весь чейнджлог версии)
     function showChangelog() { root.showCentered() }
 
+    // Живая виньетка сверху: маленькая сцена о главном изменении
+    // выпуска. Показывается, только когда рассказывать есть о чём:
+    // «всё уже видели» — сцены нет
+    WhatsNewVignette {
+        active: root.opened && backend.whatsNew && backend.whatsNew.length > 0
+        scene: backend.whatsNewScene !== undefined ? backend.whatsNewScene
+                                                   : "neutral"
+    }
+
     // Всё уже видели — честно говорим об этом, а не пустое окно
     Text {
         width: root.width - AppTheme.spaceL * 2

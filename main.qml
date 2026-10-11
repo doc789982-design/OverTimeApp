@@ -928,6 +928,14 @@ ApplicationWindow {
     // Меню дня: открывается ЛКМ и ПКМ по ячейке календаря (как контекстное меню)
     AppUI.AppDayMenu {
         id: dayMenu
+        // Волна меток: статус применили к нескольким выделенным дням —
+        // их метки соберутся по порядку выделения. Сигнал прилетает
+        // ДО обновления данных, карта задержек готова вовремя
+        onBulkApplyRequested: (dates) => {
+            let ws = stackView.currentItem
+            if (ws && ws.calendarPanel && ws.calendarPanel.prepareBadgeWave)
+                ws.calendarPanel.prepareBadgeWave(dates)
+        }
         // Закрыли меню — снять выделение дней (протяжка ЛКМ)
         onClosed: {
             let ws = stackView.currentItem

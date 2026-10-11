@@ -40,6 +40,43 @@ Item {
         multiSelectActive = false
     }
 
+    // ==========================================
+    // ВОЛНА МЕТОК ПО ВЫДЕЛЕННЫМ ДНЯМ
+    // Статус применили к нескольким дням сразу — их метки собираются
+    // по очереди, в порядке выделения: читается как мазок кисти
+    // по дням. Карта «день → задержка» живёт недолго: её подготавливает
+    // меню ДО применения действия, а после самого длинного обновления
+    // она стирается — случайные будущие карточки задержек не получают.
+    // ==========================================
+    property var badgeWaveDelays: ({})
+    // Шаг волны тот же, что у шахматного входа сетки (40 мс)
+    property int badgeWaveStep: 40
+
+    function prepareBadgeWave(dates) {
+        if (!dates || dates.length < 2) return
+        let map = {}
+        for (let i = 0; i < dates.length; i++)
+            map[dates[i]] = i * root.badgeWaveStep
+        root.badgeWaveDelays = map
+        badgeWaveSweep.restart()
+    }
+
+    // Задержка волны для конкретного дня (нет дня или нет карты — ноль)
+    function waveDelayFor(info) {
+        if (!info || info.date_str === undefined) return 0
+        let d = root.badgeWaveDelays ? root.badgeWaveDelays[info.date_str]
+                                     : undefined
+        return (d !== undefined && d > 0) ? d : 0
+    }
+
+    // Стираем карту, когда волна гарантированно отыграла (последняя
+    // задержка + сборка): 23 дня * 40 мс + 250 мс сборки = 1,2 с
+    Timer {
+        id: badgeWaveSweep
+        interval: 1500
+        onTriggered: root.badgeWaveDelays = ({})
+    }
+
     function _dayCellSelectable(cell) {
         return cell && cell.dayInfo && cell.isValid
                && cell.dayInfo.is_current_month === true
@@ -548,9 +585,24 @@ Item {
                                         if (root.needAnimation) {
                                             compBody.opacity = 1
                                             compBody.scale = 1
+                                            return
+                                        }
+                                        // Волна по выделенным дням: метка этого дня
+                                        // ждёт своей очереди (задержка = позиция дня
+                                        // в выделении), потом собирается как обычно
+                                        let delay = root.waveDelayFor(dayInfo)
+                                        if (delay > 0) {
+                                            compWaveDelay.interval = delay
+                                            compWaveDelay.restart()
                                         } else {
                                             compAssemble.restart()
                                         }
+                                    }
+
+                                    // Очередь волны: подождал — собрался
+                                    Timer {
+                                        id: compWaveDelay
+                                        onTriggered: compAssemble.restart()
                                     }
 
                                     Rectangle {
@@ -611,9 +663,24 @@ Item {
                                         if (root.needAnimation) {
                                             statusBody.opacity = 1
                                             statusBody.scale = 1
+                                            return
+                                        }
+                                        // Волна по выделенным дням: метка этого дня
+                                        // ждёт своей очереди (задержка = позиция дня
+                                        // в выделении), потом собирается как обычно
+                                        let delay = root.waveDelayFor(dayInfo)
+                                        if (delay > 0) {
+                                            statusWaveDelay.interval = delay
+                                            statusWaveDelay.restart()
                                         } else {
                                             statusAssemble.restart()
                                         }
+                                    }
+
+                                    // Очередь волны: подождал — собрался
+                                    Timer {
+                                        id: statusWaveDelay
+                                        onTriggered: statusAssemble.restart()
                                     }
 
                                     Rectangle {
@@ -713,9 +780,24 @@ Item {
                                                 if (root.needAnimation) {
                                                     chipBody.opacity = 1
                                                     chipLift.y = 0
+                                                    return
+                                                }
+                                                // Волна по выделенным дням: карточка
+                                                // этого дня ждёт своей очереди
+                                                // (задержка = позиция дня в выделении)
+                                                let delay = root.waveDelayFor(dayInfo)
+                                                if (delay > 0) {
+                                                    chipWaveDelay.interval = delay
+                                                    chipWaveDelay.restart()
                                                 } else {
                                                     chipAssemble.restart()
                                                 }
+                                            }
+
+                                            // Очередь волны: подождал — собрался
+                                            Timer {
+                                                id: chipWaveDelay
+                                                onTriggered: chipAssemble.restart()
                                             }
 
                                             Rectangle {

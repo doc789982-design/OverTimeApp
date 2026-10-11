@@ -48,6 +48,11 @@ Menu {
     onOpened: menuTip.attachToOverlay()
     onAboutToHide: menuTip.hideTip()
 
+    // Действие вот-вот применится к нескольким выделенным дням.
+    // Сигнал летит ДО вызова базы: календарь успевает подготовить
+    // волну меток (сборку по порядку выделения) к обновлению данных
+    signal bulkApplyRequested(var dates)
+
     enter: Transition {
         ParallelAnimation {
             NumberAnimation { property: "opacity"; from: 0.0; to: 1.0; duration: AppTheme.durFast; easing.type: AppTheme.easeEnter }
@@ -184,9 +189,10 @@ Menu {
                             onEntered: menuTip.showAt(st, modelData.tool)
                             onExited: menuTip.hideTip()
                             onClicked: {
-                                if (root.targetDates.length > 1)
+                                if (root.targetDates.length > 1) {
+                                    root.bulkApplyRequested(root.targetDates)
                                     backend.setDayStatusBulk(root.targetDates, modelData.st)
-                                else
+                                } else
                                     backend.setDayStatus(root.targetDate, modelData.st)
                                 root.close()
                             }
@@ -216,8 +222,10 @@ Menu {
                         onEntered: menuTip.showAt(clearBtn, "Удалить статус")
                         onExited: menuTip.hideTip()
                         onClicked: {
-                            if (root.multiMode)
+                            if (root.multiMode) {
+                                root.bulkApplyRequested(root.targetDates)
                                 backend.setDayStatusBulk(root.targetDates, "")
+                            }
                             else
                                 mainWindow.explodeAndDelete(root.targetDate, "status", null,
                                     function() { backend.setDayStatus(root.targetDate, "") })
