@@ -23,7 +23,7 @@ QtObject {
     readonly property string appSemver: "1.0.0-beta.1"
     // Сборки непрерывные и никогда не сбрасываются: именно сборка говорит
     // установленной программе «новее ли» обновление.
-    readonly property int appBuild: 301
+    readonly property int appBuild: 302
     readonly property string appVersionFull: appVersion + " · сборка " + appBuild
 
     // ==========================================
@@ -252,22 +252,6 @@ QtObject {
     property int easeStandard: Easing.InOutExpo
 
     property int slideOffset:  20 // Чуть уменьшили разбег, чтобы соответствовало новой скорости
-
-    // ── ДИРИЖЁР: ПРАВИЛА ДВИЖЕНИЯ ──────────────────────────────
-    // Канон (Material 3):
-    //   • вход  = торможение (easeEnter): крупное 250–400 мс,
-    //     отклик элемента 100–200 мс;
-    //   • выход = разгон (easeExit) и КОРОЧЕ входа;
-    //   • цвет  = easeColor, коротко (durMicro/durFast);
-    //   • подъём контента при входе — не больше riseOffset;
-    //   • участники увертюры и сцен выходят с шагом durStagger;
-    //   • встряска окна — шесть шагов по durShake.
-    // Длительности и кривые мимо этого алфавита допустимы только в
-    // файлах-исключениях из qa/test_motion_alphabet.py — каждое
-    // исключение согласовано отдельно (маскот, шторка, радар…).
-    property int durStagger:  80   // шаг между участниками увертюры/сцен
-    property int riseOffset:  8    // подъём контента при входе
-    property int durShake:    50   // шаг встряски окна
 
     // ==========================================
     // 13. АДАПТИВНОСТЬ И СЕТКА (Breakpoints)

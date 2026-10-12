@@ -228,40 +228,14 @@ Item {
         
         onMonthClicked: function(month) { 
             root.isYearView = false
-            // Год уходит вверх с разгоном; месяц входит чистым
-            // проявлением — движение несут сами ячейки каскадом.
-            // Прыжок в месяц едет ВНУТРИ подмены: пока год не ушёл,
-            // каскад не должен проигрываться в скрытой странице
-            sceneSwapTo(0, { enterRise: false, month: month })
+            calendarStack.currentIndex = 0
+            backend.jumpToMonth(month) 
         }
         
         onYearViewClicked: { 
             root.isYearView = true
-            sceneSwapTo(1)
+            calendarStack.currentIndex = 1 
         }
-    }
-
-    // Смена сцены «месяц ↔ год» — только через режиссёра: старый вид
-    // уходит на глазах, новый входит по общей оси. Тот же индекс —
-    // без хореографии (клик по уже открытому виду не дёргает экран)
-    function sceneSwapTo(index, options) {
-        if (calendarStack.currentIndex === index) return
-        let enterRise = !(options && options.enterRise === false)
-        let jumpMonth = (options && options.month !== undefined) ? options.month : null
-        calendarSceneDirector.swap(
-            function() {
-                calendarStack.currentIndex = index
-                if (jumpMonth !== null) backend.jumpToMonth(jumpMonth)
-            },
-            0, AppTheme.riseOffset,
-            0, enterRise ? AppTheme.riseOffset : 0
-        )
-    }
-
-    AppSceneDirector {
-        id: calendarSceneDirector
-        target: calendarStack
-        armed: root.visible
     }
 
     // ==========================================
@@ -1197,9 +1171,10 @@ Item {
                                         } 
                                         
                                         onClicked: { 
+                                            backend.jumpToMonth(cellInfo.month)
                                             root.isYearView = false
-                                            sceneSwapTo(0, { enterRise: false, month: cellInfo.month })
-                                        }
+                                            calendarStack.currentIndex = 0 
+                                        } 
                                     }
                                 }
                             }

@@ -97,12 +97,12 @@ AppModalShell {
     }
     SequentialAnimation {
         id: shakeAnimation
-        NumberAnimation { target: root; property: "x"; to: baseShakeX + 10; duration: AppTheme.durShake; easing.type: Easing.OutQuad }
-        NumberAnimation { target: root; property: "x"; to: baseShakeX - 10; duration: AppTheme.durShake; easing.type: Easing.InOutQuad }
-        NumberAnimation { target: root; property: "x"; to: baseShakeX + 8;  duration: AppTheme.durShake; easing.type: Easing.InOutQuad }
-        NumberAnimation { target: root; property: "x"; to: baseShakeX - 8;  duration: AppTheme.durShake; easing.type: Easing.InOutQuad }
-        NumberAnimation { target: root; property: "x"; to: baseShakeX + 4;  duration: AppTheme.durShake; easing.type: Easing.InOutQuad }
-        NumberAnimation { target: root; property: "x"; to: baseShakeX;      duration: AppTheme.durShake; easing.type: Easing.OutQuad }
+        NumberAnimation { target: root; property: "x"; to: baseShakeX + 10; duration: 50; easing.type: Easing.OutQuad }
+        NumberAnimation { target: root; property: "x"; to: baseShakeX - 10; duration: 50; easing.type: Easing.InOutQuad }
+        NumberAnimation { target: root; property: "x"; to: baseShakeX + 8;  duration: 50; easing.type: Easing.InOutQuad }
+        NumberAnimation { target: root; property: "x"; to: baseShakeX - 8;  duration: 50; easing.type: Easing.InOutQuad }
+        NumberAnimation { target: root; property: "x"; to: baseShakeX + 4;  duration: 50; easing.type: Easing.InOutQuad }
+        NumberAnimation { target: root; property: "x"; to: baseShakeX;      duration: 50; easing.type: Easing.OutQuad }
     }
 
     contentItem: ColumnLayout {

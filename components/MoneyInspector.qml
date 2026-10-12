@@ -203,7 +203,6 @@ AppDialog {
 
                     // Редактировать приказ
                     Rectangle {
-                        id: orderEditBtn
                         width: 32; height: 32; radius: AppTheme.radiusSmall
                         color: repHover.pressed ? AppTheme.statePress : (repHover.containsMouse ? AppTheme.stateHover : "transparent")
                         Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
@@ -211,7 +210,7 @@ AppDialog {
                         HoverHandler { cursorShape: Qt.PointingHandCursor }
                         MouseArea {
                             id: repHover; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                            onClicked: { root.close(); mainWindow.editMoneyOrder(modelData, orderEditBtn) }
+                            onClicked: { root.close(); mainWindow.editMoneyOrder(modelData) }
                         }
                         AppToolTip {
                             anchors.horizontalCenter: parent.horizontalCenter

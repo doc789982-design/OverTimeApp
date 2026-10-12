@@ -284,7 +284,7 @@ def part_d_structure() -> None:
     assert "×" in insp, "нет бейджа с числом получателей"
     left = open(os.path.join(ROOT, "components", "LeftControlPanel.qml"),
                 encoding="utf-8").read()
-    assert "moneyOrderDialog.openNew(newOrderBtn)" in left, "нет кнопки приказа в панели"
+    assert "moneyOrderDialog.openNew()" in left, "нет кнопки приказа в панели"
     main = open(os.path.join(ROOT, "main.qml"), encoding="utf-8").read()
     assert "MoneyOrderDialog" in main and "editMoneyOrder" in main
     assert "editFromOrder" in main, "правка приказа не подключена"

@@ -197,7 +197,6 @@ Item {
                 // «Нового сотрудника» (рамка), но только символ рубля.
                 // «Новый сотрудник» забирает всю освободившуюся ширину.
                 AppIconButton {
-                    id: newOrderBtn
                     Layout.preferredWidth: 36
                     Layout.preferredHeight: 36
                     Layout.alignment: Qt.AlignVCenter
@@ -208,7 +207,7 @@ Item {
                     iconHoverColor: AppTheme.textPrimary
                     borderIdleColor: AppTheme.borderInput
                     borderIdleWidth: 1
-                    onClicked: moneyOrderDialog.openNew(newOrderBtn)
+                    onClicked: moneyOrderDialog.openNew()
 
                     HoverHandler { id: moneyOrderHover }
                     AppToolTip {

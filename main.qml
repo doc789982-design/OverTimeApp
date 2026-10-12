@@ -822,29 +822,21 @@ ApplicationWindow {
             id: workspaceRoot
             property alias calendarPanel: calendarPanelId
 
-            // УВЕРТЮРА: рабочее место собирается на глазах. Шторка
-            // выбора базы улетает вправо, под ней первой на сцену
-            // поднимается календарь, и с перекрытием в один шаг
-            // (durStagger) из левого края въезжает панель групп и
-            // сотрудников. Играется один раз — при открытии базы.
-            Component.onCompleted: {
-                calendarEntrance.play()
-                sidebarEntrance.play()
+            // Мягкий подъезд интерфейса: после улёта шторки база
+            // проявляется и чуть поднимается снизу — глаз следит за
+            // шторкой, потом находит готовый интерфейс
+            opacity: 0
+            Component.onCompleted: wsEnter.start()
+            SequentialAnimation {
+                id: wsEnter
+                PauseAnimation { duration: 80 }
+                ParallelAnimation {
+                    NumberAnimation { target: workspaceRoot; property: "opacity"; to: 1; duration: 380; easing.type: Easing.OutCubic }
+                    NumberAnimation { target: workspaceRoot; property: "y"; from: 14; to: 0; duration: 440; easing.type: Easing.OutCubic }
+                }
             }
-            AppUI.AppStageEntrance {
-                id: calendarEntrance
-                target: calendarPanelId
-                delay: 80   // шторка уже набирает ход — сетка входит следом
-                fromX: 0
-                fromY: AppUI.AppTheme.riseOffset
-            }
-            AppUI.AppStageEntrance {
-                id: sidebarEntrance
-                target: leftColumn
-                delay: 80 + AppUI.AppTheme.durStagger
-                fromX: -AppUI.AppTheme.slideOffset
-                fromY: 0
-            }
+            // страховка: даже если анимация не запустилась — экран виден
+            Timer { interval: 900; running: true; onTriggered: { workspaceRoot.opacity = 1; workspaceRoot.y = 0 } }
 
             MouseArea {
                 anchors.fill: parent
@@ -874,7 +866,6 @@ ApplicationWindow {
                     }
                 }
                 Item {
-                    id: leftColumn
                     SplitView.preferredWidth: 350
                     SplitView.minimumWidth: 250
                     SplitView.maximumWidth: 600
@@ -916,10 +907,9 @@ ApplicationWindow {
     }
 
     // Повтор приказа о денежной компенсации: ведомость заполняется
-    // как в прошлый раз (получатели и суммы), дата — сегодняшний день.
-    // callerItem — кнопка редактирования в журнале: окно вырастает из неё
-    function editMoneyOrder(order, callerItem) {
-        moneyOrderDialog.editFromOrder(order, callerItem)
+    // как в прошлый раз (получатели и суммы), дата — сегодняшний день
+    function editMoneyOrder(order) {
+        moneyOrderDialog.editFromOrder(order)
     }
 
     // ==========================================
@@ -1052,9 +1042,7 @@ ApplicationWindow {
     AppUI.DayInspector      { id: dayInspector }
     AppUI.MoneyInspector    { 
         id: moneyInspector
-        // Новый приказ вырастает на месте журнала (его закрывшего),
-        // а не из центра экрана — окно передаёт эстафету окну
-        onRequestNewOrder: moneyOrderDialog.openNew(moneyInspector)
+        onRequestNewOrder: moneyOrderDialog.openNew()
     }
     AppUI.DayDutyDialog     { id: dayDutyDialog }
     AppUI.DayCompDialog     { id: dayCompDialog }
