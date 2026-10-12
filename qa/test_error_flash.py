@@ -170,7 +170,7 @@ def main() -> int:
 
         # ── 6. ведомость: пустые № и дата → оба поля вспыхнули,
         #      затухли сами, повторное сохранение — снова вспышка ──
-        dlg.openNew()
+        dlg.openNew(None)
         settle(0.4)
         fields = [o for o in dlg.findChildren(QObject)
                   if o.metaObject().className().startswith("AppTextField")

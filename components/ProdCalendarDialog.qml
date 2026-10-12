@@ -29,6 +29,20 @@ AppModalShell {
         (ApplicationWindow.window ? ApplicationWindow.window.height : 800) * 0.92,
         (ApplicationWindow.window ? ApplicationWindow.window.height : 800) - 60)
     function openYear(y) {
+        // Открытие из справки: окно ещё закрыто — год просто ставится.
+        // Смена года в открытом окне — сцена: старый год уходит вверх
+        // с разгоном, новый входит снизу с торможением
+        if (y !== calYear && root.opened) {
+            yearScene.swap(function() {
+                calYear = y
+                cal = backend.getProdCalendar(y)
+            })
+            Qt.callLater(function() {
+                scroll.cancelWheelScroll()
+                scroll.contentY = 0
+            })
+            return
+        }
         calYear = y
         cal = backend.getProdCalendar(y)
         showCentered()
@@ -48,6 +62,13 @@ AppModalShell {
 
     contentItem: Item {
         anchors.fill: parent
+
+        // Режиссёр сцен: смена года в открытом окне (см. openYear)
+        AppSceneDirector {
+            id: yearScene
+            target: scrollColumn
+            armed: root.opened
+        }
 
         // ================= ШАПКА =================
         AppDialogHeader {

@@ -101,16 +101,19 @@ AppDialog {
         orderDateInput.hasError = false
     }
 
-    function openNew() {
+    // callerItem — откуда вырастает окно (кнопка «Приказ», карточка);
+    // без источника — по центру, как раньше
+    function openNew(callerItem) {
         root.singleMode = false
         root.editMode = false
         root.rows = _fromBackend()
         _resetHead()
-        root.showCentered()
+        if (callerItem) root.showAt(callerItem, callerItem.width / 2, callerItem.height / 2)
+        else root.showCentered()
     }
 
     // Приказ только для одного сотрудника — из его карточки
-    function openForEmployee(empId) {
+    function openForEmployee(empId, callerItem) {
         let all = _fromBackend()
         let only = []
         for (let i = 0; i < all.length; i++)
@@ -119,12 +122,13 @@ AppDialog {
         root.editMode = false
         root.rows = only
         _resetHead()
-        root.showCentered()
+        if (callerItem) root.showAt(callerItem, callerItem.width / 2, callerItem.height / 2)
+        else root.showCentered()
     }
 
     // Редактирование приказа из журнала: суммы как в приказе,
     // сохранение ЗАМЕНИТ записи этого приказа
-    function editFromOrder(order) {
+    function editFromOrder(order, callerItem) {
         let current = _fromBackend()
         for (let i = 0; i < current.length; i++) {
             let row = current[i]
@@ -154,7 +158,8 @@ AppDialog {
         orderCommentInput.text = order.comment
         orderDateInput.selectedDate = order.order_date
         orderDateInput.hasError = false
-        root.showCentered()
+        if (callerItem) root.showAt(callerItem, callerItem.width / 2, callerItem.height / 2)
+        else root.showCentered()
     }
 
     // «Иванов Иван Андреевич» → «Иванов И.А.»

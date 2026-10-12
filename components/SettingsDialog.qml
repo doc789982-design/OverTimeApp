@@ -28,8 +28,9 @@ AppLargeModal {
         : maxH
 
     function openTab(index) {
-        settingsMenuList.currentIndex = index
-        settingsStack.currentIndex = index
+        // Открытие в конкретный раздел (из других окон). Закрытые
+        // настройки меняют раздел мгновенно; открытые — как сцену
+        settingsDirector.swap(function() { settingsMenuList.currentIndex = index })
     }
 
     Row {
@@ -167,8 +168,8 @@ AppLargeModal {
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
                             onClicked: {
-                                settingsMenuList.currentIndex = index
-                                settingsStack.currentIndex = index
+                                if (settingsMenuList.currentIndex === index) return
+                                settingsDirector.swap(function() { settingsMenuList.currentIndex = index })
                             }
                         }
                     }
@@ -186,6 +187,14 @@ AppLargeModal {
             Rectangle {
                 anchors.fill: parent
                 color: AppTheme.bgBase
+            }
+
+            // Режиссёр сцен: смена раздела — старый уходит вверх с
+            // разгоном, новый входит снизу с торможением (общая ось)
+            AppSceneDirector {
+                id: settingsDirector
+                target: settingsStack
+                armed: root.opened
             }
 
             StackLayout {

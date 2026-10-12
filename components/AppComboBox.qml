@@ -72,8 +72,8 @@ ComboBox {
         scale: control.isFloated ? 0.75 : 1.0
         transformOrigin: Item.TopLeft
         
-        Behavior on y { NumberAnimation { duration: AppTheme.durNormal; easing.type: Easing.OutCubic } }
-        Behavior on scale { NumberAnimation { duration: AppTheme.durNormal; easing.type: Easing.OutCubic } }
+        Behavior on y { NumberAnimation { duration: AppTheme.durNormal; easing.type: AppTheme.easeEnter } }
+        Behavior on scale { NumberAnimation { duration: AppTheme.durNormal; easing.type: AppTheme.easeEnter } }
 
         spacing: AppTheme.spaceMicro
 
