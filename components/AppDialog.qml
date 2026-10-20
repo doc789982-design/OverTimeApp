@@ -68,12 +68,17 @@ AppModalShell {
     function _scrollItemIntoView(item) {
         let fl = scrollArea.contentItem
         if (!fl || !item) return
+        // Позиция в координатах ВИДИМОЙ части (mapToItem по самому
+        // фликаблю уже учитывает текущую прокрутку). Раньше здесь
+        // сравнивали её с contentY — это разные системы координат,
+        // и повторный вызов (callLater/таймер) отматывал прокрутку
+        // назад: карточка «докрутилась и уехала».
         let pos = item.mapToItem(fl, 0, 0).y
         let h = item.height
-        if (pos < fl.contentY) {
-            fl.contentY = Math.max(0, pos - AppTheme.spaceM)
-        } else if (pos + h > fl.contentY + fl.height) {
-            fl.contentY = Math.max(0, pos + h - fl.height + AppTheme.spaceM)
+        if (pos < 0) {
+            fl.contentY = Math.max(0, fl.contentY + pos - AppTheme.spaceM)
+        } else if (pos + h > fl.height) {
+            fl.contentY = Math.max(0, fl.contentY + pos + h - fl.height + AppTheme.spaceM)
         }
     }
 

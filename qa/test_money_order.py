@@ -255,9 +255,10 @@ def part_d_structure() -> None:
     assert "updateMoneyOrder" in dlg
     # тряска — ШТАТНАЯ AppDialog.shake(), не самописная анимация
     assert "root.shake()" in dlg and "shakeAnim" not in dlg
-    assert "root.scrollToBottom()" in dlg
-    # подсветка строк с ошибкой
-    assert "rowErrors" in dlg and "bgDangerSoft" in dlg
+    # при ошибке список докручивается до первого виновника
+    assert "scrollToFirstError()" in dlg and "scrollToItem" in dlg
+    # подсветка строк с ошибкой: красная рамка-вспышка, как у полей
+    assert "rowErrors" in dlg and "errGlow" in dlg
     assert "accentDanger" in dlg
     # грабли сборки 257: ListView и Layout-и в contentArea AppDialog
     # дают пустой список и разъехавшиеся подписи — только прямые дети

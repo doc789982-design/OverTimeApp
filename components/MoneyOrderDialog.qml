@@ -192,6 +192,22 @@ AppDialog {
     // Для проверок в песочнице: геометрия отрисованных строк
     function layoutInfo() { return empTable.layoutInfo() }
 
+    // Карточка виновника может быть далеко внизу списка: докручиваем
+    // список до первого сотрудника с ошибкой (если ошибок нет — не трогаем)
+    function scrollToFirstError() {
+        for (let i = 0; i < root.rows.length; i++) {
+            if (!root.rowErrors[root.rows[i].id]) continue
+            let kids = empTable.children
+            for (let k = 0; k < kids.length; k++) {
+                if (kids[k].objectName === "moneyOrderRow" && kids[k].rowIndex === i) {
+                    root.scrollToItem(kids[k])
+                    return
+                }
+            }
+            return
+        }
+    }
+
     onAccepted: {
         // номер и дата приказа обязательны: вспышка красной рамки
         let noBad = orderNoInput.text.trim() === ""
@@ -247,12 +263,14 @@ AppDialog {
             return
         }
         // Ошибка: окно трясётся (штатная тряска), виновники подсвечены.
-        // У одного сотрудника может не сходиться несколько граф — сообщения
-        // собираются вместе, а вспыхивают именно его поля (как у текстовых
-        // полей: красная рамка, гаснет при вводе нового значения)
+        // Ошибки сотрудников живут ТОЛЬКО на их карточках (текст под
+        // именем + вспышка красной рамки, как у текстовых полей); внизу
+        // окна показывается только общее — про номер, дату или галочки.
+        // У одного сотрудника может не сходиться несколько граф —
+        // сообщения собираются вместе
         let errs = ({})
         let flash = ({})
-        let tops = []
+        let top = ""
         if (result && result.errors) {
             for (let i = 0; i < result.errors.length; i++) {
                 let e = result.errors[i]
@@ -263,16 +281,17 @@ AppDialog {
                         if (flash[e.id] === undefined) flash[e.id] = []
                         if (flash[e.id].indexOf(e.field) < 0) flash[e.id].push(e.field)
                     }
+                } else if (top === "") {
+                    top = e.message
                 }
-                tops.push(e.name !== "" ? (e.name + " — " + e.message) : e.message)
             }
         }
         root.rowErrors = errs
         root.rowFlash = flash
-        root.topError = tops.join("\n")
+        root.topError = top
         root.errorStamp++
         root.shake()
-        root.scrollToBottom()
+        root.scrollToFirstError()
     }
 
     // ── Шапка: слева реквизиты приказа (сверху вниз),
@@ -499,17 +518,49 @@ AppDialog {
 
             Rectangle {
                 id: rowRect
+                objectName: "moneyOrderRow"
                 width: parent.width
                 required property var modelData
                 required property int index
+                readonly property int rowIndex: index   // для прокрутки к виновнику
                 readonly property var rowData: modelData
                 readonly property string errText: root.rowErrors[rowData.id] || ""
                 height: errText !== "" ? 86 : 66
 
-                // Ошибка списания у этого сотрудника: его поля вспыхивают
-                // красной рамкой — точно как поля формы при ошибке ввода
+                // ── ВСПЫШКА ОШИБКИ — ровно как у текстовых полей формы ──
+                // (механика AppFieldBase): красная рамка зажигается,
+                // держится 3 секунды и ПЛАВНО гаснет; повторная попытка —
+                // вспышка снова. Текст ошибки остаётся под именем.
+                property bool hasError: false
+                property real errGlow: 0
+                function flashError() {
+                    rowRect.hasError = true
+                    rowErrFade.stop()
+                    rowErrLight.restart()
+                    rowErrHold.restart()
+                }
+                onHasErrorChanged: {
+                    if (rowRect.hasError) {
+                        rowErrFade.stop()
+                        rowErrLight.restart()
+                        rowErrHold.restart()
+                    } else {
+                        rowErrHold.stop()
+                        rowErrFade.restart()
+                    }
+                }
+                PropertyAnimation { id: rowErrLight; target: rowRect; property: "errGlow";
+                                    to: 1; duration: AppTheme.durFast }
+                PropertyAnimation { id: rowErrFade; target: rowRect; property: "errGlow";
+                                    to: 0; duration: 700; easing.type: Easing.InQuad }
+                Timer { id: rowErrHold; interval: 3000; onTriggered: rowRect.hasError = false }
+
+                // Ошибка списания у этого сотрудника: карточка вспыхивает
+                // красной рамкой (как поле формы), а если известна графа —
+                // вспыхивает и само поле строки
                 function flashRowFields() {
                     if (errText === "") return
+                    rowRect.flashError()
                     let f = root.rowFlash[rowData.id] || []
                     for (let i = 0; i < f.length; i++) {
                         if (f[i] === "hours") hoursInput.flashError()
@@ -522,10 +573,18 @@ AppDialog {
                     function onErrorStampChanged() { rowRect.flashRowFields() }
                 }
                 radius: AppTheme.radiusMedium
-                color: errText !== "" ? AppTheme.bgDangerSoft : AppTheme.bgCell
+                color: AppTheme.bgCell
                 clip: true
                 Behavior on height { NumberAnimation { duration: AppTheme.durFast; easing.type: AppTheme.easeStandard } }
-                Behavior on color { ColorAnimation { duration: AppTheme.durFast } }
+
+                // Рамка — как у поля с ошибкой: подмешиваем красный к
+                // обычному цвету по силе вспышки (errGlow 0..1)
+                border.width: rowRect.errGlow > 0.01 ? AppTheme.focusWidth : 0
+                border.color: {
+                    let d = AppTheme.accentDanger
+                    return Qt.rgba(d.r, d.g, d.b, Math.min(1, rowRect.errGlow))
+                }
+                Behavior on border.width { NumberAnimation { duration: AppTheme.durMicro } }
 
                 Row {
                     anchors.fill: parent
@@ -632,7 +691,8 @@ AppDialog {
         topPadding: AppTheme.spaceL
     }
 
-    // ── Ошибка (кто именно и что не хватает) ──
+    // ── Общая ошибка шапки (номер/дата/галочки). Ошибки сотрудников —
+    // только на их карточках, здесь не дублируются ──
     Text {
         visible: root.topError !== ""
         width: parent.width

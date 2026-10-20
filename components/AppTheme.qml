@@ -23,7 +23,7 @@ QtObject {
     readonly property string appSemver: "1.0.0-beta.1"
     // Сборки непрерывные и никогда не сбрасываются: именно сборка говорит
     // установленной программе «новее ли» обновление.
-    readonly property int appBuild: 304
+    readonly property int appBuild: 305
     readonly property string appVersionFull: appVersion + " · сборка " + appBuild
 
     // ==========================================

@@ -15,6 +15,9 @@ D. Сценарий юзера: взятый отгул вычитается и�
    «Компенсировать всё» проходит, перебор — ошибка с полем.
 E. Ошибка годовой проверки приписывается сотруднику (имя + строка),
    записанное откатывается.
+F. Ошибки сотрудников не дублируются внизу окна; карточка виновника
+   вспыхивает красной рамкой (гаснет через 3 с, повтор — снова);
+   список сам докручивается до виновника.
 
 Запуск:
     LD_LIBRARY_PATH=/tmp/stubs QT_QPA_PLATFORM=offscreen \
@@ -309,21 +312,60 @@ def part_b_dialog_flash(app) -> None:
         assert msg1 and "не хватает часов" in msg1 and "не хватает сверхурочных" in msg1, \
             "сообщения Иванова не собраны: %r" % msg1
 
-        # верхняя строка называет ВСЕХ виновников
+        # внизу окна НИЧЕГО не дублируется: ошибки сотрудников —
+        # только на карточках
         top = dlg.property("topError")
-        assert "Иванов" in top and "Сидоров" in top, top
-        print("B: поля виновников вспыхивают рамкой, все виновники названы ✓")
+        assert top == "", "текст ошибки продублирован внизу окна: %r" % top
 
-        # ── вспышка гаснет, повторная попытка вспыхивает снова ──
-        settle(3.8)   # 3 секунды удержания + затухание
-        assert ivan["overtime"].property("hasError") is False, "вспышка не погасла"
+        # карточка виновника вспыхнула КРАСНОЙ РАМКОЙ (как текстовое поле):
+        # рамка горит, у невиновных карточек — нет
+        def row_items():
+            res = []
+            def rec(it):
+                if it.objectName() == "moneyOrderRow":
+                    res.append(it)
+                for ch in it.childItems():
+                    rec(ch)
+            rec(win.contentItem())
+            return res
+
+        rows_now = row_items()
+        assert len(rows_now) == 3, "ожидалось 3 карточки, есть %d" % len(rows_now)
+        glow = [r.property("errGlow") for r in rows_now]
+        assert glow[0] > 0.9, "карточка Иванова не вспыхнула рамкой: %r" % glow
+        assert glow[1] < 0.05, "карточка Петрова подсвечена зря: %r" % glow
+        assert glow[2] > 0.9, "карточка Сидорова не вспыхнула рамкой: %r" % glow
+        print("B: карточки виновников вспыхивают красной рамкой, "
+              "внизу окна дублирования нет ✓")
+
+        # ── вспышка гаснет по принципу текстовых полей (3 с + затухание), ──
+        # ── повторная попытка вспыхивает снова ──
+        settle(3.8)
+        assert ivan["overtime"].property("hasError") is False, "вспышка поля не погасла"
+        assert rows_now[0].property("errGlow") == 0, "рамка карточки не погасла"
         dlg.accepted.emit()
         settle(0.4)
         # делегаты те же (строки не менялись) — читаем те же поля
         assert ivan["overtime"].property("hasError") is True, \
             "повторная попытка не вспыхнула (тот же текст ошибки)"
+        assert rows_now[0].property("errGlow") > 0.9, \
+            "повторная попытка не вспыхнула рамкой карточки"
         assert FAIL_COUNT["n"] == 2, FAIL_COUNT
-        print("   повторная попытка с тем же текстом вспыхивает снова ✓")
+        print("   вспышка гаснет через 3 секунды, повторная — снова ✓")
+
+        # ── общая ошибка шапки (нет номера) — внизу окна, поле вспыхивает ──
+        for f in find_fields():
+            if (f.property("label") or "") == "Номер приказа":
+                f.setProperty("text", "")
+        settle(0.1)
+        dlg.accepted.emit()
+        settle(0.3)
+        top = dlg.property("topError")
+        assert "номер" in top.lower(), top
+        for f in find_fields():
+            if (f.property("label") or "") == "Номер приказа":
+                assert f.property("hasError") is True, "поле номера не вспыхнуло"
+        print("   общая ошибка шапки остаётся внизу окна ✓")
     finally:
         try:
             os.remove(wrapper)
@@ -394,6 +436,171 @@ class StubJournalBackend(QObject):
 
     selectedEmployeeId = Property(int, getSel, setSel,
                                   notify=selectedEmployeeChanged)
+
+
+EMPS_BIG = [
+    {"id": i, "name": "Сотрудник %02d" % i, "subtitle": "",
+     "hours": 1, "overtime": 0, "days": 0}
+    for i in range(1, 16)
+]
+
+WRAPPER_F = """
+import QtQuick
+import QtQuick.Controls
+import "components" as AppUI
+ApplicationWindow {
+    id: w
+    width: 1200; height: 800; visible: true
+    AppUI.MoneyOrderDialog { id: dlg }
+    Component.onCompleted: dlg.openNew()
+}
+"""
+
+
+class StubBigBackend(QObject):
+    """15 сотрудников: карточка виновника (последняя) далеко внизу списка."""
+
+    isDarkChanged = Signal()
+
+    def __init__(self):
+        super().__init__()
+        self._dark = False
+
+    def getDark(self):
+        return self._dark
+
+    def setDark(self, v):
+        self._dark = bool(v)
+
+    isDarkTheme = Property(bool, getDark, setDark, notify=isDarkChanged)
+
+    @Slot(result="QVariant")
+    def moneyOrderEmployees(self):
+        return EMPS_BIG
+
+    @Slot(str, str, str, str, int, result="QVariant")
+    def saveMoneyOrder(self, payload, order_no, order_date_iso,
+                       comment, source_mode):
+        return {"ok": False, "errors": [
+            {"id": 15, "name": "Сотрудник 15", "field": "hours",
+             "message": "не хватает часов: доступно 1, запрошено 99"},
+        ]}
+
+
+def walk_visual(win):
+    """Визуальное дерево окна (делегаты Repeater видны только здесь)."""
+    res = []
+    ci = win.contentItem() if hasattr(win, "contentItem") else None
+    if ci is None:
+        return res
+    def rec(it):
+        res.append(it)
+        for ch in it.childItems():
+            rec(ch)
+    rec(ci)
+    return res
+
+
+def walk_all_fields(win):
+    return [it for it in walk_visual(win)
+            if "TextField" in it.metaObject().className()
+            or "AppDateField" in it.metaObject().className()]
+
+
+def find_flickable(win):
+    """Прокручиваемая область, в которой живут карточки строк:
+    поднимаемся от карточки вверх по родителям до Flickable
+    (первый Flickable в обходе дерева может оказаться чужим)."""
+    rows = [it for it in walk_visual(win)
+            if it.objectName() == "moneyOrderRow"]
+    if not rows:
+        return None
+    p = rows[0].parentItem()
+    while p is not None:
+        if "Flickable" in p.metaObject().className():
+            return p
+        p = p.parentItem()
+    return None
+
+
+def part_f_autoscroll(app) -> None:
+    from PySide6.QtQml import QQmlApplicationEngine
+
+    stub = StubBigBackend()
+    engine = QQmlApplicationEngine()
+    ctx = engine.rootContext()          # ссылка обязательна (GC)
+    ctx.setContextProperty("backend", stub)
+    wrapper = os.path.join(ROOT, "_test_money_scroll.qml")
+    with open(wrapper, "w", encoding="utf-8") as f:
+        f.write(WRAPPER_F)
+    try:
+        engine.load(wrapper)
+        assert engine.rootObjects(), "окно не загрузилось"
+        win = engine.rootObjects()[0]
+
+        def settle(s):
+            end = time.time() + s
+            while time.time() < end:
+                app.processEvents()
+                time.sleep(0.01)
+            for _ in range(30):
+                app.processEvents()
+
+        settle(0.6)
+        dlg = next(o for o in win.findChildren(QObject)
+                   if o.metaObject().className().startswith("MoneyOrderDialog"))
+
+        # суммы только у виновника (последний в списке)
+        full_rows = []
+        for e in EMPS_BIG:
+            full_rows.append({
+                "id": e["id"], "name": e["name"], "subtitle": "",
+                "checked": True,
+                "hours": 99 if e["id"] == 15 else 0,
+                "overtime": 0, "days": 0,
+                "balHours": 1, "balOvertime": 0, "balDays": 0,
+                "prevHours": 0, "prevOvertime": 0, "prevDays": 0,
+            })
+        dlg.setProperty("rows", full_rows)
+        settle(0.3)
+        for f in walk_all_fields(win):
+            lbl = f.property("label") or ""
+            if lbl == "Номер приказа":
+                f.setProperty("text", "77")
+            elif lbl == "Дата приказа":
+                f.setProperty("selectedDate", "2026-10-13")
+        settle(0.2)
+
+        # прокрутка списка: контент выше окна — есть чему крутиться
+        flick = find_flickable(win)
+        assert flick is not None, "прокручиваемая область не найдена"
+        assert flick.property("contentHeight") > flick.property("height"), \
+            ("список не длиннее окна — прокрутка не проверится",
+             flick.property("contentHeight"), flick.property("height"))
+        assert flick.property("contentY") == 0, "список уже прокручен"
+
+        dlg.accepted.emit()
+        settle(0.6)
+        y = flick.property("contentY")
+        assert y > 0, "список не докрутился до виновника (contentY=0)"
+
+        # виновник в зоне видимости: координаты карточки в системе
+        # самого окна прокрутки (карточка видима, если её верх внутри
+        # высоты видимой части)
+        rows = [it for it in walk_visual(win)
+                if it.objectName() == "moneyOrderRow" and it.property("rowIndex") == 14]
+        assert rows, "карточка виновника не найдена"
+        row_y = rows[0].mapToItem(flick, 0, 0).y()
+        row_h = rows[0].property("height")
+        assert 0 <= row_y and row_y + row_h <= flick.property("height") + 1, \
+            ("карточка виновника вне зоны видимости",
+             row_y, row_h, flick.property("height"))
+        print("F: список сам докручивается до сотрудника с ошибкой ✓")
+    finally:
+        try:
+            os.remove(wrapper)
+        except OSError:
+            pass
 
 
 def part_c_inspector_amounts(app) -> None:
@@ -531,6 +738,7 @@ def main() -> int:
     part_e_year_error_attributed()
     app = QGuiApplication([])
     part_b_dialog_flash(app)
+    part_f_autoscroll(app)
     part_c_inspector_amounts(app)
     print("═══ ДЕНЕЖНАЯ КОМПЕНСАЦИЯ: СВОИ СУММЫ И ВИНОВНИК ВИДЕН ✓ ═══")
     return 0
