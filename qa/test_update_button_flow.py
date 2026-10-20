@@ -373,9 +373,11 @@ def part_e_qml_clicks(app) -> None:
         remoteDownloadProgressChanged = Signal()
         updateReadyChanged = Signal()
         updateCheckingChanged = Signal()
+        reducedMotionChanged = Signal()
 
         def __init__(self):
             super().__init__()
+            self._reduced = False
             self._avail = False
             self._down = False
             self._prog = 0
@@ -393,6 +395,8 @@ def part_e_qml_clicks(app) -> None:
             bool, lambda s: s._ready, notify=updateReadyChanged)
         updateChecking = Property(
             bool, lambda s: s._chk, notify=updateCheckingChanged)
+        reducedMotion = Property(
+            bool, lambda s: s._reduced, notify=reducedMotionChanged)
 
         FIELD = {"remoteUpdateAvailable": "_avail",
                  "remoteDownloading": "_down",

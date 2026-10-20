@@ -65,6 +65,10 @@ Item {
                 height: leaving ? 0 : (twoLines ? root.barHeight * 2 : root.barHeight)
                 clip: leaving ? true : !tooltipActive
 
+                // Экранный доступ: сообщение тоста произносится вслух
+                Accessible.role: Accessible.AlertMessage
+                Accessible.name: model.message
+
                 property bool leaving: false
                 property bool risen: false
 
@@ -177,7 +181,7 @@ Item {
                                 source: model.kind === "error" ? "../icons/x_circle.svg" : "../icons/check.svg"
                                 width: AppTheme.iconMedium
                                 height: AppTheme.iconMedium
-                                color: model.kind === "error" ? AppTheme.accentDanger : AppTheme.textPrimary
+                                color: model.kind === "error" ? AppTheme.textDanger : AppTheme.textPrimary
                             }
                         }
 

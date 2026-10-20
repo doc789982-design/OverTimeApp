@@ -85,7 +85,7 @@ MenuItem {
                 source: "../icons/trash.svg"
                 width: AppTheme.iconMedium
                 height: AppTheme.iconMedium
-                color: deleteMouse.containsMouse ? AppTheme.accentDanger : AppTheme.textTertiary
+                color: deleteMouse.containsMouse ? AppTheme.textDanger : AppTheme.textTertiary
             }
 
             HoverHandler { cursorShape: Qt.PointingHandCursor }

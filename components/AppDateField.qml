@@ -111,7 +111,7 @@ AppFieldBase {
                     Text {
                         anchors.centerIn: parent
                         text: modelData
-                        color: index >= 5 ? AppTheme.accentDanger : AppTheme.textSecondary
+                        color: index >= 5 ? AppTheme.textDanger : AppTheme.textSecondary
                         font.family: AppTheme.fontFamily
                         font.pixelSize: AppTheme.sizeSmall
                         font.weight: AppTheme.weightMedium

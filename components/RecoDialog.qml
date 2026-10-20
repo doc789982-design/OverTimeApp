@@ -391,7 +391,7 @@ AppModalShell {
                                                 text: "ПРИМЕР"
                                                 color: AppTheme.accentBrand
                                                 font.family: AppTheme.fontFamily
-                                                font.pixelSize: 10
+                                                font.pixelSize: AppTheme.sizeMicro
                                                 font.letterSpacing: 0.8
                                                 font.weight: AppTheme.weightBold
                                             }

@@ -74,6 +74,7 @@ Item {
 
     SequentialAnimation {
         id: moonWobble
+        running: !AppTheme.reducedMotion
         loops: Animation.Infinite
         NumberAnimation { target: canvas; property: "rotation"; to: -15; duration: AppTheme.durSlow; easing.type: Easing.InOutSine }
         NumberAnimation { target: canvas; property: "rotation"; to: 5; duration: AppTheme.durSlow; easing.type: Easing.InOutSine }
@@ -82,6 +83,7 @@ Item {
 
     SequentialAnimation {
         id: sunPulse
+        running: !AppTheme.reducedMotion
         loops: Animation.Infinite
         NumberAnimation { target: canvas; property: "rayOffset"; to: 1.5; duration: 600; easing.type: Easing.InOutSine }
         NumberAnimation { target: canvas; property: "rayOffset"; to: 0; duration: 600; easing.type: Easing.InOutSine }

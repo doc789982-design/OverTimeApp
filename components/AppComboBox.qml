@@ -92,7 +92,7 @@ ComboBox {
         Text {
             visible: control.isRequired
             text: "*"
-            color: control.enabled ? AppTheme.accentDanger : AppTheme.textDisabled 
+            color: control.enabled ? AppTheme.textDanger : AppTheme.textDisabled 
             font.family: AppTheme.fontFamily
             font.pixelSize: AppTheme.sizeBody 
         }

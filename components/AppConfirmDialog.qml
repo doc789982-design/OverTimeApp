@@ -44,7 +44,7 @@ AppDialog {
             source: root.dangerMode ? "../icons/trash.svg" : "../icons/help.svg"
             width: AppTheme.iconLarge
             height: AppTheme.iconLarge
-            color: root.dangerMode ? AppTheme.accentDanger : AppTheme.accentBrand
+            color: root.dangerMode ? AppTheme.textDanger : AppTheme.textBrand
         }
     }
 

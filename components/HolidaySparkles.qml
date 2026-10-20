@@ -36,6 +36,7 @@ Item {
             // ОПТИМИЗАЦИЯ: спим, когда окно свернуто/скрыто в трее,
             // чтобы не гонять видеокарту впустую
             running: root.visible && root.Window.window !== null && root.Window.window.visible
+                                       && !AppTheme.reducedMotion
 
             PauseAnimation { duration: sparkRef.delay }
             

@@ -28,7 +28,7 @@ Item {
         color: root.waveColor
         // точка дышит в такт первому кольцу
         SequentialAnimation on scale {
-            running: root.active; loops: Animation.Infinite
+            running: root.active && !AppTheme.reducedMotion; loops: Animation.Infinite
             NumberAnimation { to: 1.25; duration: 500; easing.type: Easing.OutQuad }
             NumberAnimation { to: 1.0; duration: 1100; easing.type: Easing.InQuad }
         }
@@ -44,12 +44,12 @@ Item {
         border.width: 2
         opacity: 0
         SequentialAnimation on opacity {
-            running: root.active; loops: Animation.Infinite
+            running: root.active && !AppTheme.reducedMotion; loops: Animation.Infinite
             NumberAnimation { to: 0.45; duration: 240; easing.type: Easing.OutQuad }
             NumberAnimation { to: 0.0; duration: 1360; easing.type: Easing.InQuad }
         }
         SequentialAnimation on scale {
-            running: root.active; loops: Animation.Infinite
+            running: root.active && !AppTheme.reducedMotion; loops: Animation.Infinite
             NumberAnimation { from: 0.3; to: 1.0; duration: 1600; easing.type: Easing.OutQuad }
         }
     }
@@ -64,13 +64,13 @@ Item {
         border.width: 1.6
         opacity: 0
         SequentialAnimation on opacity {
-            running: root.active; loops: Animation.Infinite
+            running: root.active && !AppTheme.reducedMotion; loops: Animation.Infinite
             PauseAnimation { duration: 800 }
             NumberAnimation { to: 0.35; duration: 240; easing.type: Easing.OutQuad }
             NumberAnimation { to: 0.0; duration: 1360; easing.type: Easing.InQuad }
         }
         SequentialAnimation on scale {
-            running: root.active; loops: Animation.Infinite
+            running: root.active && !AppTheme.reducedMotion; loops: Animation.Infinite
             PauseAnimation { duration: 800 }
             NumberAnimation { from: 0.3; to: 1.0; duration: 1600; easing.type: Easing.OutQuad }
         }

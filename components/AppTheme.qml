@@ -23,7 +23,7 @@ QtObject {
     readonly property string appSemver: "1.0.0-beta.1"
     // Сборки непрерывные и никогда не сбрасываются: именно сборка говорит
     // установленной программе «новее ли» обновление.
-    readonly property int appBuild: 307
+    readonly property int appBuild: 308
     readonly property string appVersionFull: appVersion + " · сборка " + appBuild
 
     // ==========================================
@@ -89,9 +89,15 @@ QtObject {
     // 3. ТЕКСТ (Typography Colors)
     // ==========================================
     property color textPrimary:   isDark ? "#DEE4EA" : "#2D3B45"
-    property color textSecondary: isDark ? "#8B949E" : "#5F6B74"
-    property color textTertiary:  isDark ? "#6B757D" : "#767F87"
+    property color textSecondary: isDark ? "#9BA5AE" : "#5F6B74"
+    property color textTertiary:  isDark ? "#949EA8" : "#66707A"
     property color textDisabled:  isDark ? "#484F58" : "#9AA0A6" 
+    // Красный ЦВЕТА текста ошибок: темнее заливки accentDanger —
+    // на белых карточках и полях держит читаемость 4.5:1 (WCAG AA)
+    property color textDanger:    isDark ? "#EC7E8A" : "#C12536"
+    // Синий ЦВЕТА текста (сообщения, выбранные пункты): светлее заливки
+    // accentBrand — заливка на тёмном окне читаемость текста не держит
+    property color textBrand:     isDark ? "#55A3F1" : "#03629A"
     
     property color textInverse:   isDark ? "#202124" : "#FFFFFF" 
     property color textOnAccent:  isDark ? "#0B1F33" : "#FFFFFF" 

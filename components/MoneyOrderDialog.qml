@@ -628,7 +628,7 @@ AppDialog {
                             width: parent.width
                             visible: rowRect.errText !== ""
                             text: rowRect.errText
-                            color: AppTheme.accentDanger
+                            color: AppTheme.textDanger
                             font.family: AppTheme.fontFamily
                             font.pixelSize: AppTheme.sizeSmall
                             font.weight: AppTheme.weightBold
@@ -697,7 +697,7 @@ AppDialog {
         visible: root.topError !== ""
         width: parent.width
         text: root.topError
-        color: AppTheme.accentDanger
+        color: AppTheme.textDanger
         font.family: AppTheme.fontFamily
         font.pixelSize: AppTheme.sizeBody
         font.weight: AppTheme.weightBold

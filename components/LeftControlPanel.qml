@@ -58,7 +58,7 @@ Item {
                         // мыши (amplitude > 0). Раньше счётчик крутился ВСЕГДА,
                         // заставляя видеокарту перерисовывать экран 60 раз в
                         // секунду даже в простое. Теперь — только когда нужно.
-                        running: titleWrapper.amplitude > 0.001
+                        running: titleWrapper.amplitude > 0.001 && !AppTheme.reducedMotion
                     }
 
                     Row {
@@ -207,6 +207,7 @@ Item {
                     iconHoverColor: AppTheme.textPrimary
                     borderIdleColor: AppTheme.borderInput
                     borderIdleWidth: 1
+                    accessibleName: "Приказ всем"
                     onClicked: moneyOrderDialog.openNew()
 
                     HoverHandler { id: moneyOrderHover }

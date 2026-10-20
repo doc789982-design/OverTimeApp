@@ -134,7 +134,7 @@ AppDialog {
 
                 Text {
                     text: "Удалили"
-                    color: AppTheme.accentDanger
+                    color: AppTheme.textDanger
                     font.family: AppTheme.fontFamily
                     font.pixelSize: AppTheme.sizeBody
                     font.weight: AppTheme.weightBold

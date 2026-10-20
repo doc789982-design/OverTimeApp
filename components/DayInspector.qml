@@ -62,9 +62,22 @@ AppDialog {
                         Layout.preferredWidth: 100
                     }
                     Text {
+                        id: dutyComment
                         text: modelData.comment
                         color: AppTheme.textSecondary; font.family: AppTheme.fontFamily; font.pixelSize: AppTheme.sizeBody
                         elide: Text.ElideRight; Layout.fillWidth: true
+
+                        // длинное примечание, не влезшее в строку, видно
+                        // целиком при наведении
+                        MouseArea { id: commentHov; anchors.fill: parent; hoverEnabled: true }
+                        AppToolTip {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            anchors.top: parent.bottom
+                            anchors.topMargin: AppTheme.spaceXXS
+                            dropDown: true
+                            text: dutyComment.text
+                            isVisible: commentHov.containsMouse && dutyComment.truncated && text !== ""
+                        }
                     }
                 }
 

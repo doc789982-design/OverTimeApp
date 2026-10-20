@@ -201,7 +201,7 @@ TextField {
         Text {
             visible: root.isRequired
             text: "*"
-            color: root.enabled ? AppTheme.accentDanger : AppTheme.textDisabled
+            color: root.enabled ? AppTheme.textDanger : AppTheme.textDisabled
             font.family: AppTheme.fontFamily
             font.pixelSize: AppTheme.sizeBody
         }

@@ -140,7 +140,7 @@ Item {
                             id: hkErrorMsg
                             visible: false
                             Layout.fillWidth: true
-                            color: AppTheme.accentDanger
+                            color: AppTheme.textDanger
                             font.family: AppTheme.fontFamily
                             font.pixelSize: AppTheme.sizeSmall
                             wrapMode: Text.WordWrap

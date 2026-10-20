@@ -19,8 +19,19 @@ Item {
     property color bgIdleColor: "transparent"
     property color borderIdleColor: "transparent"
     property int borderIdleWidth: 0
+    // Имя для экранного доступа: у кнопки-иконки нет текста —
+    // имя называет ДЕЙСТВИЕ («Закрыть», «Печать»), задайте в месте использования
+    property string accessibleName: ""
 
     signal clicked()
+
+    // Клавиатура: таб останавливается на кнопке, Enter и Пробел нажимают её
+    activeFocusOnTab: true
+    Keys.onReturnPressed: root.clicked()
+    Keys.onEnterPressed: root.clicked()
+    Keys.onSpacePressed: root.clicked()
+    Accessible.role: Accessible.Button
+    Accessible.name: root.accessibleName
 
     scale: mouseArea.pressed ? AppTheme.scaleActive : 1.0
     Behavior on scale { NumberAnimation { duration: AppTheme.durFast; easing.type: AppTheme.easeStandard } }
@@ -61,5 +72,17 @@ Item {
         maskRadius: root.bgRadius
         rippleColor: AppTheme.isDark ? Qt.rgba(77/255, 154/255, 238/255, 0.20)
                                      : Qt.rgba(3/255, 116/255, 181/255, 0.16)
+    }
+
+    // Рамка фокуса с клавиатуры — та же рамка, что у кнопок формы
+    Rectangle {
+        anchors.fill: parent
+        anchors.margins: -AppTheme.focusOffset
+        radius: root.bgRadius + AppTheme.focusOffset
+        color: "transparent"
+        border.color: AppTheme.borderFocus
+        border.width: AppTheme.focusWidth
+        opacity: root.activeFocus ? 1.0 : 0.0
+        Behavior on opacity { NumberAnimation { duration: AppTheme.durMicro } }
     }
 }

@@ -78,7 +78,7 @@ AppLargeModal {
                 wrapMode: Text.WordWrap
                 font.family: AppTheme.fontFamily
                 font.pixelSize: AppTheme.sizeSmall
-                color: AppTheme.accentDanger
+                color: AppTheme.textDanger
                 text: "Заполните диапазон: страницы с 1, «по» — не меньше «с»"
             }
         }

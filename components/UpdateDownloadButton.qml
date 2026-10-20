@@ -21,11 +21,31 @@ import QtQuick.Controls
 // остановившись, докручивается до ровного положения.
 // ============================================================
 
-Item {
-    id: root
-    width: 46
-    height: parent ? parent.height : 46
-    objectName: "updateButton"
+    Item {
+        id: root
+        width: 46
+        height: parent ? parent.height : 46
+        objectName: "updateButton"
+
+        // Клавиатура: таб останавливается на кнопке, Enter и Пробел нажимают
+        activeFocusOnTab: true
+        Keys.onReturnPressed: if (root.clickable) root.activate()
+        Keys.onEnterPressed: if (root.clickable) root.activate()
+        Keys.onSpacePressed: if (root.clickable) root.activate()
+        Accessible.role: Accessible.Button
+        // тултип и есть честное имя: действие + состояние
+        Accessible.name: root.tipText
+
+        // одно действие для мыши и клавиатуры
+        function activate() {
+            if (root.ready) {
+                backend.applyReadyUpdate()
+            } else if (root.hasUpdate && !root.downloading) {
+                backend.startRemoteDownload()
+            } else if (root.idleCheck && !root.checking) {
+                backend.checkAllUpdateSources()
+            }
+        }
 
     // ---- Состояния от Backend ----
     readonly property bool hasUpdate: backend.remoteUpdateAvailable
@@ -89,13 +109,25 @@ Item {
         Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
     }
 
+    // ---- Рамка фокуса с клавиатуры (как у кнопок формы) ----
+    Rectangle {
+        anchors.fill: parent
+        anchors.margins: -AppTheme.focusOffset
+        radius: AppTheme.radiusMedium + AppTheme.focusOffset
+        color: "transparent"
+        border.color: AppTheme.borderFocus
+        border.width: AppTheme.focusWidth
+        opacity: root.activeFocus ? 1.0 : 0.0
+        Behavior on opacity { NumberAnimation { duration: AppTheme.durMicro } }
+    }
+
     // ---- Значки ----
     // Вся клетка сжимается при нажатии (как у обычных кнопок программы).
     Item {
         id: cell
         anchors.centerIn: parent
         width: 28; height: 28
-        scale: hover.pressed && root.clickable ? 0.96 : 1.0
+        scale: hover.pressed && root.clickable ? AppTheme.scaleActive : 1.0
         Behavior on scale { NumberAnimation { duration: AppTheme.durFast; easing.type: Easing.OutQuad } }
 
         // «перезагрузка»: покой и проверка. Крутится, пока идёт проверка.
@@ -237,15 +269,7 @@ Item {
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: root.clickable ? Qt.PointingHandCursor : Qt.ArrowCursor
-        onClicked: {
-            if (root.ready) {
-                backend.applyReadyUpdate()
-            } else if (root.hasUpdate && !root.downloading) {
-                backend.startRemoteDownload()
-            } else if (root.idleCheck && !root.checking) {
-                backend.checkAllUpdateSources()
-            }
-        }
+        onClicked: root.activate()
     }
 
     // ---- Тултип ----

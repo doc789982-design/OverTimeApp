@@ -158,6 +158,34 @@ Rectangle {
         anchors.right: parent.right
         anchors.bottomMargin: 140
 
+        // ── Пустой результат поиска: сказать об этом и предложить сброс ──
+        Column {
+            anchors.centerIn: parent
+            visible: empList.count === 0 && searchInput.text.length > 0
+            spacing: AppTheme.spaceXXS
+
+            Text {
+                text: "Никого не нашли по «" + searchInput.text + "»"
+                color: AppTheme.textSecondary
+                font.family: AppTheme.fontFamily
+                font.pixelSize: AppTheme.sizeBody
+                font.weight: AppTheme.weightMedium
+            }
+            Text {
+                text: "Проверьте запрос или сбросьте поиск"
+                color: AppTheme.textTertiary
+                font.family: AppTheme.fontFamily
+                font.pixelSize: AppTheme.sizeSmall
+            }
+            AppButton {
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: "Сбросить поиск"
+                variant: "secondary"
+                width: 150
+                onClicked: searchInput.text = ""
+            }
+        }
+
     ListView {
         id: empList
         anchors.fill: parent

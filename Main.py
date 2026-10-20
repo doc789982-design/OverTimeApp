@@ -474,6 +474,7 @@ class Backend(QObject):
     itemDeleted = Signal(str, str)
     startHiddenChanged = Signal()
     reminderEnabledChanged = Signal()
+    reducedMotionChanged = Signal()      # «Меньше анимаций» (настройки)
     updateReadyChanged = Signal()
     updateBusyChanged = Signal()
     updateCheckingChanged = Signal()   # идёт ли полная проверка обновлений
@@ -511,6 +512,7 @@ class Backend(QObject):
         self._year_summary = {}
         self._is_dark_theme = True
         self._reminder_enabled = True    # Напоминание "сдать табель" (28-е — 5-е число)
+        self._reduced_motion = False     # «Меньше анимаций» (тумблер в настройках)
         self._startup_update_enabled = True    # обновление при запуске
         self._tray_hint_shown = False    # Показывали ли подсказку про работу в фоне
         # Данные хранятся в Documents\OverTimeTab; из папки программы автоматически переносятся
@@ -822,6 +824,7 @@ class Backend(QObject):
                 self._time_input_mode = ui_cfg.get("time_input_mode", "tumbler")
                 self._is_dark_theme = ui_cfg.get("theme", "dark") == "dark"
                 self._reminder_enabled = ui_cfg.get("reminder_enabled", True)
+                self._reduced_motion = bool(ui_cfg.get("reduced_motion", False))
                 self._startup_update_enabled = bool(ui_cfg.get("startup_update", True))
                 self._tray_hint_shown = ui_cfg.get("tray_hint_shown", False)
                 self._update_url = str(ui_cfg.get("update_url", "") or "").strip()
@@ -1203,6 +1206,18 @@ class Backend(QObject):
     def reminderEnabled(self):
         return self._reminder_enabled
 
+    # ── «Меньше анимаций» (тумблер в настройках) ───────────────────────
+    @Property(bool, notify=reducedMotionChanged)
+    def reducedMotion(self):
+        return self._reduced_motion
+
+    @Slot(bool)
+    def setReducedMotion(self, enabled):
+        if self._reduced_motion == bool(enabled): return
+        self._reduced_motion = bool(enabled)
+        self._write_ui_config("reduced_motion", self._reduced_motion)
+        self.reducedMotionChanged.emit()
+
     # ── Обновление при запуске (тумблер в настройках) ────────────────
     @Property(bool, notify=startupUpdateEnabledChanged)
     def startupUpdateEnabled(self):
@@ -1279,7 +1294,7 @@ class Backend(QObject):
 
         ok, err = self._validate_db_file(path)
         if not ok:
-            self.showToast.emit(f"Не удалось подключить: {err}", "error")
+            self.showToast.emit(f"Не удалось подключить базу: {err}. Проверьте файл и попробуйте снова", "error")
             return
 
         self.add_to_config(path)
@@ -1292,14 +1307,14 @@ class Backend(QObject):
         # Если нет — честно ругаемся и ОСТАЕМСЯ на старой базе, а не ломаемся посередине.
         ok, err = self._validate_db_file(path)
         if not ok:
-            self.showToast.emit(f"Не удалось открыть базу: {err}", "error")
+            self.showToast.emit(f"Не удалось открыть базу: {err}. Проверьте файл и попробуйте снова", "error")
             self.databaseOpenFailed.emit(err)
             return
 
         try:
             new_db = DB(path)
         except Exception as e:
-            self.showToast.emit(f"Не удалось открыть базу: {e}", "error")
+            self.showToast.emit(f"Не удалось открыть базу: {e}. Возможно, файл открыт в другой программе — закройте её и попробуйте снова", "error")
             self.databaseOpenFailed.emit(str(e))
             return
 
@@ -1414,7 +1429,7 @@ class Backend(QObject):
             self.showToast.emit("Дежурство сохранено", "success")
             
         except Exception as e:
-            self.showToast.emit(f"Ошибка сохранения: {e}", "error")
+            self.showToast.emit(f"Не удалось сохранить дежурство: {e}. Проверьте время и попробуйте снова", "error")
 
     @Slot(str, str, str, str, bool)
     def saveCompensation(self, dates_csv, comp_type, amount_str, comment, use_prev_year):
@@ -1466,7 +1481,7 @@ class Backend(QObject):
             self.refresh_calendar()
             self._defer_year_refresh()
         except Exception as e:
-            self.showToast.emit(str(e), "error")
+            self.showToast.emit(f"Не удалось сохранить компенсацию: {e}. Проверьте значения и попробуйте снова", "error")
 
     @Slot(str, str, str, str)
     def saveCompensationBoth(self, dates_csv, comp_type, amount_str, comment):
@@ -1527,7 +1542,7 @@ class Backend(QObject):
             self.refresh_calendar()
             self._defer_year_refresh()
         except Exception as e:
-            self.showToast.emit(str(e), "error")
+            self.showToast.emit(f"Не удалось сохранить компенсацию: {e}. Проверьте значения и попробуйте снова", "error")
 
     @Slot(str, int, result="QVariant")
     def checkDayConflicts(self, dates_csv, exclude_comp_id):
@@ -1670,7 +1685,7 @@ class Backend(QObject):
             
         except Exception as e:
             self.active_db.conn.execute("ROLLBACK;")
-            self.showToast.emit(f"Не удалось удалить дежурство: {e}", "error")
+            self.showToast.emit(f"Не удалось удалить дежурство: {e}. Возможно, база открыта в другой программе", "error")
 
     @Slot(int, str)
     def deleteCompensation(self, comp_id, current_day_str):
@@ -2940,7 +2955,7 @@ class Backend(QObject):
             
         except Exception as e:
             self.active_db.conn.execute("ROLLBACK;")
-            self.showToast.emit(f"Ошибка сохранения: {e}", "error")
+            self.showToast.emit(f"Не удалось сохранить настройки отдела: {e}. Проверьте значения и попробуйте снова", "error")
 
     @Slot(str)
     def removeDatabaseFromList(self, path):
@@ -3125,7 +3140,7 @@ class Backend(QObject):
             self.loadHotkeys() # Обновляем список в интерфейсе
             self.showToast.emit("Горячие клавиши сохранены", "success")
         except Exception as e:
-            self.showToast.emit(f"Ошибка сохранения хоткеев: {e}", "error")
+            self.showToast.emit(f"Не удалось сохранить горячие клавиши: {e}. Проверьте сочетания и попробуйте снова", "error")
 
     @Slot(str, str)
     def executeHotkey(self, key_sequence, target_date_str):
@@ -3904,7 +3919,7 @@ class Backend(QObject):
             self.showToast.emit("Запись сохранена", "success")
         except Exception as e:
             self.active_db.conn.execute("ROLLBACK;")
-            self.showToast.emit(f"Ошибка сохранения: {e}", "error")
+            self.showToast.emit(f"Не удалось сохранить запись: {e}. Проверьте значения и попробуйте снова", "error")
 
     @Slot(int, int)
     def deleteTransferRecord(self, emp_id, record_id):

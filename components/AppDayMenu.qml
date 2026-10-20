@@ -186,7 +186,7 @@ AppMenu {
                         source: "../icons/trash.svg"
                         width: AppTheme.iconMedium
                         height: AppTheme.iconMedium
-                        color: clearBtn.containsMouse ? AppTheme.accentDanger : AppTheme.textSecondary
+                        color: clearBtn.containsMouse ? AppTheme.textDanger : AppTheme.textSecondary
                     }
                     HoverHandler { cursorShape: Qt.PointingHandCursor }
                     MouseArea {

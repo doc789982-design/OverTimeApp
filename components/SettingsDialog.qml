@@ -206,6 +206,14 @@ AppLargeModal {
                         onToggled: backend.toggleTheme()
                     }
 
+                    AppSwitch {
+                        // настройка описывает включённое состояние:
+                        // включено — фоновых движений нет
+                        text: "Меньше анимаций"
+                        checked: backend.reducedMotion
+                        onToggled: backend.setReducedMotion(checked)
+                    }
+
                     AppComboBox {
                         width: 340
                         label: "Режим ввода времени дежурств:"

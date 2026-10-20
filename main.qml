@@ -166,6 +166,26 @@ ApplicationWindow {
                         height: parent.height
                         color: helpHov.pressed ? AppUI.AppTheme.statePress : (helpHov.containsMouse ? AppUI.AppTheme.stateHover : "transparent")
                         
+                        // Клавиатура: таб, Enter/Пробел; имя для экранного доступа
+                        activeFocusOnTab: true
+                        Keys.onReturnPressed: helpDialog.show()
+                        Keys.onEnterPressed: helpDialog.show()
+                        Keys.onSpacePressed: helpDialog.show()
+                        Accessible.role: Accessible.Button
+                        Accessible.name: "Справка"
+
+                        // рамка фокуса с клавиатуры — как у кнопок формы
+                        Rectangle {
+                            anchors.fill: parent
+                            anchors.margins: -AppUI.AppTheme.focusOffset
+                            radius: AppUI.AppTheme.radiusMedium + AppUI.AppTheme.focusOffset
+                            color: "transparent"
+                            border.color: AppUI.AppTheme.borderFocus
+                            border.width: AppUI.AppTheme.focusWidth
+                            opacity: parent.activeFocus ? 1.0 : 0.0
+                            Behavior on opacity { NumberAnimation { duration: AppUI.AppTheme.durMicro } }
+                        }
+
                         HoverHandler { cursorShape: Qt.PointingHandCursor }
                         MouseArea {
                             id: helpHov

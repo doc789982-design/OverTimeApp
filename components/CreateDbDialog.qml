@@ -81,7 +81,7 @@ AppDialog {
         id: createDbErrorMsg
         visible: false
         width: parent.width
-        color: AppTheme.accentDanger
+        color: AppTheme.textDanger
         font.family: AppTheme.fontFamily
         font.pixelSize: AppTheme.sizeSmall
         wrapMode: Text.WordWrap

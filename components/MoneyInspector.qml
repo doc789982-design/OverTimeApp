@@ -141,6 +141,7 @@ AppDialog {
                             font.family: AppTheme.fontFamily
                             font.pixelSize: AppTheme.sizeBody
                             font.weight: AppTheme.weightBold
+                            font.features: {"tnum": 1}
                             elide: Text.ElideRight
                             Layout.maximumWidth: 220
                         }

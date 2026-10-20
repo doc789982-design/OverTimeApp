@@ -148,9 +148,10 @@ Item {
                     x: 0; y: 0
                     width: odometer.width
                     text: card.endText
-                    color: card.endNeg ? AppTheme.accentDanger : AppTheme.textPrimary
+                    color: card.endNeg ? AppTheme.textDanger : AppTheme.textPrimary
                     font.family: AppTheme.fontFamily
-                    font.pixelSize: 27
+                    font.pixelSize: AppTheme.sizeH3
+                    font.features: {"tnum": 1}
                     font.weight: AppTheme.weightBold
                     textFormat: Text.StyledText
                     elide: Text.ElideRight
@@ -161,9 +162,10 @@ Item {
                     width: odometer.width
                     opacity: 0
                     text: ""
-                    color: card.endNeg ? AppTheme.accentDanger : AppTheme.textPrimary
+                    color: card.endNeg ? AppTheme.textDanger : AppTheme.textPrimary
                     font.family: AppTheme.fontFamily
-                    font.pixelSize: 27
+                    font.pixelSize: AppTheme.sizeH3
+                    font.features: {"tnum": 1}
                     font.weight: AppTheme.weightBold
                     textFormat: Text.StyledText
                     elide: Text.ElideRight

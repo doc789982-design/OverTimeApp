@@ -42,10 +42,12 @@ class StubBackend(QObject):
     remoteDownloadProgressChanged = Signal()
     updateReadyChanged = Signal()
     updateCheckingChanged = Signal()
+    reducedMotionChanged = Signal()
 
     def __init__(self):
         super().__init__()
         self._dark = False
+        self._reduced = False
         self._avail = False
         self._down = False
         self._prog = 0
@@ -73,6 +75,8 @@ class StubBackend(QObject):
         bool, lambda s: s._ready, notify=updateReadyChanged)
     updateChecking = Property(
         bool, lambda s: s._chk, notify=updateCheckingChanged)
+    reducedMotion = Property(
+        bool, lambda s: s._reduced, notify=reducedMotionChanged)
 
     @Slot()
     def checkAllUpdateSources(self):

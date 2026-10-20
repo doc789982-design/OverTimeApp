@@ -102,7 +102,7 @@ Item {
         }
     }
 
-    readonly property bool animsAlive: active && visible
+    readonly property bool animsAlive: active && visible && !AppTheme.reducedMotion
                                         && root.Window.window !== null
                                         && root.Window.window.visible
 

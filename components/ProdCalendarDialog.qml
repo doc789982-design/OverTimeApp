@@ -158,10 +158,10 @@ AppModalShell {
                                             width: monthCard.cellW
                                             horizontalAlignment: Text.AlignHCenter
                                             text: modelData
-                                            color: index > 4 ? AppTheme.accentDanger : AppTheme.textTertiary
+                                            color: index > 4 ? AppTheme.textDanger : AppTheme.textTertiary
                                             opacity: index > 4 ? 0.55 : 1
                                             font.family: AppTheme.fontFamily
-                                            font.pixelSize: 10
+                                            font.pixelSize: AppTheme.sizeMicro
                                             font.weight: AppTheme.weightBold
                                         }
                                     }
