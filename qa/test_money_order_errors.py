@@ -11,6 +11,10 @@ B. Ведомость: при ошибке поле виновника вспы�
    собраны вместе; верхняя строка называет всех виновников.
 C. Журнал приказов: карточка показывает сумму ВЫБРАННОГО сотрудника
    (с именем), если он получатель; не получал — общую по приказу.
+D. Сценарий юзера: взятый отгул вычитается из «Доступно» (3 дня из 4),
+   «Компенсировать всё» проходит, перебор — ошибка с полем.
+E. Ошибка годовой проверки приписывается сотруднику (имя + строка),
+   записанное откатывается.
 
 Запуск:
     LD_LIBRARY_PATH=/tmp/stubs QT_QPA_PLATFORM=offscreen \
@@ -22,7 +26,7 @@ import os
 import sys
 import time
 import types
-from datetime import datetime
+from datetime import date, datetime
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("QSG_RASTER_BACKEND", "1")
@@ -56,6 +60,22 @@ def fresh_db():
     # ночные часы от дежурства 20:00–08:00
     db.add_duty(1, datetime(2026, 10, 7, 20, 0), datetime(2026, 10, 8, 8, 0), "")
     db.add_duty(2, datetime(2026, 10, 7, 20, 0), datetime(2026, 10, 8, 8, 0), "")
+    db.conn.commit()
+    return db
+
+
+def fresh_db_user_case():
+    """Сценарий юзера: ночные часы за месяц + 4 дня, один день уже
+    взят выходным — на дату приказа доступно 3 дня, а не 4."""
+    path = os.path.join(os.environ.get("TMPDIR", "/tmp"),
+                        "money_user_case.sqlite")
+    if os.path.exists(path):
+        os.remove(path)
+    db = DB(path)
+    db.add_employee("Иванов", "Иван", "", "капитан", "инженер",
+                    "2026-01", 0, 4, 0, 0, 0, 0)
+    db.add_duty(1, datetime(2026, 10, 7, 20, 0), datetime(2026, 10, 8, 8, 0), "")
+    db.add_compensation_days_dayoff(1, [date(2026, 10, 5)], "")
     db.conn.commit()
     return db
 
@@ -445,9 +465,70 @@ def part_c_inspector_amounts(app) -> None:
             pass
 
 
+def part_d_user_scenario() -> None:
+    # Д1. окно вычитает уже взятый отгул: дней 3, а не 4
+    db = fresh_db_user_case()
+    b = make_backend(db)
+    e = b.moneyOrderEmployees()[0]
+    assert e["days"] == 3 and e["hours"] > 0, e
+
+    # Д2. перебор — ошибка с полем (вспышка рамкой у конкретной графы)
+    res = b.saveMoneyOrder(
+        json.dumps([{"id": 1, "hours": 1, "overtime": 0, "days": 4}]),
+        "101", "2026-10-19", "", 0)
+    assert res["ok"] is False, res
+    err = res["errors"][0]
+    assert err["id"] == 1 and err["field"] == "days", err
+    assert "доступно 3" in err["message"], err
+    n = db.conn.execute(
+        "SELECT COUNT(*) c FROM compensation WHERE method='money'"
+    ).fetchone()["c"]
+    assert n == 0, "при ошибке база изменилась"
+
+    # Д3. «Компенсировать всё» — ровно остаток, приказ проходит
+    # (раньше подставлялось 4 дня: лишний день закрывался восемью
+    # ночными часами — и приказ падал с ошибкой про ночные часы)
+    db2 = fresh_db_user_case()
+    b2 = make_backend(db2)
+    e2 = b2.moneyOrderEmployees()[0]
+    res2 = b2.saveMoneyOrder(
+        json.dumps([{"id": 1, "hours": e2["hours"],
+                     "overtime": e2["overtime"], "days": e2["days"]}]),
+        "100", "2026-10-19", "", 0)
+    assert res2["ok"] is True, res2
+    print("D: отгул вычтен (3 из 4), «Компенсировать всё» проходит, "
+          "перебор — ошибка с полем ✓")
+
+
+def part_e_year_error_attributed() -> None:
+    import Main as MainMod
+    db = fresh_db_user_case()
+    b = make_backend(db)
+    orig = MainMod.validate_non_negative_over_year
+    MainMod.validate_non_negative_over_year = lambda db_, eid, y: (
+        False, "Ошибка: Не хватает ночных часов в октябре.")
+    try:
+        res = b.saveMoneyOrder(
+            json.dumps([{"id": 1, "hours": 1, "overtime": 0, "days": 0}]),
+            "102", "2026-10-19", "", 0)
+    finally:
+        MainMod.validate_non_negative_over_year = orig
+    assert res["ok"] is False, res
+    err = res["errors"][0]
+    assert err["id"] == 1 and "Иванов" in err["name"], err
+    assert "ночных" in err["message"], err
+    n = db.conn.execute(
+        "SELECT COUNT(*) c FROM compensation WHERE method='money'"
+    ).fetchone()["c"]
+    assert n == 0, "при откате годовой проверки база изменилась"
+    print("E: ошибка годовой проверки приписана сотруднику, база не тронута ✓")
+
+
 def main() -> int:
     from PySide6.QtGui import QGuiApplication
     part_a_backend_fields()
+    part_d_user_scenario()
+    part_e_year_error_attributed()
     app = QGuiApplication([])
     part_b_dialog_flash(app)
     part_c_inspector_amounts(app)

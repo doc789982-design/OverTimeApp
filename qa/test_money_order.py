@@ -135,14 +135,19 @@ def part_bc_order_and_journal() -> None:
     # ── ошибка: Петрову просим больше, чем есть; база не трогается ──
     before = db.conn.execute(
         "SELECT COUNT(*) c FROM compensation WHERE method='money'").fetchone()["c"]
+    # приказ 245 уже компенсировал все часы текущего года — остаток
+    # честно ноль (раньше «доступно» не вычитало проведённые приказы
+    # этого месяца, и повторный запрос проходил завышенным)
     rows = [
         {"id": 1, "hours": 1, "overtime": 0, "days": 0},
         {"id": 2, "hours": bal[2] + 100, "overtime": 0, "days": 0},  # больше, чем есть
     ]
     res = b.saveMoneyOrder(json.dumps(rows), "246", "2026-10-13", "", 0)
     assert res["ok"] is False, res
-    assert len(res["errors"]) == 1, res
-    err = res["errors"][0]
+    assert len(res["errors"]) == 2, res
+    by_id = {e["id"]: e for e in res["errors"]}
+    assert by_id[1]["field"] == "hours" and "доступно 0" in by_id[1]["message"], res
+    err = by_id[2]
     assert err["id"] == 2 and "Петров" in err["name"], err
     assert "не хватает часов" in err["message"], err
     after = db.conn.execute(

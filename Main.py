@@ -2522,13 +2522,19 @@ class Backend(QObject):
     # ============================================================
     def _money_balances(self, emp_id):
         """Доступные к денежной компенсации часы/сверхурочные/дни
-        сотрудника на текущий месяц (как в панели балансов)."""
+        сотрудника на текущий месяц — остаток на конец месяца, как в
+        панели балансов: из начисленного вычтено всё, что уже
+        компенсировано в этом месяце (отгулы и денежные приказы).
+        Раньше здесь было «начало + начислено» без вычета: «Компенсировать
+        всё» подставляло больше, чем есть на дату приказа, и приказ
+        падал уже на годовой проверке — с запутанной ошибкой про ночные
+        часы (день сверх копилки закрывается восемью ночными часами)."""
         from logic import compute_month_summary as _cms
         summ = _cms(self.active_db, emp_id, self.current_year, self.current_month)
         return {
-            "hours": max(0, (summ["start_hours"] + summ["acc_hours"]) // 60),
-            "overtime": max(0, (summ["start_overtime"] + summ["acc_overtime"]) // 60),
-            "days": max(0, summ["start_days"] + summ["acc_days"]),
+            "hours": max(0, summ["end_hours"] // 60),
+            "overtime": max(0, summ["end_overtime"] // 60),
+            "days": max(0, summ["end_days"]),
         }
 
     def _money_prev_balances(self, emp_id):
@@ -2608,6 +2614,8 @@ class Backend(QObject):
         из заначки (двумя записями)."""
         errors = []
         checked = []
+        names = {}   # eid → ФИО: годовая проверка падает после записи,
+        # её ошибка приписывается сотруднику (подсветка строки и имя)
         for r in rows:
             eid = int(r.get("id") or 0)
             hours = max(0, int(r.get("hours") or 0))
@@ -2620,6 +2628,7 @@ class Backend(QObject):
                 continue
             b = self._money_balances_for(eid, source_mode)
             fio = f"{emp['last_name']} {emp['first_name']}".strip()
+            names[eid] = fio
             ok = True
             # field — какое поле строки не сошлось (часы/дни/сверхурочные):
             # окно вспыхивает красной рамкой именно его, как у текстовых полей
@@ -2666,7 +2675,16 @@ class Backend(QObject):
             is_valid, err = validate_non_negative_over_year(
                 self.active_db, eid, self.current_year)
             if not is_valid:
-                raise Exception(err)
+                # Раньше здесь было «raise»: ошибка годовой проверки
+                # уходила безымянной (id 0) — окно не могло подсветить
+                # виновника и показывало голый текст. Теперь она
+                # приписывается сотруднику; записанное откатывается
+                # вызывающим (транзакция)
+                errors.append({"id": eid, "name": names.get(eid, ""),
+                               "field": "", "message": err})
+                break
+        if errors:
+            return checked, errors
         return checked, []
 
     @staticmethod
