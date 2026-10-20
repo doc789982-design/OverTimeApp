@@ -73,7 +73,7 @@ Rectangle {
         anchors.right: parent.right
         anchors.topMargin: AppTheme.spaceM
         
-        bottomMargin: 140 + backend.updateChromeExtra 
+        bottomMargin: 140
         clip: true
         model: backend.groupList
         

@@ -991,6 +991,12 @@ def cleanup_obsolete_zips(app_dir: Path, current_version: str, current_build: in
         folders.add(Path(app_dir).resolve())
     except Exception:
         pass
+    try:
+        # И папка скачанных обновлений: устаревший zip не должен копиться
+        # мёртвым грузом (новее текущего — не трогаем, он ещё пригодится).
+        folders.add(root / "update_download")
+    except Exception:
+        pass
     for folder in folders:
         try:
             if not folder.is_dir():
@@ -1097,6 +1103,12 @@ def scan_update_sources(app_dir: Path) -> list[Path]:
     root = install_root(app_dir)
     skip_roots = {app_dir.resolve(), root.resolve(), pending_dir(app_dir).resolve()}
     search_dirs = [root, app_dir]
+    # Папка скачанных обновлений: если сеть подвела ПОСЛЕ скачивания
+    # (подготовка не удалась, программу закрыли), архив уже лежит на диске —
+    # проверка обязана его видеть и ставить без сети, заново не качать.
+    dl_dir = root / "update_download"
+    if dl_dir not in search_dirs:
+        search_dirs.append(dl_dir)
     if not _is_drive_root(root.parent):
         search_dirs.append(root.parent)
     if not _is_drive_root(app_dir.parent):

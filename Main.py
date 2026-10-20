@@ -385,7 +385,10 @@ class RemoteCheckWorker(QThread):
 
     def run(self):
         try:
-            info, err = app_update.fetch_update_info(self.base_url)
+            # 8 секунд на источник — ровно как в проверке при запуске
+            # программы (_startup_find_update): кнопка и запуск проверяют
+            # обновления одним и тем же способом.
+            info, err = app_update.fetch_update_info(self.base_url, timeout=8.0)
             if not info:
                 self.finished_signal.emit(None, err or "Не удалось получить данные об обновлении с сервера")
                 return
@@ -4307,12 +4310,6 @@ class Backend(QObject):
         # новинку обновления — виньетка листает их по очереди
         return getattr(self, "_whats_new_scenes", ["neutral"])
 
-    @Property(int, notify=updateReadyChanged)
-    def updateChromeExtra(self):
-        # Только когда обновление ГОТОВО. Во время фоновой проверки/скачивания
-        # (updateBusy) запас не нужен — иначе раскладка дёргается каждые 5 сек.
-        return 52 if self._update_ready else 0
-
     def _set_update_busy(self, busy, text=""):
         self._update_busy = bool(busy)
         self._update_status = text or ""
@@ -4450,7 +4447,9 @@ class Backend(QObject):
         self._pending_notify = bool(notify)
         self._background_auto = not bool(notify)
         self._remote_active_url = ""
-        self._remote_info = None
+        # _remote_info НЕ сбрасываем: уже найденное обновление переживает
+        # повторную проверку. Если сеть молчит, _remote_no_result оставит
+        # его кнопке; если сервер ответит «не новее» — уберёт там же.
         return True
 
     def _finish_update_check(self):
@@ -4555,6 +4554,8 @@ class Backend(QObject):
             return
         if info:
             # Нашли обновление на текущем адресе (self._remote_active_url) — дальше не идём.
+            info = dict(info)
+            info.setdefault("base_url", self._remote_active_url)
             self._remote_info = info
             if not self._remote_update_available:
                 self._remote_update_available = True
@@ -4577,6 +4578,15 @@ class Backend(QObject):
 
     def _remote_no_result(self):
         """Все удалённые адреса проверены — обновление не найдено."""
+        if (not self._remote_saw_reachable and self._last_remote_error
+                and self._remote_info and self._remote_update_available):
+            # Ни один адрес не ответил, но обновление мы УЖЕ нашли раньше.
+            # «Не смогли проверить» — не значит «обновления нет»: не прячем
+            # найденное, иначе кнопка теряла обновление при каждом сбое сети.
+            if self._pending_notify:
+                self.showToast.emit(f"Не удалось проверить обновления: {self._last_remote_error}", "error")
+            self._finish_update_check()
+            return
         self._remote_info = None
         if self._remote_update_available:
             self._remote_update_available = False
@@ -4591,10 +4601,15 @@ class Backend(QObject):
     @Slot()
     def startRemoteDownload(self):
         """Кнопка загрузки в шапке: скачать обновление, которое уже обнаружено."""
-        if not self._remote_info or self._remote_downloading or self._update_checking:
+        if not self._remote_info or self._remote_downloading:
+            # Идущая фоновая проверка — не препятствие: обновление уже
+            # известно, скачивание — явное желание пользователя. Проверка
+            # сама тихо завершится, увидев начавшуюся загрузку.
             return
         # Качаем именно с того адреса, который дал найденное обновление.
-        base_url = self._remote_active_url or app_update.resolve_update_url(self._update_url)
+        base_url = (str(self._remote_info.get("base_url") or "")).strip() \
+            or self._remote_active_url \
+            or app_update.resolve_update_url(self._update_url)
         if not base_url:
             return
         self._remote_downloading = True
@@ -4736,6 +4751,7 @@ class Backend(QObject):
         except Exception:
             pass
 
+    @Slot()
     def applyReadyUpdate(self):
         """Кнопка «Обновить»: переодеваем коробку и перезапускаемся. data/ не трогаем."""
         staged = app_update.staged_info(self.app_dir)

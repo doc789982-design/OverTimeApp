@@ -156,7 +156,7 @@ Rectangle {
         anchors.bottom: parent.bottom
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.bottomMargin: 140 + backend.updateChromeExtra
+        anchors.bottomMargin: 140
 
     ListView {
         id: empList
