@@ -35,6 +35,37 @@ AppDialog {
 
     function keyOf(order) { return order.order_no + "|" + order.order_date }
 
+    // «Иванов Иван Иванович» → «Иванов И.И.»
+    function shortName(fio) {
+        let p = String(fio || "").trim().split(/\s+/)
+        let out = p[0] || ""
+        for (let i = 1; i < p.length; i++)
+            if (p[i].length > 0) out += " " + p[i][0] + "."
+        return out
+    }
+
+    // Журнал открывается из сводной панели выбранного сотрудника:
+    // если он получатель приказа, в карточке стоит ЕГО сумма (с именем),
+    // а не общая по приказу. Не получал — общая, как и раньше.
+    function cardAmount(order) {
+        let src = order
+        let label = ""
+        if (order.count > 1 && backend.selectedEmployeeId > 0) {
+            for (let i = 0; i < order.employees.length; i++) {
+                if (order.employees[i].id === backend.selectedEmployeeId) {
+                    src = order.employees[i]
+                    label = shortName(order.employees[i].name) + ": "
+                    break
+                }
+            }
+        }
+        let parts = []
+        if (src.hours > 0) parts.push(src.hours + " ч")
+        if (src.overtime > 0) parts.push(src.overtime + " ч сверх.")
+        if (src.days > 0) parts.push(src.days + " д")
+        return parts.length > 0 ? (label + parts.join(" · ")) : "—"
+    }
+
     Column {
         width: parent.width
         spacing: AppTheme.spaceS
@@ -102,17 +133,16 @@ AppDialog {
                         Item { Layout.fillWidth: true }
 
                         Text {
-                            text: {
-                                let parts = []
-                                if (modelData.hours > 0) parts.push(modelData.hours + " ч")
-                                if (modelData.overtime > 0) parts.push(modelData.overtime + " ч сверх.")
-                                if (modelData.days > 0) parts.push(modelData.days + " д")
-                                return parts.length > 0 ? parts.join(" · ") : "—"
-                            }
+                            objectName: "orderCardAmount"
+                            // Чья это сумма — см. cardAmount: у выбранного
+                            // сотрудника показываем его, остальным — общую
+                            text: root.cardAmount(modelData)
                             color: AppTheme.accentTeal
                             font.family: AppTheme.fontFamily
                             font.pixelSize: AppTheme.sizeBody
                             font.weight: AppTheme.weightBold
+                            elide: Text.ElideRight
+                            Layout.maximumWidth: 220
                         }
                     }
 

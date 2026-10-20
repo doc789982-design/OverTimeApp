@@ -2621,16 +2621,18 @@ class Backend(QObject):
             b = self._money_balances_for(eid, source_mode)
             fio = f"{emp['last_name']} {emp['first_name']}".strip()
             ok = True
+            # field — какое поле строки не сошлось (часы/дни/сверхурочные):
+            # окно вспыхивает красной рамкой именно его, как у текстовых полей
             if hours > b["hours"]:
-                errors.append({"id": eid, "name": fio,
+                errors.append({"id": eid, "name": fio, "field": "hours",
                                "message": f"не хватает часов: доступно {b['hours']}, запрошено {hours}"})
                 ok = False
             if overtime > b["overtime"]:
-                errors.append({"id": eid, "name": fio,
+                errors.append({"id": eid, "name": fio, "field": "overtime",
                                "message": f"не хватает сверхурочных: доступно {b['overtime']}, запрошено {overtime}"})
                 ok = False
             if days > b["days"]:
-                errors.append({"id": eid, "name": fio,
+                errors.append({"id": eid, "name": fio, "field": "days",
                                "message": f"не хватает дней: доступно {b['days']}, запрошено {days}"})
                 ok = False
             if ok:

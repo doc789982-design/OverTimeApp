@@ -46,6 +46,8 @@ AppDialog {
     //    balHours, balOvertime, balDays, prevHours, prevOvertime, prevDays}]
     property var rows: []
     property var rowErrors: ({})     // id сотрудника → текст ошибки
+    property var rowFlash: ({})      // id сотрудника → какие поля вспыхнуть
+    property int errorStamp: 0       // каждая попытка — новая вспышка (даже с тем же текстом)
     property string topError: ""
     property bool showEqual: false   // панель «одинаково всем»
 
@@ -244,18 +246,31 @@ AppDialog {
             root.close()
             return
         }
-        // Ошибка: окно трясётся (штатная тряска), виновники подсвечены
+        // Ошибка: окно трясётся (штатная тряска), виновники подсвечены.
+        // У одного сотрудника может не сходиться несколько граф — сообщения
+        // собираются вместе, а вспыхивают именно его поля (как у текстовых
+        // полей: красная рамка, гаснет при вводе нового значения)
         let errs = ({})
-        let top = ""
+        let flash = ({})
+        let tops = []
         if (result && result.errors) {
             for (let i = 0; i < result.errors.length; i++) {
                 let e = result.errors[i]
-                if (e.id > 0) errs[e.id] = e.message
-                if (top === "") top = e.name !== "" ? (e.name + " — " + e.message) : e.message
+                if (e.id > 0) {
+                    errs[e.id] = errs[e.id] === undefined
+                            ? e.message : (errs[e.id] + "; " + e.message)
+                    if (e.field !== undefined && e.field !== "") {
+                        if (flash[e.id] === undefined) flash[e.id] = []
+                        if (flash[e.id].indexOf(e.field) < 0) flash[e.id].push(e.field)
+                    }
+                }
+                tops.push(e.name !== "" ? (e.name + " — " + e.message) : e.message)
             }
         }
         root.rowErrors = errs
-        root.topError = top
+        root.rowFlash = flash
+        root.topError = tops.join("\n")
+        root.errorStamp++
         root.shake()
         root.scrollToBottom()
     }
@@ -490,6 +505,22 @@ AppDialog {
                 readonly property var rowData: modelData
                 readonly property string errText: root.rowErrors[rowData.id] || ""
                 height: errText !== "" ? 86 : 66
+
+                // Ошибка списания у этого сотрудника: его поля вспыхивают
+                // красной рамкой — точно как поля формы при ошибке ввода
+                function flashRowFields() {
+                    if (errText === "") return
+                    let f = root.rowFlash[rowData.id] || []
+                    for (let i = 0; i < f.length; i++) {
+                        if (f[i] === "hours") hoursInput.flashError()
+                        else if (f[i] === "days") daysInput.flashError()
+                        else if (f[i] === "overtime") overtimeInput.flashError()
+                    }
+                }
+                Connections {
+                    target: root
+                    function onErrorStampChanged() { rowRect.flashRowFields() }
+                }
                 radius: AppTheme.radiusMedium
                 color: errText !== "" ? AppTheme.bgDangerSoft : AppTheme.bgCell
                 clip: true
@@ -547,6 +578,7 @@ AppDialog {
                     }
 
                     AppTextField {
+                        id: hoursInput
                         width: root.colNum
                         anchors.verticalCenter: parent.verticalCenter
                         text: rowRect.rowData.hours
@@ -559,6 +591,7 @@ AppDialog {
                         }
                     }
                     AppTextField {
+                        id: daysInput
                         width: root.colNum
                         anchors.verticalCenter: parent.verticalCenter
                         text: rowRect.rowData.days
@@ -571,6 +604,7 @@ AppDialog {
                         }
                     }
                     AppTextField {
+                        id: overtimeInput
                         width: root.colNum
                         anchors.verticalCenter: parent.verticalCenter
                         text: rowRect.rowData.overtime
