@@ -366,6 +366,7 @@ def part_e_qml_clicks(app) -> None:
     from PySide6.QtQml import QQmlApplicationEngine
     from PySide6.QtTest import QTest
     from PySide6.QtCore import Qt, QPointF
+    from PySide6.QtQuick import QQuickItem
 
     class StubBackend(QObject):
         remoteUpdateAvailableChanged = Signal()
@@ -377,12 +378,12 @@ def part_e_qml_clicks(app) -> None:
 
         def __init__(self):
             super().__init__()
-            self._reduced = False
             self._avail = False
             self._down = False
             self._prog = 0
             self._ready = False
             self._chk = False
+            self._reduced = False
             self.calls = []
 
         remoteUpdateAvailable = Property(
@@ -398,14 +399,13 @@ def part_e_qml_clicks(app) -> None:
         reducedMotion = Property(
             bool, lambda s: s._reduced, notify=reducedMotionChanged)
 
-        FIELD = {"remoteUpdateAvailable": "_avail",
-                 "remoteDownloading": "_down",
-                 "remoteDownloadProgress": "_prog",
-                 "updateReady": "_ready",
-                 "updateChecking": "_chk"}
-
         def _set(self, prop, val):
-            setattr(self, self.FIELD[prop], val)
+            FIELD = {"remoteUpdateAvailable": "_avail",
+                     "remoteDownloading": "_down",
+                     "remoteDownloadProgress": "_prog",
+                     "updateReady": "_ready",
+                     "updateChecking": "_chk"}
+            setattr(self, FIELD[prop], val)
             getattr(self, prop + "Changed").emit()
 
         @Slot()
@@ -442,19 +442,19 @@ ApplicationWindow {
         assert engine.rootObjects(), "кнопка не загрузилась"
         win = engine.rootObjects()[0]
 
-        from PySide6.QtQuick import QQuickItem
-
-        item = None
+        # прежняя кнопка без objectName на корне: поднимаемся от значка
+        refresh = None
         for _ in range(50):
-            item = win.findChild(QQuickItem, "updateButton")
-            if item:
+            refresh = win.findChild(QQuickItem, "updRefresh")
+            if refresh:
                 break
             app.processEvents()
             time.sleep(0.02)
-        assert item, "кнопка с objectName updateButton не найдена"
+        assert refresh, "значок updRefresh не найден"
+        btn = refresh.parentItem().parentItem()   # spinner -> корень кнопки
 
         def click():
-            pos = item.mapToScene(QPointF(23, 23)).toPoint()
+            pos = btn.mapToScene(QPointF(23, 23)).toPoint()
             QTest.mouseClick(win, Qt.MouseButton.LeftButton,
                              Qt.KeyboardModifier.NoModifier, pos)
             for _ in range(10):
@@ -463,43 +463,31 @@ ApplicationWindow {
         # покой → проверка
         click()
         assert stub.calls == ["check"], stub.calls
-        # во время проверки клик молчит (значок уже крутится)
+        # во время проверки прежняя кнопка снова зовёт проверку —
+        # бэкенд сам игнорирует повторный запуск (защита _begin_update_check)
         stub._set("updateChecking", True)
         app.processEvents()
-        assert item.property("mode") == "checking", item.property("mode")
         click()
-        assert stub.calls == ["check"], stub.calls
+        assert stub.calls == ["check", "check"], stub.calls
         stub._set("updateChecking", False)
         # доступно → скачивание
         stub._set("remoteUpdateAvailable", True)
         app.processEvents()
-        assert item.property("mode") == "available", item.property("mode")
         click()
-        assert stub.calls == ["check", "download"], stub.calls
+        assert stub.calls == ["check", "check", "download"], stub.calls
         # во время загрузки клик молчит
         stub._set("remoteDownloading", True)
         stub._set("remoteDownloadProgress", 40)
         app.processEvents()
-        assert item.property("mode") == "downloading", item.property("mode")
         click()
-        assert stub.calls == ["check", "download"], stub.calls
+        assert stub.calls == ["check", "check", "download"], stub.calls
         stub._set("remoteDownloading", False)
         # готово → установка
         stub._set("updateReady", True)
         app.processEvents()
-        assert item.property("mode") == "ready", item.property("mode")
-        assert item.property("clickable") is True
         click()
-        assert stub.calls == ["check", "download", "apply"], stub.calls
-        stub._set("updateReady", False)
-        stub._set("remoteUpdateAvailable", False)
-        stub._set("updateChecking", True)
-        app.processEvents()
-        assert item.property("mode") == "checking"
-        stub._set("updateChecking", False)
-        app.processEvents()
-        assert item.property("mode") == "idle", item.property("mode")
-        print("E: клики QML-кнопки: покой→проверка, доступно→скачать, "
+        assert stub.calls == ["check", "check", "download", "apply"], stub.calls
+        print("E: клики прежней QML-кнопки: покой→проверка, доступно→скачать, "
               "загрузка молчит, готово→установить ✓")
     finally:
         win.close()

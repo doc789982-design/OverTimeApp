@@ -55,27 +55,6 @@ Item {
 
         color: closeHov.pressed ? AppTheme.statePress : (closeHov.containsMouse ? AppTheme.stateHover : "transparent")
         IconImage { anchors.centerIn: parent; source: "../icons/close.svg"; width: AppTheme.iconMedium; height: AppTheme.iconMedium; color: AppTheme.textSecondary }
-
-        // Клавиатура: таб, Enter/Пробел; имя для экранного доступа
-        activeFocusOnTab: true
-        Keys.onReturnPressed: root.closeRequested()
-        Keys.onEnterPressed: root.closeRequested()
-        Keys.onSpacePressed: root.closeRequested()
-        Accessible.role: Accessible.Button
-        Accessible.name: "Закрыть окно"
-
-        // рамка фокуса с клавиатуры — как у кнопок формы
-        Rectangle {
-            anchors.fill: parent
-            anchors.margins: -AppTheme.focusOffset
-            radius: AppTheme.radiusPill
-            color: "transparent"
-            border.color: AppTheme.borderFocus
-            border.width: AppTheme.focusWidth
-            opacity: closeButton.activeFocus ? 1.0 : 0.0
-            Behavior on opacity { NumberAnimation { duration: AppTheme.durMicro } }
-        }
-
         HoverHandler { cursorShape: Qt.PointingHandCursor }
         MouseArea { id: closeHov; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.closeRequested() }
     }

@@ -2,77 +2,57 @@ import QtQuick
 import QtQuick.Controls
 
 // ============================================================
-// КНОПКА ОБНОВЛЕНИЯ В ШАПКЕ — пять состояний, одно место
+// КНОПКА ОБНОВЛЕНИЯ В ШАПКЕ — SVG-иконки, бесшовная хореография
 //
-//   покой       — серая «перезагрузка»; клик — проверить обновления
-//   проверка    — тот же значок КРУТИТСЯ, пока идёт проверка
-//                 (фоновая в том числе: кнопка честно показывает работу)
-//   доступно    — синяя стрелка «скачать» + радар
-//   загрузка    — синее кольцо наполняется прогрессом; радар скрыт
-//   готово      — кольцо полное и зелёное, внутри стрелка «установить»
+// Принцип: окончание анимации одной иконки = начало следующей.
+// Все переходы проходят через одну и ту же «позу» — схлопнутую
+// в вертикальную линию (xScale = 0): одна иконка складывается
+// в неё, следующая из неё раскрывается (с лёгким перелётом).
+// Стык состояний непрерывен, без подмен «в лоб».
 //
-// Все переходы — Behavior: значки перекрёстно растворяются
-// (прозрачность + лёгкий рост), анимацию можно прервать и развернуть
-// в любую сторону — кнопка не застревает в промежуточной позе.
-// Приоритет состояний: загрузка → готово → доступно → проверка → покой.
-// Фоновая проверка поверх «доступно» значок НЕ меняет — не мельтешит.
+//   покой       — «перезагрузка» (refresh.svg), серая как шапка
+//   клик        — прокрут на полный оборот (проверка обновлений)
+//   нет обновл. — просто остановилась
+//   есть        — прокрутившись, складывается и раскрывается
+//                 стрелкой «скачать» (download.svg, синяя, как радар);
+//                 в правом верхнем углу — радар: точка и исходящие
+//                 кольца «нажми на меня»
+//   загрузка    — снова прокрут, «скачать» складывается и раскрывается
+//                 кольцом, которое заполняется прогрессом (тонкая дуга);
+//                 радар скрыт — говорит кольцо
+//   загружено   — кольцо ДОЗАЛИВАЕТСЯ до полного (его конец)
+//                 и зеленеет, внутри вырастает стрелка «установить»
+//                 (зелёная — «можно установить»), радар возвращается
 //
-// Крутится только значок «перезагрузка», и только в «проверке»;
-// остановившись, докручивается до ровного положения.
+// Слоями управляет только switchVis(): у слоёв нет биндингов
+// на xScale/opacity (императивные анимации их бы отцепили).
 // ============================================================
-
-    Item {
-        id: root
-        width: 46
-        height: parent ? parent.height : 46
-        objectName: "updateButton"
-
-        // Клавиатура: таб останавливается на кнопке, Enter и Пробел нажимают
-        activeFocusOnTab: true
-        Keys.onReturnPressed: if (root.clickable) root.activate()
-        Keys.onEnterPressed: if (root.clickable) root.activate()
-        Keys.onSpacePressed: if (root.clickable) root.activate()
-        Accessible.role: Accessible.Button
-        // тултип и есть честное имя: действие + состояние
-        Accessible.name: root.tipText
-
-        // одно действие для мыши и клавиатуры
-        function activate() {
-            if (root.ready) {
-                backend.applyReadyUpdate()
-            } else if (root.hasUpdate && !root.downloading) {
-                backend.startRemoteDownload()
-            } else if (root.idleCheck && !root.checking) {
-                backend.checkAllUpdateSources()
-            }
-        }
+Item {
+    id: root
+    width: 46
+    height: parent ? parent.height : 46
 
     // ---- Состояния от Backend ----
     readonly property bool hasUpdate: backend.remoteUpdateAvailable
     readonly property bool downloading: backend.remoteDownloading
     readonly property int progress: backend.remoteDownloadProgress
     readonly property bool ready: backend.updateReady
-    readonly property bool checking: backend.updateChecking
 
     readonly property bool idleCheck: !root.hasUpdate && !root.downloading && !root.ready
 
-    // ---- Текущее состояние (единственный источник истины) ----
-    readonly property string mode: root.downloading ? "downloading"
-                                   : root.ready ? "ready"
-                                   : root.hasUpdate ? "available"
-                                   : root.checking ? "checking"
-                                   : "idle"
+    property string vis: "refresh"     // refresh | download | ring | install
+    property string prevVis: "refresh"
 
-    // клик что-то делает: установить / скачать / проверить.
-    // Во время проверки и загрузки кнопка не откликается — курсор честный.
-    readonly property bool clickable: root.ready
-                                      || (root.hasUpdate && !root.downloading)
-                                      || (root.idleCheck && !root.checking)
+    // ---- Целевой слой по состоянию ----
+    readonly property string targetVis: root.downloading ? "ring"
+                                       : root.ready ? "install"
+                                       : root.hasUpdate ? "download"
+                                       : "refresh"
 
-    // ---- Цвет значков: состояние + ховер ----
+    // ---- Цвет иконок: состояние + ховер ----
     // До загрузки стрелка синяя — в цвет радара; когда обновление
-    // загружено и можно установить — зелёная. Радар в обоих состояниях
-    // акцентно-синий: различает их стрелка.
+    // загружено и можно установить — зелёная. Радар в обоих
+    // состояниях акцентно-синий: различает их стрелка.
     readonly property color stateColor: root.ready ? AppTheme.accentSuccess
                                    : (root.hasUpdate || root.downloading) ? AppTheme.accentBrand
                                    : (hover.containsMouse ? AppTheme.textPrimary : AppTheme.textSecondary)
@@ -84,14 +64,12 @@ import QtQuick.Controls
             return "Обновление загружено. Нажмите, чтобы установить."
         if (hasUpdate)
             return "Доступна новая версия программы. Нажмите, чтобы загрузить."
-        if (checking)
-            return "Проверяем обновления…"
         return "Проверить обновления"
     }
 
     // ---- Радар: есть что скачать/установить ----
     // Точка в правом верхнем углу и исходящие кольца — «нажми на меня».
-    // Скрыт, пока идёт загрузка (там говорит кольцо) или проверка.
+    // Скрыт, пока идёт загрузка: там говорит кольцо прогресса.
     UpdateRadar {
         anchors.right: parent.right
         anchors.rightMargin: 4
@@ -109,28 +87,13 @@ import QtQuick.Controls
         Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
     }
 
-    // ---- Рамка фокуса с клавиатуры (как у кнопок формы) ----
-    Rectangle {
-        anchors.fill: parent
-        anchors.margins: -AppTheme.focusOffset
-        radius: AppTheme.radiusMedium + AppTheme.focusOffset
-        color: "transparent"
-        border.color: AppTheme.borderFocus
-        border.width: AppTheme.focusWidth
-        opacity: root.activeFocus ? 1.0 : 0.0
-        Behavior on opacity { NumberAnimation { duration: AppTheme.durMicro } }
-    }
-
-    // ---- Значки ----
-    // Вся клетка сжимается при нажатии (как у обычных кнопок программы).
+    // ---- Вращающийся контейнер иконок ----
     Item {
-        id: cell
+        id: spinner
         anchors.centerIn: parent
         width: 28; height: 28
-        scale: hover.pressed && root.clickable ? AppTheme.scaleActive : 1.0
-        Behavior on scale { NumberAnimation { duration: AppTheme.durFast; easing.type: Easing.OutQuad } }
+        rotation: 0
 
-        // «перезагрузка»: покой и проверка. Крутится, пока идёт проверка.
         IconImage {
             id: iRefresh
             objectName: "updRefresh"
@@ -138,49 +101,11 @@ import QtQuick.Controls
             source: "../icons/refresh.svg"
             width: AppTheme.iconMedium + 2; height: AppTheme.iconMedium + 2
             color: root.stateColor
-            opacity: (root.mode === "idle" || root.mode === "checking") ? 1 : 0
-            scale: (root.mode === "idle" || root.mode === "checking") ? 1 : 0.25
+            opacity: 1
+            transform: Scale { id: rX; objectName: "updRefreshX"; origin.x: iRefresh.width / 2; origin.y: iRefresh.height / 2; xScale: 1 }
             Behavior on color { ColorAnimation { duration: AppTheme.durFast; easing.type: Easing.InOutQuad } }
-            Behavior on opacity { NumberAnimation { duration: AppTheme.durFast } }
-            Behavior on scale { NumberAnimation { duration: AppTheme.durStandard; easing.type: AppTheme.easeEnter } }
-
-            rotation: 0
-
-            // равномерный оборот, пока идёт проверка
-            SequentialAnimation {
-                id: spin
-                running: root.mode === "checking"
-                loops: Animation.Infinite
-                NumberAnimation {
-                    target: iRefresh
-                    property: "rotation"
-                    from: iRefresh.rotation
-                    to: iRefresh.rotation + 360
-                    duration: 900
-                    easing.type: Easing.Linear
-                }
-            }
-            // проверка кончилась — докрутиться до ровного положения
-            // и встать: выход с торможением, без щелчка
-            NumberAnimation {
-                id: settle
-                target: iRefresh
-                property: "rotation"
-                duration: AppTheme.durNormal
-                easing.type: Easing.OutCubic
-            }
-            Connections {
-                target: spin
-                function onRunningChanged() {
-                    if (!spin.running && iRefresh.rotation > 0) {
-                        settle.to = Math.ceil(iRefresh.rotation / 360) * 360
-                        settle.restart()
-                    }
-                }
-            }
         }
 
-        // «скачать»: обновление доступно
         IconImage {
             id: iDownload
             objectName: "updDownload"
@@ -188,23 +113,18 @@ import QtQuick.Controls
             source: "../icons/download.svg"
             width: AppTheme.iconMedium + 2; height: AppTheme.iconMedium + 2
             color: root.stateColor
-            opacity: root.mode === "available" ? 1 : 0
-            scale: root.mode === "available" ? 1 : 0.25
+            opacity: 0
+            transform: Scale { id: dX; objectName: "updDownloadX"; origin.x: iDownload.width / 2; origin.y: iDownload.height / 2; xScale: 0 }
             Behavior on color { ColorAnimation { duration: AppTheme.durFast; easing.type: Easing.InOutQuad } }
-            Behavior on opacity { NumberAnimation { duration: AppTheme.durFast } }
-            Behavior on scale { NumberAnimation { duration: AppTheme.durStandard; easing.type: AppTheme.easeEnter } }
         }
 
-        // кольцо прогресса: загрузка и готовность
         Item {
             id: iRing
             objectName: "updRing"
             anchors.centerIn: parent
             width: 26; height: 26
-            opacity: (root.mode === "downloading" || root.mode === "ready") ? 1 : 0
-            scale: (root.mode === "downloading" || root.mode === "ready") ? 1 : 0.25
-            Behavior on opacity { NumberAnimation { duration: AppTheme.durFast } }
-            Behavior on scale { NumberAnimation { duration: AppTheme.durStandard; easing.type: AppTheme.easeEnter } }
+            opacity: 0
+            transform: Scale { id: gX; objectName: "updRingX"; origin.x: iRing.width / 2; origin.y: iRing.height / 2; xScale: 0 }
 
             // сглаженный прогресс: скачки процентов не щёлкают;
             // в готовности дозаливается до полного — бесшовно
@@ -254,22 +174,126 @@ import QtQuick.Controls
             source: "../icons/arrow_down.svg"
             width: AppTheme.iconMedium - 2; height: AppTheme.iconMedium - 2
             color: root.stateColor
-            opacity: root.mode === "ready" ? 1 : 0
-            scale: root.mode === "ready" ? 1 : 0.25
-            Behavior on color { ColorAnimation { duration: AppTheme.durFast; easing.type: Easing.InOutQuad } }
+            scale: root.vis === "install" ? 1 : 0.3
+            opacity: root.vis === "install" ? 1 : 0
+            Behavior on scale { SpringAnimation { spring: 5.0; damping: 0.35; mass: 1.1 } }
             Behavior on opacity { NumberAnimation { duration: AppTheme.durFast } }
-            Behavior on scale { NumberAnimation { duration: AppTheme.durStandard; easing.type: AppTheme.easeEnter } }
+            Behavior on color { ColorAnimation { duration: AppTheme.durFast; easing.type: Easing.InOutQuad } }
         }
     }
 
+    // ---- Анимации слоёв ----
+    // складывание в линию — конец состояния
+    ParallelAnimation {
+        id: rHide
+        NumberAnimation { target: rX; property: "xScale"; to: 0; duration: 130; easing.type: Easing.InQuad }
+        NumberAnimation { target: iRefresh; property: "opacity"; to: 0; duration: 130; easing.type: Easing.InQuad }
+    }
+    ParallelAnimation {
+        id: dHide
+        NumberAnimation { target: dX; property: "xScale"; to: 0; duration: 130; easing.type: Easing.InQuad }
+        NumberAnimation { target: iDownload; property: "opacity"; to: 0; duration: 130; easing.type: Easing.InQuad }
+    }
+    ParallelAnimation {
+        id: gHide
+        NumberAnimation { target: gX; property: "xScale"; to: 0; duration: 130; easing.type: Easing.InQuad }
+        NumberAnimation { target: iRing; property: "opacity"; to: 0; duration: 130; easing.type: Easing.InQuad }
+    }
+    // раскрытие из линии — начало следующего состояния, с перелётом
+    ParallelAnimation {
+        id: rShow
+        NumberAnimation { target: rX; property: "xScale"; to: 1; duration: 200; easing.type: Easing.OutBack; easing.overshoot: 1.1 }
+        NumberAnimation { target: iRefresh; property: "opacity"; to: 1; duration: 150; easing.type: Easing.OutQuad }
+    }
+    ParallelAnimation {
+        id: dShow
+        NumberAnimation { target: dX; property: "xScale"; to: 1; duration: 200; easing.type: Easing.OutBack; easing.overshoot: 1.1 }
+        NumberAnimation { target: iDownload; property: "opacity"; to: 1; duration: 150; easing.type: Easing.OutQuad }
+    }
+    ParallelAnimation {
+        id: gShow
+        NumberAnimation { target: gX; property: "xScale"; to: 1; duration: 200; easing.type: Easing.OutBack; easing.overshoot: 1.1 }
+        NumberAnimation { target: iRing; property: "opacity"; to: 1; duration: 150; easing.type: Easing.OutQuad }
+    }
+
+    // прокрут на полный оборот с естественным торможением
+    NumberAnimation {
+        id: spinAnim
+        target: spinner
+        property: "rotation"
+        duration: 750
+        easing.type: Easing.InOutCubic
+    }
+
+    function spin() {
+        spinAnim.to = spinner.rotation + 360
+        spinAnim.restart()
+    }
+
+    function switchVis(to) {
+        if (root.vis === "refresh") rHide.restart()
+        else if (root.vis === "download") dHide.restart()
+        else if (root.vis === "ring" || root.vis === "install") gHide.restart()
+        root.vis = to
+        if (to === "refresh") rShow.restart()
+        else if (to === "download") dShow.restart()
+        else if (to === "ring" || to === "install") gShow.restart()
+        // при живом переходе ring→install кольцо уже на месте
+        // (этот путь switchVis не вызывает) — здесь же gShow нужен
+        // для холодного старта сразу в «установить»: стрелку ведёт vis
+    }
+
+    // Смена состояния бэкенда -> хореография.
+    // Антидребезг: бэкенд может сообщить «загрузка кончилась» и «готово»
+    // двумя событиями подряд — без задержки между ними проигрался бы
+    // лишний промежуточный кадр (кольцо сложилось и раскрылось зря).
+    Timer {
+        id: stateDebounce
+        interval: 80
+        onTriggered: {
+            var to = root.targetVis
+            if (to === root.prevVis) return
+            var from = root.prevVis
+            root.prevVis = to
+            if ((from === "refresh" && to === "download") ||
+                (from === "download" && to === "ring")) {
+                // «прокручивается, складывается, превращается»
+                spin()
+                Qt.callLater(function() { root.switchVis(to) })
+            } else if (from === "ring" && to === "install") {
+                // кольцо дозаливается и зеленеет, стрелка растёт внутри
+                root.vis = "install"
+            } else {
+                root.switchVis(to)
+            }
+        }
+    }
+    onTargetVisChanged: stateDebounce.restart()
+
+    // Холодный старт сразу в «есть/скачано» (обновление нашли до
+    // построения кнопки): смены состояния не было, debounce не сработал
+    // бы — кнопка осталась бы «перезагрузкой». Запускаем вручную:
+    // при совпадении с prevVis он ничего не делает.
+    Component.onCompleted: stateDebounce.restart()
+
     // ---- Мышь ----
-    HoverHandler { cursorShape: root.clickable ? Qt.PointingHandCursor : Qt.ArrowCursor }
+    HoverHandler { cursorShape: (root.ready || (root.hasUpdate && !root.downloading) || root.idleCheck) }
     MouseArea {
         id: hover
         anchors.fill: parent
         hoverEnabled: true
-        cursorShape: root.clickable ? Qt.PointingHandCursor : Qt.ArrowCursor
-        onClicked: root.activate()
+        cursorShape: (root.ready || (root.hasUpdate && !root.downloading) || root.idleCheck)
+                     ? Qt.PointingHandCursor : Qt.ArrowCursor
+        onClicked: {
+            if (root.ready) {
+                backend.applyReadyUpdate()
+            } else if (root.hasUpdate && !root.downloading) {
+                backend.startRemoteDownload()
+            } else if (root.idleCheck) {
+                spin()
+                backend.checkAllUpdateSources()
+            }
+        }
     }
 
     // ---- Тултип ----

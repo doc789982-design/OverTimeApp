@@ -207,7 +207,6 @@ Item {
                     iconHoverColor: AppTheme.textPrimary
                     borderIdleColor: AppTheme.borderInput
                     borderIdleWidth: 1
-                    accessibleName: "Приказ всем"
                     onClicked: moneyOrderDialog.openNew()
 
                     HoverHandler { id: moneyOrderHover }

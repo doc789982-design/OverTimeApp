@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
 """Рендер кнопки обновления в четырёх состояниях + окно создания базы (298).
 
-Проверяет редизайн кнопки (306: состояния без императивной хореографии):
+Проверяет радар (точка + кольца) вместо искр-стрелочек:
   idle        — серая стрелка-перезагрузка, без синего и зелёного;
-  checking    — та же серая стрелка крутится (в статике — серая, без
-                синего/зелёного, радар не горит);
   available   — синяя стрелка «скачать» + синий радар, зелёного нет;
   downloading — синее кольцо прогресса, радар скрыт;
   ready       — зелёная стрелка «установить» + синий радар.
@@ -41,7 +39,6 @@ class StubBackend(QObject):
     remoteDownloadingChanged = Signal()
     remoteDownloadProgressChanged = Signal()
     updateReadyChanged = Signal()
-    updateCheckingChanged = Signal()
     reducedMotionChanged = Signal()
 
     def __init__(self):
@@ -52,7 +49,6 @@ class StubBackend(QObject):
         self._down = False
         self._prog = 0
         self._ready = False
-        self._chk = False
 
     def getDark(self):
         return self._dark
@@ -73,8 +69,6 @@ class StubBackend(QObject):
         int, lambda s: s._prog, notify=remoteDownloadProgressChanged)
     updateReady = Property(
         bool, lambda s: s._ready, notify=updateReadyChanged)
-    updateChecking = Property(
-        bool, lambda s: s._chk, notify=updateCheckingChanged)
     reducedMotion = Property(
         bool, lambda s: s._reduced, notify=reducedMotionChanged)
 
@@ -132,8 +126,6 @@ def main() -> int:
 
     states = [
         ("idle", dict(), "серая, без синего и зелёного"),
-        ("checking", dict(_chk=True),
-         "серая, крутится (в статике — без синего и зелёного, радар молчит)"),
         ("available", dict(_avail=True),
          "синяя стрелка + синий радар, зелёного нет"),
         ("downloading", dict(_avail=True, _down=True, _prog=40),
@@ -145,7 +137,7 @@ def main() -> int:
     for name, props, what in states:
         # сброс к базовому состоянию (наследовать предыдущую сцену нельзя:
         # в жизни «готово» всегда приходит с загрузкой, уже остановленной)
-        stub._avail = stub._down = stub._ready = stub._chk = False
+        stub._avail = stub._down = stub._ready = False
         stub._prog = 0
         for k, v in props.items():
             setattr(stub, k, v)
@@ -169,9 +161,6 @@ def main() -> int:
         if name == "idle":
             assert blue < 40 and green < 40, \
                 "idle: синего %d, зелёного %d — должно быть пусто" % (blue, green)
-        elif name == "checking":
-            assert blue < 40 and green < 40, \
-                "checking: синего %d, зелёного %d — проверка нейтральна" % (blue, green)
         elif name == "available":
             assert blue > 60, "available: синего мало (%d) — стрелка/радар" % blue
             assert green < 40, "available: зелёный лишний (%d)" % green

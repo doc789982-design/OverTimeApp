@@ -160,6 +160,7 @@ Rectangle {
 
         // ── Пустой результат поиска: сказать об этом и предложить сброс ──
         Column {
+            z: 10   // над списком: пустой ListView (Flickable) иначе съедает клики
             anchors.centerIn: parent
             visible: empList.count === 0 && searchInput.text.length > 0
             spacing: AppTheme.spaceXXS
