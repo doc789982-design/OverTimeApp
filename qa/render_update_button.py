@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Рендер кнопки обновления в четырёх состояниях + окно создания базы (298).
 
-Проверяет радар (точка + кольца) вместо искр-стрелочек:
+Проверяет единый морф-значок (сборка 310) и маячок-радар:
   idle        — серая стрелка-перезагрузка, без синего и зелёного;
   available   — синяя стрелка «скачать» + синий радар, зелёного нет;
   downloading — синее кольцо прогресса, радар скрыт;
@@ -39,6 +39,7 @@ class StubBackend(QObject):
     remoteDownloadingChanged = Signal()
     remoteDownloadProgressChanged = Signal()
     updateReadyChanged = Signal()
+    updateCheckingChanged = Signal()
     reducedMotionChanged = Signal()
 
     def __init__(self):
@@ -49,6 +50,7 @@ class StubBackend(QObject):
         self._down = False
         self._prog = 0
         self._ready = False
+        self._chk = False
 
     def getDark(self):
         return self._dark
@@ -69,6 +71,8 @@ class StubBackend(QObject):
         int, lambda s: s._prog, notify=remoteDownloadProgressChanged)
     updateReady = Property(
         bool, lambda s: s._ready, notify=updateReadyChanged)
+    updateChecking = Property(
+        bool, lambda s: s._chk, notify=updateCheckingChanged)
     reducedMotion = Property(
         bool, lambda s: s._reduced, notify=reducedMotionChanged)
 

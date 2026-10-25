@@ -442,16 +442,15 @@ ApplicationWindow {
         assert engine.rootObjects(), "кнопка не загрузилась"
         win = engine.rootObjects()[0]
 
-        # прежняя кнопка без objectName на корне: поднимаемся от значка
-        refresh = None
+        # корень кнопки помечен objectName (сборка 310: единый морф-значок)
+        btn = None
         for _ in range(50):
-            refresh = win.findChild(QQuickItem, "updRefresh")
-            if refresh:
+            btn = win.findChild(QQuickItem, "updButton")
+            if btn:
                 break
             app.processEvents()
             time.sleep(0.02)
-        assert refresh, "значок updRefresh не найден"
-        btn = refresh.parentItem().parentItem()   # spinner -> корень кнопки
+        assert btn, "кнопка updButton не найдена"
 
         def click():
             pos = btn.mapToScene(QPointF(23, 23)).toPoint()
@@ -463,7 +462,7 @@ ApplicationWindow {
         # покой → проверка
         click()
         assert stub.calls == ["check"], stub.calls
-        # во время проверки прежняя кнопка снова зовёт проверку —
+        # во время проверки кнопка снова зовёт проверку —
         # бэкенд сам игнорирует повторный запуск (защита _begin_update_check)
         stub._set("updateChecking", True)
         app.processEvents()
@@ -487,7 +486,7 @@ ApplicationWindow {
         app.processEvents()
         click()
         assert stub.calls == ["check", "check", "download", "apply"], stub.calls
-        print("E: клики прежней QML-кнопки: покой→проверка, доступно→скачать, "
+        print("E: клики QML-кнопки: покой→проверка, доступно→скачать, "
               "загрузка молчит, готово→установить ✓")
     finally:
         win.close()

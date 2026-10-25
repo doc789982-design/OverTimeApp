@@ -23,7 +23,7 @@ QtObject {
     readonly property string appSemver: "1.0.0-beta.1"
     // Сборки непрерывные и никогда не сбрасываются: именно сборка говорит
     // установленной программе «новее ли» обновление.
-    readonly property int appBuild: 309
+    readonly property int appBuild: 310
     readonly property string appVersionFull: appVersion + " · сборка " + appBuild
 
     // ==========================================
@@ -40,6 +40,11 @@ QtObject {
 
     // Подхватываем тему из Питона
     property bool isDark: backend.isDarkTheme
+
+    // Настройка «Меньше анимаций» из Питона. Компоненты читают её
+    // из темы (AppTheme.reducedMotion) — свойства здесь раньше не
+    // было, и тумблер на эти компоненты не действовал (сборка 310).
+    property bool reducedMotion: backend.reducedMotion
 
     // ==========================================
     // 1. ПОВЕРХНОСТИ (Surfaces)

@@ -2,60 +2,71 @@ import QtQuick
 import QtQuick.Controls
 
 // ============================================================
-// КНОПКА ОБНОВЛЕНИЯ В ШАПКЕ — SVG-иконки, бесшовная хореография
+// КНОПКА ОБНОВЛЕНИЯ В ШАПКЕ — единый «живой» значок (сборка 310)
 //
-// Принцип: окончание анимации одной иконки = начало следующей.
-// Все переходы проходят через одну и ту же «позу» — схлопнутую
-// в вертикальную линию (xScale = 0): одна иконка складывается
-// в неё, следующая из неё раскрывается (с лёгким перелётом).
-// Стык состояний непрерывен, без подмен «в лоб».
+// Вместо набора отдельных картинок значок рисуется из одних и
+// тех же элементов: дуги и трёх штрихов с общим узлом. Каждое
+// состояние — это просто другая геометрия этих же элементов,
+// поэтому иконки не сменяют друг друга, а перетекают:
 //
-//   покой       — «перезагрузка» (refresh.svg), серая как шапка
-//   клик        — прокрут на полный оборот (проверка обновлений)
-//   нет обновл. — просто остановилась
-//   есть        — прокрутившись, складывается и раскрывается
-//                 стрелкой «скачать» (download.svg, синяя, как радар);
-//                 в правом верхнем углу — радар: точка и исходящие
-//                 кольца «нажми на меня»
-//   загрузка    — снова прокрут, «скачать» складывается и раскрывается
-//                 кольцом, которое заполняется прогрессом (тонкая дуга);
-//                 радар скрыт — говорит кольцо
-//   загружено   — кольцо ДОЗАЛИВАЕТСЯ до полного (его конец)
-//                 и зеленеет, внутри вырастает стрелка «установить»
-//                 (зелёная — «можно установить»), радар возвращается
+//   покой      — дуга-круг со стрелкой «проверить» (серый);
+//   проверка   — тот же значок ровно вращается, пока программа
+//                на самом деле проверяет (backend.updateChecking),
+//                вращение мягко затухает в исходную позу;
+//   доступно   — дуга опускается и становится «лотком», штрихи
+//                собираются в стрелку «скачать» (синяя), стрелка
+//                едва заметно «дышит» к лотку;
+//   загрузка   — лоток поднимается вокруг стрелки кольцом
+//                прогресса: дуга заполняется по процентам;
+//   готово     — кольцо дозаливается до полного и зеленеет,
+//                стрелка внутри — «нажмите, чтобы установить».
 //
-// Слоями управляет только switchVis(): у слоёв нет биндингов
-// на xScale/opacity (императивные анимации их бы отцепили).
+// Все параметры фигуры анимируются одновременно (Behavior на
+// каждом числе), поэтому переходы — одна непрерывная перестрой-
+// ка, без складываний в линию и подмен картинок. Настройка
+// «Меньше анимаций» отключает вращение, дыхание и сами переходы.
+// Маячок в углу (UpdateRadar) — как раньше: синяя точка «нажми
+// на меня», различает состояния цвет самого значка.
 // ============================================================
 Item {
     id: root
+    objectName: "updButton"
     width: 46
     height: parent ? parent.height : 46
+    activeFocusOnTab: true
+
+    Accessible.role: Accessible.Button
+    Accessible.name: root.tipText
+    Accessible.onPressAction: root.doClick()
 
     // ---- Состояния от Backend ----
     readonly property bool hasUpdate: backend.remoteUpdateAvailable
     readonly property bool downloading: backend.remoteDownloading
     readonly property int progress: backend.remoteDownloadProgress
     readonly property bool ready: backend.updateReady
+    // Идёт ли настоящая проверка: вращение значка честно следует
+    // за ней, а не крутится «для красоты» по таймеру.
+    readonly property bool checking: !!backend.updateChecking
 
     readonly property bool idleCheck: !root.hasUpdate && !root.downloading && !root.ready
+    readonly property bool reduced: !!backend.reducedMotion
 
     property string vis: "refresh"     // refresh | download | ring | install
-    property string prevVis: "refresh"
 
-    // ---- Целевой слой по состоянию ----
     readonly property string targetVis: root.downloading ? "ring"
                                        : root.ready ? "install"
                                        : root.hasUpdate ? "download"
                                        : "refresh"
 
-    // ---- Цвет иконок: состояние + ховер ----
-    // До загрузки стрелка синяя — в цвет радара; когда обновление
-    // загружено и можно установить — зелёная. Радар в обоих
-    // состояниях акцентно-синий: различает их стрелка.
+    // ---- Цвет значка: состояние + ховер ----
+    // Проверка и «есть обновление» — бренд-синий, «готово к
+    // установке» — зелёный, покой — серый как остальная шапка.
     readonly property color stateColor: root.ready ? AppTheme.accentSuccess
-                                   : (root.hasUpdate || root.downloading) ? AppTheme.accentBrand
+                                   : (root.hasUpdate || root.downloading || root.checking) ? AppTheme.accentBrand
                                    : (hover.containsMouse ? AppTheme.textPrimary : AppTheme.textSecondary)
+
+    property color glyphColor: root.stateColor
+    Behavior on glyphColor { ColorAnimation { duration: root.reduced ? 0 : AppTheme.durSlow; easing.type: Easing.InOutQuad } }
 
     readonly property string tipText: {
         if (downloading)
@@ -64,12 +75,194 @@ Item {
             return "Обновление загружено. Нажмите, чтобы установить."
         if (hasUpdate)
             return "Доступна новая версия программы. Нажмите, чтобы загрузить."
+        if (checking)
+            return "Проверяем обновления…"
         return "Проверить обновления"
     }
 
-    // ---- Радар: есть что скачать/установить ----
-    // Точка в правом верхнем углу и исходящие кольца — «нажми на меня».
-    // Скрыт, пока идёт загрузка: там говорит кольцо прогресса.
+    // ==========================================================
+    // ГЕОМЕТРИЯ ЗНАЧКА (сетка 24×24)
+    // Дуга + три штриха из общего узла (joint). Позы состояний —
+    // функция applyPose(); каждое число едет к цели своим
+    // Behavior, поэтому вся фигура перестраивается как одна.
+    // ==========================================================
+    property real arcCX: 12
+    property real arcCY: 12
+    property real arcR: 7.6
+    property real arcStart: 35        // градусы, 0 — вправо, по часовой
+    property real arcSweep: 270
+    property real arcAlpha: 1
+    property real trackAlpha: 0       // бледное кольцо под дугой прогресса
+
+    property real jointX: 16.36       // общий узел трёх штрихов
+    property real jointY: 5.77
+    property real aX: 13.06           // штрих A: крыло «проверить» → шток стрелки
+    property real aY: 5.95
+    property real aAlpha: 1
+    property real bX: 15.40           // штрих B: крыло → левая грань стрелки
+    property real bY: 2.61
+    property real bAlpha: 1
+    property real cX: 16.36           // штрих C: в покое схлопнут в узел,
+    property real cY: 5.77            // в стрелке — правая грань
+    property real cAlpha: 0
+
+    property real lineW: 2.1
+    property real bob: 0              // фаза «дыхания» стрелки, -1..1
+    property real bobAmp: 0           // амплитуда дыхания (единицы сетки)
+
+    // Один характер движения для всей фигуры: уверенный старт,
+    // мягкая посадка. Дуга прогресса — чуть отзывчивее, чтобы
+    // проценты при загрузке не отставали от настоящих.
+    Behavior on arcCX      { NumberAnimation { duration: root.reduced ? 0 : 540; easing.type: Easing.InOutCubic } }
+    Behavior on arcCY      { NumberAnimation { duration: root.reduced ? 0 : 540; easing.type: Easing.InOutCubic } }
+    Behavior on arcR       { NumberAnimation { duration: root.reduced ? 0 : 540; easing.type: Easing.InOutCubic } }
+    Behavior on arcStart   { NumberAnimation { duration: root.reduced ? 0 : 540; easing.type: Easing.InOutCubic } }
+    Behavior on arcSweep   { NumberAnimation { duration: root.reduced ? 0 : 280; easing.type: Easing.OutCubic } }
+    Behavior on arcAlpha   { NumberAnimation { duration: root.reduced ? 0 : 400; easing.type: Easing.InOutQuad } }
+    Behavior on trackAlpha { NumberAnimation { duration: root.reduced ? 0 : 400; easing.type: Easing.InOutQuad } }
+    Behavior on jointX     { NumberAnimation { duration: root.reduced ? 0 : 540; easing.type: Easing.InOutCubic } }
+    Behavior on jointY     { NumberAnimation { duration: root.reduced ? 0 : 540; easing.type: Easing.InOutCubic } }
+    Behavior on aX         { NumberAnimation { duration: root.reduced ? 0 : 540; easing.type: Easing.InOutCubic } }
+    Behavior on aY         { NumberAnimation { duration: root.reduced ? 0 : 540; easing.type: Easing.InOutCubic } }
+    Behavior on aAlpha     { NumberAnimation { duration: root.reduced ? 0 : 400; easing.type: Easing.InOutQuad } }
+    Behavior on bX         { NumberAnimation { duration: root.reduced ? 0 : 540; easing.type: Easing.InOutCubic } }
+    Behavior on bY         { NumberAnimation { duration: root.reduced ? 0 : 540; easing.type: Easing.InOutCubic } }
+    Behavior on bAlpha     { NumberAnimation { duration: root.reduced ? 0 : 400; easing.type: Easing.InOutQuad } }
+    Behavior on cX         { NumberAnimation { duration: root.reduced ? 0 : 540; easing.type: Easing.InOutCubic } }
+    Behavior on cY         { NumberAnimation { duration: root.reduced ? 0 : 540; easing.type: Easing.InOutCubic } }
+    Behavior on cAlpha     { NumberAnimation { duration: root.reduced ? 0 : 400; easing.type: Easing.InOutQuad } }
+    Behavior on lineW      { NumberAnimation { duration: root.reduced ? 0 : 540; easing.type: Easing.InOutCubic } }
+    Behavior on bobAmp     { NumberAnimation { duration: root.reduced ? 0 : 400; easing.type: Easing.InOutQuad } }
+
+    // Позы состояний. Координаты узла «проверить» — конец дуги
+    // (угол -55°), крылья построены по касательной к ней.
+    function applyPose(name) {
+        root.vis = name
+        if (name === "refresh") {
+            arcCX = 12; arcCY = 12; arcR = 7.6; arcStart = 35; arcSweep = 270
+            arcAlpha = 1; trackAlpha = 0
+            jointX = 16.36; jointY = 5.77
+            aX = 13.06; aY = 5.95; aAlpha = 1
+            bX = 15.40; bY = 2.61; bAlpha = 1
+            cX = 16.36; cY = 5.77; cAlpha = 0
+            lineW = 2.1; bobAmp = 0
+        } else if (name === "download") {
+            // дуга спустилась «лотком» под стрелкой
+            arcCX = 12; arcCY = 13.4; arcR = 6.8; arcStart = 25; arcSweep = 130
+            arcAlpha = 1; trackAlpha = 0
+            jointX = 12; jointY = 15.8
+            aX = 12; aY = 5.0; aAlpha = 1
+            bX = 7.6; bY = 11.4; bAlpha = 1
+            cX = 16.4; cY = 11.4; cAlpha = 1
+            lineW = 2.2; bobAmp = 0.55
+        } else if (name === "ring") {
+            // лоток поднялся кольцом прогресса вокруг стрелки
+            arcCX = 12; arcCY = 12; arcR = 8.6; arcStart = -90
+            arcSweep = root.progress * 3.6
+            arcAlpha = 1; trackAlpha = 0.22
+            jointX = 12; jointY = 15.4
+            aX = 12; aY = 7.4; aAlpha = 1
+            bX = 8.3; bY = 11.7; bAlpha = 1
+            cX = 15.7; cY = 11.7; cAlpha = 1
+            lineW = 2.35; bobAmp = 0.45
+        } else if (name === "install") {
+            // кольцо полное, стрелка внутри чуть крупнее
+            arcCX = 12; arcCY = 12; arcR = 8.6; arcStart = -90; arcSweep = 360
+            arcAlpha = 1; trackAlpha = 0
+            jointX = 12; jointY = 15.6
+            aX = 12; aY = 7.2; aAlpha = 1
+            bX = 8.2; bY = 11.8; bAlpha = 1
+            cX = 15.8; cY = 11.8; cAlpha = 1
+            lineW = 2.35; bobAmp = 0.6
+        }
+    }
+
+    // Проценты загрузки двигают дугу напрямую (Behavior выше
+    // сглаживает шаги, чтобы кольцо не дёргалось).
+    onProgressChanged: if (root.vis === "ring") arcSweep = root.progress * 3.6
+
+    // Смена состояния -> перестройка фигуры. Антидребезг 80 мс,
+    // как раньше: «загрузка кончилась» и «готово» могут прийти
+    // двумя событиями подряд — промежуточная поза не нужна.
+    Timer {
+        id: stateDebounce
+        interval: 80
+        onTriggered: if (root.targetVis !== root.vis) root.applyPose(root.targetVis)
+    }
+    onTargetVisChanged: stateDebounce.restart()
+    // Холодный старт сразу в «есть/скачано»: смены состояния не
+    // было — запускаем вручную, фигура перестроится из покоя.
+    Component.onCompleted: {
+        // Любое изменение геометрии/цвета — перерисовать холст.
+        var sigs = ["arcCXChanged", "arcCYChanged", "arcRChanged",
+                    "arcStartChanged", "arcSweepChanged", "arcAlphaChanged",
+                    "trackAlphaChanged", "jointXChanged", "jointYChanged",
+                    "aXChanged", "aYChanged", "aAlphaChanged",
+                    "bXChanged", "bYChanged", "bAlphaChanged",
+                    "cXChanged", "cYChanged", "cAlphaChanged",
+                    "lineWChanged", "bobChanged", "bobAmpChanged",
+                    "glyphColorChanged"]
+        for (var i = 0; i < sigs.length; i++)
+            root[sigs[i]].connect(function() { glyph.requestPaint() })
+        stateDebounce.restart()
+    }
+
+    // ---- Вращение при проверке ----
+    // Ровный ход, пока идёт проверка; по окончании — плавное
+    // торможение точно в исходную позу (кратно полному обороту),
+    // перестройка фигуры при этом уже может идти.
+    property bool _spinning: false
+
+    NumberAnimation {
+        id: spinLoop
+        target: glyphItem
+        property: "rotation"
+        duration: 1000
+        easing.type: Easing.Linear
+        loops: Animation.Infinite
+    }
+    NumberAnimation {
+        id: spinSettle
+        target: glyphItem
+        property: "rotation"
+        duration: root.reduced ? 0 : 460
+        easing.type: Easing.OutCubic
+        onFinished: glyphItem.rotation = 0
+    }
+
+    function syncSpin() {
+        if (root.checking && !root.reduced) {
+            spinSettle.stop()
+            var base = ((glyphItem.rotation % 360) + 360) % 360
+            glyphItem.rotation = base
+            spinLoop.from = base
+            spinLoop.to = base + 360
+            spinLoop.restart()
+            root._spinning = true
+        } else if (root._spinning) {
+            root._spinning = false
+            spinLoop.stop()
+            var cur = glyphItem.rotation
+            var rem = ((cur % 360) + 360) % 360
+            spinSettle.to = rem < 8 ? cur - rem : cur + (360 - rem)
+            spinSettle.restart()
+        }
+    }
+    onCheckingChanged: syncSpin()
+    onReducedChanged: syncSpin()
+
+    // ---- Дыхание стрелки ----
+    // Медленное, едва заметное: стрелка тянется к лотку/вниз
+    // кольца и возвращается. Только когда есть на что нажимать
+    // или идёт загрузка (bobAmp позы), и без «меньше анимаций».
+    SequentialAnimation on bob {
+        running: !root.reduced && root.bobAmp > 0.01
+        loops: Animation.Infinite
+        NumberAnimation { to: 1; duration: 1500; easing.type: Easing.InOutSine }
+        NumberAnimation { to: -1; duration: 1500; easing.type: Easing.InOutSine }
+    }
+
+    // ---- Маячок в углу: точка и спокойная волна ----
     UpdateRadar {
         anchors.right: parent.right
         anchors.rightMargin: 4
@@ -80,203 +273,108 @@ Item {
         waveColor: AppTheme.accentBrand
     }
 
-    // ---- Подложка (hover/нажатие) ----
+    // ---- Подложка (hover/нажатие/фокус) ----
     Rectangle {
         anchors.fill: parent
         color: hover.pressed ? AppTheme.statePress : (hover.containsMouse ? AppTheme.stateHover : "transparent")
         Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
     }
+    Rectangle {
+        anchors.fill: parent
+        anchors.margins: 3
+        radius: AppTheme.radiusSmall
+        color: "transparent"
+        border.color: AppTheme.borderFocus
+        border.width: AppTheme.focusWidth
+        opacity: root.activeFocus ? 1 : 0
+        Behavior on opacity { NumberAnimation { duration: AppTheme.durFast } }
+    }
 
-    // ---- Вращающийся контейнер иконок ----
+    // ---- Сам значок ----
     Item {
-        id: spinner
+        id: glyphItem
         anchors.centerIn: parent
-        width: 28; height: 28
-        rotation: 0
+        width: Math.round(Math.min(root.width, root.height) * 0.65)
+        height: width
+        scale: hover.pressed ? 0.92 : (hover.containsMouse ? 1.05 : 1)
+        Behavior on scale { NumberAnimation { duration: root.reduced ? 0 : AppTheme.durFast; easing.type: AppTheme.easeEnter } }
 
-        IconImage {
-            id: iRefresh
-            objectName: "updRefresh"
-            anchors.centerIn: parent
-            source: "../icons/refresh.svg"
-            width: AppTheme.iconMedium + 2; height: AppTheme.iconMedium + 2
-            color: root.stateColor
-            opacity: 1
-            transform: Scale { id: rX; objectName: "updRefreshX"; origin.x: iRefresh.width / 2; origin.y: iRefresh.height / 2; xScale: 1 }
-            Behavior on color { ColorAnimation { duration: AppTheme.durFast; easing.type: Easing.InOutQuad } }
-        }
+        Canvas {
+            id: glyph
+            objectName: "updGlyph"
+            anchors.fill: parent
+            antialiasing: true
+            onWidthChanged: requestPaint()
+            onHeightChanged: requestPaint()
+            onPaint: {
+                var ctx = getContext("2d")
+                ctx.reset()
+                var s = width / 24
+                ctx.scale(s, s)
+                ctx.lineCap = "round"
+                ctx.lineJoin = "round"
+                ctx.lineWidth = root.lineW
+                var col = root.glyphColor
+                function rgba(a) { return Qt.rgba(col.r, col.g, col.b, a) }
+                var yOff = root.bob * root.bobAmp
+                var rad = Math.PI / 180
 
-        IconImage {
-            id: iDownload
-            objectName: "updDownload"
-            anchors.centerIn: parent
-            source: "../icons/download.svg"
-            width: AppTheme.iconMedium + 2; height: AppTheme.iconMedium + 2
-            color: root.stateColor
-            opacity: 0
-            transform: Scale { id: dX; objectName: "updDownloadX"; origin.x: iDownload.width / 2; origin.y: iDownload.height / 2; xScale: 0 }
-            Behavior on color { ColorAnimation { duration: AppTheme.durFast; easing.type: Easing.InOutQuad } }
-        }
-
-        Item {
-            id: iRing
-            objectName: "updRing"
-            anchors.centerIn: parent
-            width: 26; height: 26
-            opacity: 0
-            transform: Scale { id: gX; objectName: "updRingX"; origin.x: iRing.width / 2; origin.y: iRing.height / 2; xScale: 0 }
-
-            // сглаженный прогресс: скачки процентов не щёлкают;
-            // в готовности дозаливается до полного — бесшовно
-            property real fill: root.downloading ? root.progress / 100 : (root.ready ? 1 : 0)
-            Behavior on fill { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
-
-            property color arcColor: root.ready ? root.stateColor : AppTheme.accentBrand
-            Behavior on arcColor { ColorAnimation { duration: AppTheme.durFast; easing.type: Easing.InOutQuad } }
-
-            Canvas {
-                id: arcCanvas
-                anchors.fill: parent
-                onPaint: {
-                    var ctx = getContext("2d")
-                    ctx.reset()
-                    var w = width, h = height, r = (w - 4) / 2, cx = w / 2, cy = h / 2
-                    ctx.lineWidth = 2.4
-                    ctx.lineCap = "round"
+                // бледное кольцо-шкала под дугой прогресса
+                if (root.trackAlpha > 0.004) {
                     ctx.beginPath()
-                    ctx.arc(cx, cy, r, 0, Math.PI * 2)
-                    ctx.strokeStyle = Qt.rgba(root.stateColor.r, root.stateColor.g, root.stateColor.b, 0.25)
-                    ctx.stroke()
-                    ctx.beginPath()
-                    var p = Math.min(iRing.fill, 1)
-                    if (p > 0.004)
-                        ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * p)
-                    ctx.strokeStyle = iRing.arcColor
+                    ctx.arc(root.arcCX, root.arcCY, root.arcR, 0, Math.PI * 2)
+                    ctx.strokeStyle = rgba(root.trackAlpha)
                     ctx.stroke()
                 }
-                Connections {
-                    target: iRing
-                    function onFillChanged() { arcCanvas.requestPaint() }
-                    function onArcColorChanged() { arcCanvas.requestPaint() }
+                // дуга
+                if (root.arcAlpha > 0.004 && root.arcSweep > 0.4) {
+                    ctx.beginPath()
+                    if (root.arcSweep >= 359.6)
+                        ctx.arc(root.arcCX, root.arcCY, root.arcR, 0, Math.PI * 2)
+                    else
+                        ctx.arc(root.arcCX, root.arcCY, root.arcR,
+                                root.arcStart * rad,
+                                (root.arcStart + root.arcSweep) * rad)
+                    ctx.strokeStyle = rgba(root.arcAlpha)
+                    ctx.stroke()
                 }
-                Connections {
-                    target: root
-                    function onStateColorChanged() { arcCanvas.requestPaint() }
+                // три штриха из общего узла
+                var segs = [[root.aX, root.aY, root.aAlpha],
+                            [root.bX, root.bY, root.bAlpha],
+                            [root.cX, root.cY, root.cAlpha]]
+                var jointAlpha = 0
+                for (var i = 0; i < segs.length; i++) {
+                    if (segs[i][2] < 0.004)
+                        continue
+                    jointAlpha = Math.max(jointAlpha, segs[i][2])
+                    ctx.beginPath()
+                    ctx.moveTo(root.jointX, root.jointY + yOff)
+                    ctx.lineTo(segs[i][0], segs[i][1] + yOff)
+                    ctx.strokeStyle = rgba(segs[i][2])
+                    ctx.stroke()
+                }
+                // круглая «капля» в узле — стык штрихов без шва
+                if (jointAlpha > 0.004) {
+                    ctx.beginPath()
+                    ctx.arc(root.jointX, root.jointY + yOff, root.lineW / 2, 0, Math.PI * 2)
+                    ctx.fillStyle = rgba(jointAlpha)
+                    ctx.fill()
                 }
             }
         }
+    }
 
-        // «установить»: стрелка, вырастающая ВНУТРИ готового кольца
-        IconImage {
-            id: iInstall
-            objectName: "updInstall"
-            anchors.centerIn: parent
-            source: "../icons/arrow_down.svg"
-            width: AppTheme.iconMedium - 2; height: AppTheme.iconMedium - 2
-            color: root.stateColor
-            scale: root.vis === "install" ? 1 : 0.3
-            opacity: root.vis === "install" ? 1 : 0
-            Behavior on scale { SpringAnimation { spring: 5.0; damping: 0.35; mass: 1.1 } }
-            Behavior on opacity { NumberAnimation { duration: AppTheme.durFast } }
-            Behavior on color { ColorAnimation { duration: AppTheme.durFast; easing.type: Easing.InOutQuad } }
+    // ---- Действие кнопки (мышь и клавиатура — одинаково) ----
+    function doClick() {
+        if (root.ready) {
+            backend.applyReadyUpdate()
+        } else if (root.hasUpdate && !root.downloading) {
+            backend.startRemoteDownload()
+        } else if (root.idleCheck) {
+            backend.checkAllUpdateSources()
         }
     }
 
-    // ---- Анимации слоёв ----
-    // складывание в линию — конец состояния
-    ParallelAnimation {
-        id: rHide
-        NumberAnimation { target: rX; property: "xScale"; to: 0; duration: 130; easing.type: Easing.InQuad }
-        NumberAnimation { target: iRefresh; property: "opacity"; to: 0; duration: 130; easing.type: Easing.InQuad }
-    }
-    ParallelAnimation {
-        id: dHide
-        NumberAnimation { target: dX; property: "xScale"; to: 0; duration: 130; easing.type: Easing.InQuad }
-        NumberAnimation { target: iDownload; property: "opacity"; to: 0; duration: 130; easing.type: Easing.InQuad }
-    }
-    ParallelAnimation {
-        id: gHide
-        NumberAnimation { target: gX; property: "xScale"; to: 0; duration: 130; easing.type: Easing.InQuad }
-        NumberAnimation { target: iRing; property: "opacity"; to: 0; duration: 130; easing.type: Easing.InQuad }
-    }
-    // раскрытие из линии — начало следующего состояния, с перелётом
-    ParallelAnimation {
-        id: rShow
-        NumberAnimation { target: rX; property: "xScale"; to: 1; duration: 200; easing.type: Easing.OutBack; easing.overshoot: 1.1 }
-        NumberAnimation { target: iRefresh; property: "opacity"; to: 1; duration: 150; easing.type: Easing.OutQuad }
-    }
-    ParallelAnimation {
-        id: dShow
-        NumberAnimation { target: dX; property: "xScale"; to: 1; duration: 200; easing.type: Easing.OutBack; easing.overshoot: 1.1 }
-        NumberAnimation { target: iDownload; property: "opacity"; to: 1; duration: 150; easing.type: Easing.OutQuad }
-    }
-    ParallelAnimation {
-        id: gShow
-        NumberAnimation { target: gX; property: "xScale"; to: 1; duration: 200; easing.type: Easing.OutBack; easing.overshoot: 1.1 }
-        NumberAnimation { target: iRing; property: "opacity"; to: 1; duration: 150; easing.type: Easing.OutQuad }
-    }
-
-    // прокрут на полный оборот с естественным торможением
-    NumberAnimation {
-        id: spinAnim
-        target: spinner
-        property: "rotation"
-        duration: 750
-        easing.type: Easing.InOutCubic
-    }
-
-    function spin() {
-        spinAnim.to = spinner.rotation + 360
-        spinAnim.restart()
-    }
-
-    function switchVis(to) {
-        if (root.vis === "refresh") rHide.restart()
-        else if (root.vis === "download") dHide.restart()
-        else if (root.vis === "ring" || root.vis === "install") gHide.restart()
-        root.vis = to
-        if (to === "refresh") rShow.restart()
-        else if (to === "download") dShow.restart()
-        else if (to === "ring" || to === "install") gShow.restart()
-        // при живом переходе ring→install кольцо уже на месте
-        // (этот путь switchVis не вызывает) — здесь же gShow нужен
-        // для холодного старта сразу в «установить»: стрелку ведёт vis
-    }
-
-    // Смена состояния бэкенда -> хореография.
-    // Антидребезг: бэкенд может сообщить «загрузка кончилась» и «готово»
-    // двумя событиями подряд — без задержки между ними проигрался бы
-    // лишний промежуточный кадр (кольцо сложилось и раскрылось зря).
-    Timer {
-        id: stateDebounce
-        interval: 80
-        onTriggered: {
-            var to = root.targetVis
-            if (to === root.prevVis) return
-            var from = root.prevVis
-            root.prevVis = to
-            if ((from === "refresh" && to === "download") ||
-                (from === "download" && to === "ring")) {
-                // «прокручивается, складывается, превращается»
-                spin()
-                Qt.callLater(function() { root.switchVis(to) })
-            } else if (from === "ring" && to === "install") {
-                // кольцо дозаливается и зеленеет, стрелка растёт внутри
-                root.vis = "install"
-            } else {
-                root.switchVis(to)
-            }
-        }
-    }
-    onTargetVisChanged: stateDebounce.restart()
-
-    // Холодный старт сразу в «есть/скачано» (обновление нашли до
-    // построения кнопки): смены состояния не было, debounce не сработал
-    // бы — кнопка осталась бы «перезагрузкой». Запускаем вручную:
-    // при совпадении с prevVis он ничего не делает.
-    Component.onCompleted: stateDebounce.restart()
-
-    // ---- Мышь ----
     HoverHandler { cursorShape: (root.ready || (root.hasUpdate && !root.downloading) || root.idleCheck) }
     MouseArea {
         id: hover
@@ -284,15 +382,13 @@ Item {
         hoverEnabled: true
         cursorShape: (root.ready || (root.hasUpdate && !root.downloading) || root.idleCheck)
                      ? Qt.PointingHandCursor : Qt.ArrowCursor
-        onClicked: {
-            if (root.ready) {
-                backend.applyReadyUpdate()
-            } else if (root.hasUpdate && !root.downloading) {
-                backend.startRemoteDownload()
-            } else if (root.idleCheck) {
-                spin()
-                backend.checkAllUpdateSources()
-            }
+        onClicked: { root.forceActiveFocus(); root.doClick() }
+    }
+
+    Keys.onPressed: function(event) {
+        if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
+            root.doClick()
+            event.accepted = true
         }
     }
 
