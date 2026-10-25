@@ -19,7 +19,7 @@ Switch {
     implicitHeight: 36
     padding: 0
     spacing: 0
-    focusPolicy: Qt.StrongFocus
+    focusPolicy: Qt.NoFocus   // таб по кнопкам не ходит (сборка 312)
     opacity: enabled ? 1.0 : AppTheme.alphaDisabled
     Behavior on opacity { NumberAnimation { duration: AppTheme.durNormal } }
 
@@ -86,16 +86,6 @@ Switch {
             }
         }
 
-        Rectangle {
-            anchors.fill: parent
-            anchors.margins: -4
-            radius: AppTheme.radiusPill
-            color: "transparent"
-            border.color: AppTheme.borderFocus
-            border.width: AppTheme.focusWidth
-            opacity: control.visualFocus ? 1 : 0
-            Behavior on opacity { NumberAnimation { duration: AppTheme.durFast } }
-        }
     }
 
     contentItem: Text {

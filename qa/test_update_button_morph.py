@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Тест единого морф-значка кнопки обновления (сборка 310).
+"""Тест единого морф-значка кнопки обновления (сборки 310, 312).
 
 Раньше кнопка держала четыре отдельные картинки и складывала их
 в вертикальную линию при смене состояния. Пользователь попросил
@@ -11,16 +11,18 @@
   A. Позы следуют за бэкендом: refresh → download → ring →
      install → refresh;
   B. Элементы те же, геометрия разная: в покое третий штрих
-     схлопнут и дуга открыта; в «скачать» дуга опущена лотком;
-     кольцо честно показывает проценты; в «готово» дуга полна;
+     схлопнут и дуга открыта; в «скачать» дуга опущена лотком и
+     маячок включён; кольцо честно показывает проценты, стрелка
+     при загрузке и в «готово» серая (312); в «готово» дуга
+     полна, углового маячка нет — волну пускает само кольцо;
   C. Проверка (updateChecking) вращает значок, по окончании
      вращение останавливается ровно в исходной позе;
   D. «Меньше анимаций»: вращения нет, позы меняются мгновенно.
      Заодно: у AppTheme появилось свойство reducedMotion, без
      которого тумблер не действовал на компоненты с чтением
      AppTheme.reducedMotion (включая маячок этой кнопки);
-  E. Кнопка нажимается с клавиатуры (фокус + Enter) — в ряд с
-     остальными иконочными кнопками шапки.
+  E. Кнопка НЕ берёт клавиатурный фокус: таб-обводки у кнопок
+     убраны из всей программы (312). Клик мышью работает.
 
 Запуск (песочница):
     LD_LIBRARY_PATH=/tmp/stubs QT_QPA_PLATFORM=offscreen QSG_RASTER_BACKEND=1 \
@@ -36,7 +38,7 @@ os.environ.setdefault("QSG_RASTER_BACKEND", "1")
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from PySide6.QtCore import QObject, Property, Signal, Slot, Qt
+from PySide6.QtCore import QObject, Property, Signal, Slot, Qt, QPointF
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuick import QQuickItem, QQuickWindow  # noqa: F401
@@ -134,6 +136,10 @@ def main() -> int:
         btn = win.findChild(QQuickItem, "updButton")
         glyph = win.findChild(QQuickItem, "updGlyph")
         assert btn and glyph, "updButton/updGlyph не найдены"
+        radar = win.findChild(QQuickItem, "updRadar")
+        halo = win.findChild(QQuickItem, "updHalo")
+        assert radar is not None and halo is not None, \
+            "маячок/волна готовности не найдены"
         spinner = glyph.parentItem()
         wait_ms(300)
 
@@ -147,6 +153,7 @@ def main() -> int:
         assert btn.property("vis") == "download", btn.property("vis")
         assert btn.property("arcCY") > 13.0, "дуга не опустилась лотком"
         assert abs(btn.property("cAlpha") - 1) < 0.05, "правая грань стрелки не выросла"
+        assert radar.property("active"), "в «доступно» угловой маячок выключен"
 
         stub._set("remoteDownloading", True)
         stub._set("remoteDownloadProgress", 50)
@@ -154,12 +161,18 @@ def main() -> int:
         assert btn.property("vis") == "ring", btn.property("vis")
         assert abs(btn.property("arcSweep") - 180) < 8, \
             "кольцо не показывает 50%%: %s" % btn.property("arcSweep")
+        assert btn.property("segColor").name() == "#5f6b74", \
+            "при загрузке стрелка не серая: %s" % btn.property("segColor").name()
 
         stub._set("remoteDownloading", False)
         stub._set("updateReady", True)
         wait_ms(800)
         assert btn.property("vis") == "install", btn.property("vis")
         assert abs(btn.property("arcSweep") - 360) < 2, "кольцо не дозалито"
+        assert btn.property("segColor").name() == "#5f6b74", \
+            "в «готово» стрелка не серая: %s" % btn.property("segColor").name()
+        assert not radar.property("active"), \
+            "в «готово» угловой маячок включён (волну должно пускать кольцо)"
 
         stub._set("updateReady", False)
         stub._set("remoteUpdateAvailable", False)
@@ -202,21 +215,23 @@ def main() -> int:
         wait_ms(300)
         print("D: «меньше анимаций» — без вращения, позы мгновенно; тема прокинута ✓")
 
-        # ── E. Клавиатура ──
-        btn.forceActiveFocus()
-        wait_ms(100)
-        assert btn.property("activeFocus"), "кнопка не взяла фокус"
-        QTest.keyClick(win, Qt.Key.Key_Return)
-        wait_ms(100)
+        # ── E. Без таб-фокуса; клик мышью ──
+        assert btn.property("activeFocusOnTab") is False, \
+            "кнопка снова в таб-цепочке"
+        pos = btn.mapToScene(QPointF(23, 23)).toPoint()
+        QTest.mouseClick(win, Qt.MouseButton.LeftButton,
+                         Qt.KeyboardModifier.NoModifier, pos)
+        wait_ms(150)
         assert stub.calls == ["check"], stub.calls
-        print("E: фокус + Enter запускает проверку ✓")
+        assert not btn.property("activeFocus"), "клик дал кнопке фокус"
+        print("E: таб-фокуса нет, клик запускает проверку ✓")
     finally:
         try:
             os.remove(wrapper)
         except OSError:
             pass
 
-    print("═══ МОРФ-ЗНАЧОК КНОПКИ ОБНОВЛЕНИЯ: ПОЗЫ, ВРАЩЕНИЕ, ДОСТУПНОСТЬ ═══")
+    print("═══ МОРФ-ЗНАЧОК КНОПКИ ОБНОВЛЕНИЯ: ПОЗЫ, ВРАЩЕНИЕ, ЦВЕТА СОСТОЯНИЙ ═══")
     return 0
 
 

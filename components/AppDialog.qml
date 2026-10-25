@@ -248,7 +248,7 @@ AppModalShell {
     onOpened: {
         // автофокус первого поля — после пересчёта геометрии
         if (root.autoFocusFirst) Qt.callLater(focusFirstField)
-        if (root.focusAcceptOnOpen) Qt.callLater(function() { acceptBtn.forceActiveFocus() })
+        if (root.focusAcceptOnOpen) Qt.callLater(function() { mainLayout.forceActiveFocus() })  // кнопки фокус не берут: Enter ловит Keys на mainLayout и принимает окно (сборка 312)
         Qt.callLater(function() {
             // Высота снова становится привязкой и дорастает вместе
             // с контентом: тексты «Что нового» досчитываются дольше

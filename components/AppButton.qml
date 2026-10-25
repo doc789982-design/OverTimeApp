@@ -16,8 +16,9 @@ Button {
     // Ширина = ширина контента + системные отступы (минимум 100px)
     implicitWidth: Math.max(100, contentRow.implicitWidth + (AppTheme.spaceM * 2))
 
-    // Отключаем системный фокус Qt, рисуем свой
-    focusPolicy: Qt.StrongFocus
+    // Кнопка клавиатурный фокус не берёт: таб по кнопкам не ходит,
+    // обводок фокуса в программе нет (решение владельца, сборка 312)
+    focusPolicy: Qt.NoFocus
     // Курсор «рука» над кнопкой — как в обычных программах
     HoverHandler { cursorShape: control.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor }
 
@@ -110,22 +111,6 @@ Button {
                 color: control.pressed ? AppTheme.statePress : (control.hovered ? AppTheme.stateHover : "transparent")
                 Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
             }
-        }
-
-        // ==========================================
-        // 4. КОЛЬЦО ФОКУСА (Accessibility)
-        // ==========================================
-        Rectangle {
-            anchors.fill: parent
-            anchors.margins: -AppTheme.focusOffset - AppTheme.focusWidth
-            radius: AppTheme.radiusPill
-            
-            color: "transparent"
-            border.color: AppTheme.borderFocus
-            border.width: AppTheme.focusWidth
-            
-            opacity: control.visualFocus ? 1.0 : 0.0
-            Behavior on opacity { NumberAnimation { duration: AppTheme.durMicro; easing.type: AppTheme.easeColor } }
         }
 
         // Волна от нажатия (ripple по MD3) — верхний слой фона, контент

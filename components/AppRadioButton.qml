@@ -92,19 +92,6 @@ Item {
             Behavior on opacity { NumberAnimation { duration: AppTheme.durFast } }
         }
 
-        // Кольцо фокуса (Accessibility)
-        Rectangle {
-            anchors.fill: ring
-            anchors.margins: -AppTheme.focusOffset - AppTheme.focusWidth
-            radius: 10 + AppTheme.focusOffset
-
-            color: "transparent"
-            border.color: AppTheme.borderFocus
-            border.width: AppTheme.focusWidth
-
-            opacity: ma.activeFocus ? 1.0 : 0.0
-            Behavior on opacity { NumberAnimation { duration: AppTheme.durMicro; easing.type: AppTheme.easeColor } }
-        }
     }
 
     Text {

@@ -17,27 +17,26 @@ import QtQuick.Controls
 //                собираются в стрелку «скачать» (синяя), стрелка
 //                едва заметно «дышит» к лотку;
 //   загрузка   — лоток поднимается вокруг стрелки кольцом
-//                прогресса: дуга заполняется по процентам;
+//                прогресса: дуга заполняется по процентам, а сама
+//                стрелка сереет — говорит только синее кольцо;
 //   готово     — кольцо дозаливается до полного и зеленеет,
-//                стрелка внутри — «нажмите, чтобы установить».
+//                стрелка внутри остаётся серой, а кольцо само
+//                пускает от себя волну «нажми на меня».
 //
 // Все параметры фигуры анимируются одновременно (Behavior на
 // каждом числе), поэтому переходы — одна непрерывная перестрой-
 // ка, без складываний в линию и подмен картинок. Настройка
 // «Меньше анимаций» отключает вращение, дыхание и сами переходы.
-// Маячок в углу (UpdateRadar) — как раньше: синяя точка «нажми
-// на меня», различает состояния цвет самого значка.
+// Синяя точка-маячок в углу (UpdateRadar) — только у позы
+// «доступно»; в «готово» её роль играет само зелёное кольцо.
+// Кнопка — только мышь: клавиатурного фокуса и его обводки в
+// программе нет (сборка 312).
 // ============================================================
 Item {
     id: root
     objectName: "updButton"
     width: 46
     height: parent ? parent.height : 46
-    activeFocusOnTab: true
-
-    Accessible.role: Accessible.Button
-    Accessible.name: root.tipText
-    Accessible.onPressAction: root.doClick()
 
     // ---- Состояния от Backend ----
     readonly property bool hasUpdate: backend.remoteUpdateAvailable
@@ -58,15 +57,21 @@ Item {
                                        : root.hasUpdate ? "download"
                                        : "refresh"
 
-    // ---- Цвет значка: состояние + ховер ----
-    // Проверка и «есть обновление» — бренд-синий, «готово к
-    // установке» — зелёный, покой — серый как остальная шапка.
+    // ---- Цвета значка: кольцо и стрелка живут отдельно ----
+    // Кольцо (дуга): проверка и «есть обновление» — бренд-синее,
+    // «готово» — зелёное, покой — серое как остальная шапка.
+    // Стрелка (штрихи): синяя только в «доступно»; пока идёт
+    // загрузка и когда всё готово, она серая, «неактивная», —
+    // говорит кольцо, а не стрелка (сборка 312).
     readonly property color stateColor: root.ready ? AppTheme.accentSuccess
                                    : (root.hasUpdate || root.downloading || root.checking) ? AppTheme.accentBrand
                                    : (hover.containsMouse ? AppTheme.textPrimary : AppTheme.textSecondary)
 
     property color glyphColor: root.stateColor
     Behavior on glyphColor { ColorAnimation { duration: root.reduced ? 0 : AppTheme.durSlow; easing.type: Easing.InOutQuad } }
+
+    property color segColor: (root.downloading || root.ready) ? AppTheme.textSecondary : root.stateColor
+    Behavior on segColor { ColorAnimation { duration: root.reduced ? 0 : AppTheme.durSlow; easing.type: Easing.InOutQuad } }
 
     readonly property string tipText: {
         if (downloading)
@@ -201,7 +206,7 @@ Item {
                     "bXChanged", "bYChanged", "bAlphaChanged",
                     "cXChanged", "cYChanged", "cAlphaChanged",
                     "lineWChanged", "bobChanged", "bobAmpChanged",
-                    "glyphColorChanged"]
+                    "glyphColorChanged", "segColorChanged"]
         for (var i = 0; i < sigs.length; i++)
             root[sigs[i]].connect(function() { glyph.requestPaint() })
         stateDebounce.restart()
@@ -262,32 +267,53 @@ Item {
         NumberAnimation { to: -1; duration: 1500; easing.type: Easing.InOutSine }
     }
 
-    // ---- Маячок в углу: точка и спокойная волна ----
+    // ---- Маячок в углу: только «есть обновление» ----
+    // В «готово» угловой точки больше нет: волну пускает само
+    // зелёное кольцо (readyHalo ниже).
     UpdateRadar {
+        objectName: "updRadar"
         anchors.right: parent.right
         anchors.rightMargin: 4
         anchors.top: parent.top
         anchors.topMargin: 4
         z: 10
-        active: (root.hasUpdate && !root.downloading) || root.ready
+        active: root.hasUpdate && !root.downloading && !root.ready
         waveColor: AppTheme.accentBrand
     }
 
-    // ---- Подложка (hover/нажатие/фокус) ----
+    // ---- Волна готовности: кольцо само себе радар ----
+    // Окружность точно по готовому зелёному кольцу расходится
+    // наружу и тает — спокойно, как волна маячка. При настройке
+    // «меньше анимаций» волны нет: готовности хватает цвета.
+    Rectangle {
+        id: readyHalo
+        objectName: "updHalo"
+        anchors.centerIn: parent
+        width: glyphItem.width * 0.82
+        height: width
+        radius: width / 2
+        color: "transparent"
+        border.color: AppTheme.accentSuccess
+        border.width: 1.6
+        opacity: 0
+        SequentialAnimation on opacity {
+            running: root.ready && !root.reduced; loops: Animation.Infinite
+            NumberAnimation { to: 0.45; duration: 320; easing.type: Easing.OutQuad }
+            NumberAnimation { to: 0.0; duration: 1680; easing.type: Easing.InQuad }
+            PauseAnimation { duration: 450 }
+        }
+        SequentialAnimation on scale {
+            running: root.ready && !root.reduced; loops: Animation.Infinite
+            NumberAnimation { from: 1.0; to: 1.5; duration: 2000; easing.type: Easing.OutCubic }
+            PauseAnimation { duration: 450 }
+        }
+    }
+
+    // ---- Подложка (hover/нажатие) ----
     Rectangle {
         anchors.fill: parent
         color: hover.pressed ? AppTheme.statePress : (hover.containsMouse ? AppTheme.stateHover : "transparent")
         Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
-    }
-    Rectangle {
-        anchors.fill: parent
-        anchors.margins: 3
-        radius: AppTheme.radiusSmall
-        color: "transparent"
-        border.color: AppTheme.borderFocus
-        border.width: AppTheme.focusWidth
-        opacity: root.activeFocus ? 1 : 0
-        Behavior on opacity { NumberAnimation { duration: AppTheme.durFast } }
     }
 
     // ---- Сам значок ----
@@ -316,6 +342,8 @@ Item {
                 ctx.lineWidth = root.lineW
                 var col = root.glyphColor
                 function rgba(a) { return Qt.rgba(col.r, col.g, col.b, a) }
+                var scol = root.segColor
+                function srgba(a) { return Qt.rgba(scol.r, scol.g, scol.b, a) }
                 var yOff = root.bob * root.bobAmp
                 var rad = Math.PI / 180
 
@@ -350,21 +378,21 @@ Item {
                     ctx.beginPath()
                     ctx.moveTo(root.jointX, root.jointY + yOff)
                     ctx.lineTo(segs[i][0], segs[i][1] + yOff)
-                    ctx.strokeStyle = rgba(segs[i][2])
+                    ctx.strokeStyle = srgba(segs[i][2])
                     ctx.stroke()
                 }
                 // круглая «капля» в узле — стык штрихов без шва
                 if (jointAlpha > 0.004) {
                     ctx.beginPath()
                     ctx.arc(root.jointX, root.jointY + yOff, root.lineW / 2, 0, Math.PI * 2)
-                    ctx.fillStyle = rgba(jointAlpha)
+                    ctx.fillStyle = srgba(jointAlpha)
                     ctx.fill()
                 }
             }
         }
     }
 
-    // ---- Действие кнопки (мышь и клавиатура — одинаково) ----
+    // ---- Действие кнопки (только мышь) ----
     function doClick() {
         if (root.ready) {
             backend.applyReadyUpdate()
@@ -382,14 +410,7 @@ Item {
         hoverEnabled: true
         cursorShape: (root.ready || (root.hasUpdate && !root.downloading) || root.idleCheck)
                      ? Qt.PointingHandCursor : Qt.ArrowCursor
-        onClicked: { root.forceActiveFocus(); root.doClick() }
-    }
-
-    Keys.onPressed: function(event) {
-        if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
-            root.doClick()
-            event.accepted = true
-        }
+        onClicked: root.doClick()
     }
 
     // ---- Тултип ----

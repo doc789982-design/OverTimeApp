@@ -16,12 +16,12 @@ ComboBox {
     property color cutoutColor: AppTheme.bgModal
     
     // Считается активным, если есть текст, открыто меню или есть фокус
-    property bool isFloated: control.displayText.length > 0 || control.activeFocus || control.popup.visible
+    property bool isFloated: control.displayText.length > 0 || control.popup.visible
 
     leftPadding: AppTheme.spaceM
     rightPadding: AppTheme.spaceXL 
 
-    focusPolicy: Qt.StrongFocus
+    focusPolicy: Qt.NoFocus   // таб по кнопкам не ходит (сборка 312)
 
     // ==========================================
     // ТЕКСТ ВНУТРИ
@@ -44,9 +44,9 @@ ComboBox {
         radius: AppTheme.radiusMedium
         
         border.color: !control.enabled ? AppTheme.borderDisabled :
-                      (control.activeFocus || control.popup.visible ? AppTheme.borderFocus : 
+                      (control.popup.visible ? AppTheme.borderFocus : 
                       (control.hovered ? AppTheme.textSecondary : AppTheme.borderInput))
-        border.width: (control.activeFocus || control.popup.visible) ? AppTheme.focusWidth : 1
+        border.width: control.popup.visible ? AppTheme.focusWidth : 1
         
         Behavior on border.color { ColorAnimation { duration: AppTheme.durMicro } }
     }
@@ -80,7 +80,7 @@ ComboBox {
         Text {
             text: control.label
             color: !control.enabled ? AppTheme.textDisabled : 
-                   ((control.activeFocus || control.popup.visible) ? AppTheme.accentBrand : AppTheme.textSecondary)
+                   (control.popup.visible ? AppTheme.accentBrand : AppTheme.textSecondary)
                    
             font.family: AppTheme.fontFamily
             font.pixelSize: AppTheme.sizeBody 

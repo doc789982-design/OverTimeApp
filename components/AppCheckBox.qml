@@ -12,7 +12,7 @@ CheckBox {
     property color checkColor: AppTheme.textOnAccent
     
     implicitHeight: 36 
-    focusPolicy: Qt.StrongFocus
+    focusPolicy: Qt.NoFocus   // таб по кнопкам не ходит (сборка 312)
     // Курсор «рука» над кнопкой — как в обычных программах
     HoverHandler { cursorShape: control.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor }
 
@@ -105,21 +105,6 @@ CheckBox {
             }
         }
 
-        // ==========================================
-        // 3. КОЛЬЦО ФОКУСА (Accessibility)
-        // ==========================================
-        Rectangle {
-            anchors.fill: parent
-            anchors.margins: -AppTheme.focusOffset - AppTheme.focusWidth
-            radius: 2 + AppTheme.focusOffset
-            
-            color: "transparent"
-            border.color: AppTheme.borderFocus
-            border.width: AppTheme.focusWidth
-            
-            opacity: control.visualFocus ? 1.0 : 0.0
-            Behavior on opacity { NumberAnimation { duration: AppTheme.durMicro; easing.type: AppTheme.easeColor } }
-        }
     }
 
     // ==========================================

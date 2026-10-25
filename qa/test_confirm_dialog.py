@@ -3,8 +3,9 @@
 
 Проверяется контракт, который был у старого самодельного Popup и обязан
 сохраниться: Enter/клик — accepted и окно закрылось; Esc/«Отмена»/крестик —
-rejected и закрылось; фокус при открытии — на кнопке подтверждения
-(Enter/Space нативно); dangerMode красит кнопку.
+rejected и закрылось; Enter принимает само окно (клавиши ловит Keys на
+содержимом окна: с сборки 312 кнопки клавиатурный фокус не берут и в
+таб-цепочку не входят); dangerMode красит кнопку.
 """
 import os
 import sys
@@ -102,7 +103,7 @@ def main() -> int:
         assert wait_until(app, lambda: get_dlg() is not None), "диалог не открылся"
         dlg = get_dlg()
 
-        # ── A. Открытие и фокус на подтверждении ──
+        # ── A. Открытие; кнопка подтверждения фокус не берёт (312) ──
         assert wait_until(app, lambda: dlg.property("opened")), "не открылся"
         assert wait_until(app, lambda: win.property("acc") == 0), "лишний accepted"
         btns = buttons_of(win)
@@ -110,9 +111,9 @@ def main() -> int:
         acc_btn = next((b for b in btns if b.property("variant") == "danger"), None)
         rej_btn = next((b for b in btns if b.property("variant") == "secondary"), None)
         assert acc_btn is not None and rej_btn is not None, "нет danger/secondary кнопок"
-        assert wait_until(app, lambda: acc_btn.property("activeFocus") is True), \
-            "фокус не на кнопке подтверждения"
-        print("A: открылся, фокус на «Удалить», кнопка danger ✓")
+        assert acc_btn.property("activeFocus") is not True, \
+            "кнопка взяла клавиатурный фокус (312: кнопкам фокус запрещён)"
+        print("A: открылся, кнопка danger, фокуса у кнопок нет ✓")
 
         # ── B. Клик по подтверждению: accepted + закрылось ──
         acc_btn.click()
@@ -123,7 +124,6 @@ def main() -> int:
         # ── C. Повторное открытие, Enter с клавиатуры ──
         QTimer.singleShot(0, dlg.open)
         assert wait_until(app, lambda: dlg.property("opened")), "не открылся повторно"
-        assert wait_until(app, lambda: acc_btn.property("activeFocus") is True)
         QTest.keyClick(win, Qt.Key_Return)
         assert wait_until(app, lambda: win.property("acc") == 2), "Enter не подтвердил"
         assert wait_until(app, lambda: not dlg.property("opened")), "Enter не закрыл"
