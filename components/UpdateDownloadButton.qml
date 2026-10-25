@@ -115,6 +115,11 @@ Item {
     property real bob: 0              // фаза «дыхания» стрелки, -1..1
     property real bobAmp: 0           // амплитуда дыхания (единицы сетки)
 
+    // Радиус средней линии кольца в пикселях холста. Волна готовности
+    // строится от той же величины, поэтому стартует точно с окружности
+    // кольца, а не «примерно рядом» (отзыв на 313-ю: кружок криво).
+    readonly property real ringStrokeRadiusPx: glyphItem.width * root.arcR / 24
+
     // Один характер движения для всей фигуры: уверенный старт,
     // мягкая посадка. Дуга прогресса — чуть отзывчивее, чтобы
     // проценты при загрузке не отставали от настоящих.
@@ -281,34 +286,6 @@ Item {
         waveColor: AppTheme.accentBrand
     }
 
-    // ---- Волна готовности: кольцо само себе радар ----
-    // Окружность точно по готовому зелёному кольцу расходится
-    // наружу и тает — спокойно, как волна маячка. При настройке
-    // «меньше анимаций» волны нет: готовности хватает цвета.
-    Rectangle {
-        id: readyHalo
-        objectName: "updHalo"
-        anchors.centerIn: parent
-        width: glyphItem.width * 0.82
-        height: width
-        radius: width / 2
-        color: "transparent"
-        border.color: AppTheme.accentSuccess
-        border.width: 1.6
-        opacity: 0
-        SequentialAnimation on opacity {
-            running: root.ready && !root.reduced; loops: Animation.Infinite
-            NumberAnimation { to: 0.45; duration: 320; easing.type: Easing.OutQuad }
-            NumberAnimation { to: 0.0; duration: 1680; easing.type: Easing.InQuad }
-            PauseAnimation { duration: 450 }
-        }
-        SequentialAnimation on scale {
-            running: root.ready && !root.reduced; loops: Animation.Infinite
-            NumberAnimation { from: 1.0; to: 1.5; duration: 2000; easing.type: Easing.OutCubic }
-            PauseAnimation { duration: 450 }
-        }
-    }
-
     // ---- Подложка (hover/нажатие) ----
     Rectangle {
         anchors.fill: parent
@@ -324,6 +301,42 @@ Item {
         height: width
         scale: hover.pressed ? 0.92 : (hover.containsMouse ? 1.05 : 1)
         Behavior on scale { NumberAnimation { duration: root.reduced ? 0 : AppTheme.durFast; easing.type: AppTheme.easeEnter } }
+
+        // ---- Волна готовности: кольцо само себе радар ----
+        // Живёт внутри значка: общий центр с холстом и общий масштаб
+        // при наведении — волна не отстаёт от кольца. Ширина — диаметр
+        // средней линии кольца плюс толщина собственной обводки
+        // (обводка Rectangle рисуется внутрь): в старте волна лежит
+        // ровно на окружности кольца и расходится строго от неё.
+        // Центр задан явными x/y, а не anchors.centerIn: якоря сажают
+        // элемент на целые пиксели и при размере кнопки 46 уводили
+        // центр волны на полпикселя от центра кольца.
+        // При «меньше анимаций» волны нет: готовности хватает цвета.
+        Rectangle {
+            id: readyHalo
+            objectName: "updHalo"
+            x: (parent.width - width) / 2
+            y: (parent.height - height) / 2
+            width: 2 * root.ringStrokeRadiusPx + readyHalo.border.width
+            height: width
+            radius: width / 2
+            transformOrigin: Item.Center
+            color: "transparent"
+            border.color: AppTheme.accentSuccess
+            border.width: 1.6
+            opacity: 0
+            SequentialAnimation on opacity {
+                running: root.ready && !root.reduced; loops: Animation.Infinite
+                NumberAnimation { to: 0.45; duration: 320; easing.type: Easing.OutQuad }
+                NumberAnimation { to: 0.0; duration: 1680; easing.type: Easing.InQuad }
+                PauseAnimation { duration: 450 }
+            }
+            SequentialAnimation on scale {
+                running: root.ready && !root.reduced; loops: Animation.Infinite
+                NumberAnimation { from: 1.0; to: 1.5; duration: 2000; easing.type: Easing.OutCubic }
+                PauseAnimation { duration: 450 }
+            }
+        }
 
         Canvas {
             id: glyph
