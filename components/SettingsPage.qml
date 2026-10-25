@@ -1,5 +1,5 @@
 import QtQuick
-import QtQuick.Layouts
+import QtQuick.Controls
 
 Item {
     id: root
@@ -8,14 +8,26 @@ Item {
     property string description: ""
     default property alias content: contentColumn.data
 
-    ColumnLayout {
+    // Вертикальная прокрутка страницы. Горизонтальной не бывает:
+    // ширина колонки жёстко привязана к видимой области.
+    Flickable {
+        id: pageScroll
         anchors.fill: parent
-        anchors.margins: AppTheme.spaceXL
-        spacing: AppTheme.spaceL
+        clip: true
+        contentWidth: width
+        contentHeight: pageColumn.y + pageColumn.implicitHeight + AppTheme.spaceXL
+        boundsBehavior: Flickable.StopAtBounds
+
+        ScrollBar.vertical: ScrollBar {
+            policy: ScrollBar.AsNeeded
+        }
 
         Column {
-            spacing: AppTheme.spaceXS
-            Layout.fillWidth: true
+            id: pageColumn
+            x: AppTheme.spaceXL
+            y: AppTheme.spaceXL
+            width: pageScroll.width - AppTheme.spaceXL * 2
+            spacing: AppTheme.spaceL
 
             Text {
                 text: root.title
@@ -26,24 +38,18 @@ Item {
             }
             Text {
                 text: root.description
+                width: parent.width
                 color: AppTheme.textSecondary
                 font.family: AppTheme.fontFamily
                 font.pixelSize: AppTheme.sizeBody
                 wrapMode: Text.WordWrap
-                width: parent.width
             }
-        }
 
-        Column {
-            id: contentColumn
-            Layout.fillWidth: true
-            spacing: AppTheme.spaceM
-
-            // implicitHeight пробрасывается через Layout автоматически
-        }
-
-        Item {
-            Layout.fillHeight: true
+            Column {
+                id: contentColumn
+                width: parent.width
+                spacing: AppTheme.spaceL
+            }
         }
     }
 }

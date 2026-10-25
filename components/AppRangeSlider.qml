@@ -161,8 +161,10 @@ Item {
     // ==========================================
     // 4. ЛОГИКА МЫШИ
     // ==========================================
+    HoverHandler { cursorShape: Qt.PointingHandCursor }
     MouseArea {
         id: mouseArea
+        cursorShape: Qt.PointingHandCursor
         anchors.fill: parent
         hoverEnabled: true
 

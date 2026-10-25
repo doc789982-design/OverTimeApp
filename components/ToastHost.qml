@@ -62,11 +62,23 @@ Item {
             delegate: Item {
                 id: toastWrap
                 width: col.width
-                height: leaving ? 0 : root.barHeight
-                clip: true
+                height: leaving ? 0 : (twoLines ? root.barHeight * 2 : root.barHeight)
+                clip: leaving ? true : !tooltipActive
+
+                // Экранный доступ: сообщение тоста произносится вслух
+                Accessible.role: Accessible.AlertMessage
+                Accessible.name: model.message
 
                 property bool leaving: false
                 property bool risen: false
+
+                // Сколько строк на самом деле нужно для всего текста (измеряется скрытой копией).
+                readonly property int fullLines: Math.max(1, measureText.lineCount)
+                // Умещается в одну строку — высота обычная; в две — тост становится в два раза выше.
+                readonly property bool twoLines: fullLines > 1
+                // Не умещается и в две строки — при наведении показываем тултип с полным текстом.
+                readonly property bool needsTooltip: fullLines > 2
+                readonly property bool tooltipActive: needsTooltip && toastHover.hovered
 
                 Behavior on height {
                     NumberAnimation {
@@ -104,7 +116,7 @@ Item {
                 Rectangle {
                     id: bar
                     width: parent.width - AppTheme.spaceM * 2
-                    height: root.barHeight - AppTheme.spaceXS
+                    height: toastWrap.height - AppTheme.spaceXS
                     x: AppTheme.spaceM
                     y: toastWrap.risen && !toastWrap.leaving ? 0 : root.barHeight
                     opacity: toastWrap.risen && !toastWrap.leaving ? 1 : 0
@@ -135,6 +147,18 @@ Item {
                         color: Qt.rgba(1, 1, 1, pressArea.pressed ? 0.10 : 0.05)
                     }
 
+                    // Скрытая копия текста: измеряет, сколько строк нужно в реальности.
+                    Text {
+                        id: measureText
+                        opacity: 0
+                        width: bar.width - AppTheme.spaceM * 2 - 28 - AppTheme.spaceS
+                        wrapMode: Text.Wrap
+                        text: model.message
+                        font.family: AppTheme.fontFamily
+                        font.pixelSize: AppTheme.sizeBody
+                        font.weight: AppTheme.weightBold
+                    }
+
                     Row {
                         anchors.verticalCenter: parent.verticalCenter
                         anchors.left: parent.left
@@ -157,15 +181,17 @@ Item {
                                 source: model.kind === "error" ? "../icons/x_circle.svg" : "../icons/check.svg"
                                 width: AppTheme.iconMedium
                                 height: AppTheme.iconMedium
-                                color: model.kind === "error" ? AppTheme.accentDanger : AppTheme.textPrimary
+                                color: model.kind === "error" ? AppTheme.textDanger : AppTheme.textPrimary
                             }
                         }
 
                         Text {
+                            id: msgText
                             anchors.verticalCenter: parent.verticalCenter
-                            width: parent.width - 28 - parent.spacing
+                            width: bar.width - AppTheme.spaceM * 2 - 28 - AppTheme.spaceS
                             elide: Text.ElideRight
-                            wrapMode: Text.NoWrap
+                            wrapMode: Text.Wrap
+                            maximumLineCount: toastWrap.twoLines ? 2 : 1
                             text: model.message
                             color: AppTheme.textPrimary
                             font.family: AppTheme.fontFamily
@@ -174,15 +200,31 @@ Item {
                         }
                     }
 
+                    HoverHandler { cursorShape: Qt.PointingHandCursor }
                     MouseArea {
                         id: pressArea
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: toastWrap.beginLeave()
+                        onClicked: {
+                            // Ошибку по клику ЛКМ копируем в буфер обмена, чтобы
+                            // не печатать её вручную.
+                            if (model.kind === "error")
+                                backend.copyToClipboard(model.message)
+                            toastWrap.beginLeave()
+                        }
                     }
 
                     HoverHandler { id: toastHover }
+
+                    // Если текст длиннее двух строк — по наведению показываем полный текст.
+                    AppToolTip {
+                        text: model.message
+                        isVisible: toastWrap.tooltipActive
+                        anchors.bottom: bar.bottom
+                        anchors.bottomMargin: bar.height + AppTheme.spaceXS
+                        anchors.horizontalCenter: bar.horizontalCenter
+                    }
                 }
             }
         }

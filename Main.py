@@ -1,22 +1,35 @@
+# --- АВАРИЙНЫЙ ВОССТАНОВИТЕЛЬ ----------------------------------------------
+# Самый первый код программы (подробности — recovery.py): если прошлая
+# копия упала, предложит обновиться или откатиться, не дав намертво
+# залипнуть на сломанной версии. Никогда не мешает обычному запуску.
+try:
+    import recovery
+    recovery.guard()
+except Exception:
+    pass
+
 import os
 import tempfile
+import threading
+import time
 import uuid
 import win32print
 import sys
 import json
 import calendar
+import traceback
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
-from datetime import date, datetime, timedelta, time
+from datetime import date, datetime, timedelta, time as dt_time
 from pathlib import Path
 
-from PySide6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
+from PySide6.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QWidget, QLabel, QProgressBar, QVBoxLayout, QHBoxLayout
 from PySide6.QtGui import QIcon, QAction
 from PySide6.QtQml import QQmlApplicationEngine
-from PySide6.QtCore import QObject, Slot, Signal, Property, QUrl, QThread, QTimer
+from PySide6.QtCore import QObject, Slot, Signal, Property, QUrl, QThread, QTimer, Qt
 
-from database import DB
+from database import DB, format_day_conflicts
 from utils import fmt_date_iso, fmt_dt_iso, d_iso, d_parse, dt_parse, dt_iso, parse_hhmm, subtract_intervals, intersect, merge_intervals, fmt_minutes_ru_words
-from logic import compute_month_summary, is_employee_shift, is_employee_shifted_weekends, validate_non_negative_over_year, default_is_working, build_shifted_weekend_checker, resolve_is_working, _row_flag
+from logic import compute_month_summary, is_employee_shift, is_employee_shifted_weekends, validate_non_negative_over_year, default_is_working, build_shifted_weekend_checker, resolve_is_working, _row_flag, summary_cache_scope, total_overtime_days, split_both_years
 import app_update
 
 # ====================================================
@@ -43,6 +56,48 @@ def is_emp_active_in_month(emp, year: int, month: int) -> bool:
     if emp["start_month"] > m: return False
     if emp["end_date"] is None: return True
     return (emp["end_date"] or "")[:7] >= m
+
+
+# ====================================================
+# ОФОРМЛЕНИЕ ОСТАТКОВ И ИТОГОВ ПАНЕЛИ БАЛАНСОВ
+# Один и тот же набор правил для месячного и годового вида:
+# панель балансов — это один элемент с разным наполнением.
+# ====================================================
+
+# Скобка прошлого года — нейтральный серый (не зелёный), как приглушённый тон.
+GRAY_BRACKET = "#9E9E9E"
+
+
+def fmt_dual(val, prev_val, is_days=False):
+    """Остатки (НА НАЧАЛО / НА КОНЕЦ): значение + скобка прошлого года.
+
+    Если И основное, и скобочное число — целые часы/дни, единица выносится
+    за скобку один раз: «0 (100) ч.», «0 (5) д.». Если есть минуты —
+    единицы остаются у каждого числа (без переноса): «5 ч. 30 м. (100 ч.)».
+    """
+    if prev_val == 0:
+        return (f"{val} д." if is_days else fmt_minutes_ru_words(val))
+    if is_days:
+        # Дни всегда целые — «X (Y) д.»
+        return f"{val} <font color='{GRAY_BRACKET}'>({prev_val})</font> д."
+    # Часы / сверх нормы (минуты)
+    av, pv = abs(int(val)), abs(int(prev_val))
+    if av % 60 == 0 and pv % 60 == 0:
+        sv = "-" if val < 0 else ""
+        sp = "-" if prev_val < 0 else ""
+        return f"{sv}{av // 60} <font color='{GRAY_BRACKET}'>({sp}{pv // 60})</font> ч."
+    main = fmt_minutes_ru_words(val)
+    prev_txt = fmt_minutes_ru_words(prev_val)
+    return f"{main} <font color='{GRAY_BRACKET}'>({prev_txt})</font>"
+
+
+def fmt_comp(real_val, prev_val, is_days=False):
+    """КОМПЕНСИРОВАНО: то же оформление (скобка серая), но если ничего
+    не списывали ни в этом, ни в прошлом году — прочерк."""
+    if real_val == 0 and prev_val == 0:
+        return "—"
+    return fmt_dual(real_val, prev_val, is_days)
+
 
 # ====================================================
 # ФОНОВЫЙ ПОТОК ДЛЯ ЭКСПОРТА (ЧТОБЫ НЕ ВИС ИНТЕРФЕЙС)
@@ -103,6 +158,24 @@ class PrintWorker(QThread):
         self.paper_size = paper_size
         self.collate = collate
 
+    def _excel_printer_name(self, name):
+        """Превращает имя принтера в строку, которую понимает Excel: 'Имя on Порт:'.
+
+        Excel выбирает принтер по полному имени с портом. Просто имя из списка
+        (win32print) ему не подходит, поэтому собираем полное имя.
+        """
+        try:
+            import win32print
+            flags = win32print.PRINTER_ENUM_LOCAL | win32print.PRINTER_ENUM_CONNECTIONS
+            for info in win32print.EnumPrinters(flags, 2):
+                # level 2: (Server, Name, Share, Port, Driver, ...)
+                if (len(info) > 3 and info[3]
+                        and str(info[1]).strip().lower() == name.strip().lower()):
+                    return f"{name} on {info[3]}:"
+        except Exception:
+            pass
+        return name
+
     def run(self):
         try:
             # МАГИЯ WINDOWS: Чтобы общаться с Excel из невидимого потока, 
@@ -120,7 +193,7 @@ class PrintWorker(QThread):
 
             # 1. Формируем временный Excel-файл
             temp_db = DB(self.db_path)
-            template_path = Path(__file__).parent / "Template.xlsx"
+            template_path = EXCEL_TEMPLATE_PATH
             temp_dir = Path(tempfile.gettempdir())
             temp_excel_path = temp_dir / f"overtimetab_print_{uuid.uuid4().hex[:6]}.xlsx"
 
@@ -146,9 +219,19 @@ class PrintWorker(QThread):
                 ws.PageSetup.Orientation = 2 if self.orientation == "landscape" else 1
                 ws.PageSetup.PaperSize = 8 if self.paper_size == "A3" else 9
                 
+                # Excel выбирает принтер по строке вида "Имя on Порт:", а не по
+                # голому имени из списка. Собираем полное имя и ставим его принтером
+                # Excel'я; в PrintOut больше не передаём (иначе Excel падает
+                # с 0x800A03EC). Если принтер выбрать не удалось — печатаем на том,
+                # что стоит по умолчанию.
+                try:
+                    if self.printer_name:
+                        excel.ActivePrinter = self._excel_printer_name(self.printer_name)
+                except Exception:
+                    pass
+
                 print_args = {
                     "Copies": self.copies,
-                    "ActivePrinter": self.printer_name,
                     "Collate": self.collate
                 }
                 
@@ -176,6 +259,79 @@ class PrintWorker(QThread):
                 pythoncom.CoUninitialize() # Обязательно закрываем за собой COM-интерфейс
             except:
                 pass
+MONTHS_RU = ["январь", "февраль", "март", "апрель", "май", "июнь",
+             "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь"]
+
+
+def pdf_suggested_filename(dept_name, year, month):
+    """Имя PDF-файла — в том же формате, что у Excel-экспорта:
+    «Табель <подразделение> за <месяц> <год>.pdf»"""
+    dept = (dept_name or "").strip() or "подразделение"
+    mn = MONTHS_RU[int(month) - 1] if 1 <= int(month) <= 12 else str(month)
+    return f"Табель {dept} за {mn} {int(year)}.pdf"
+
+
+class PrintWorkerQt(QThread):
+    """Печать собственным движком (print_engine): без Excel и COM.
+
+    Бланк формируется как раньше (заполненный шаблон), но рисуется
+    напрямую на принтер через QPainter. При сбое quickPrint уходит
+    в запасный путь — печать через Excel (PrintWorker).
+    """
+    finished_signal = Signal(bool, str)
+
+    def __init__(self, db_path, year, month, printer_name, copies, page_from, page_to, orientation, paper_size, collate, pdf_out=None):
+        super().__init__()
+        self.pdf_out = pdf_out
+        self.db_path = db_path
+        self.year = year
+        self.month = month
+        self.printer_name = printer_name
+        self.copies = copies
+        self.page_from = page_from
+        self.page_to = page_to
+        self.orientation = orientation
+        self.paper_size = paper_size
+        self.collate = collate
+
+    def run(self):
+        try:
+            from print_engine import print_report, print_report_pdf
+            if self.pdf_out:
+                # Виртуальный PDF-принтер: пишем файл сами, без драйвера
+                pages = print_report_pdf(
+                    db_path=self.db_path,
+                    year=self.year,
+                    month=self.month,
+                    template_path=EXCEL_TEMPLATE_PATH,
+                    out_path=self.pdf_out,
+                    orientation=self.orientation,
+                    paper_size=self.paper_size,
+                    page_from=self.page_from,
+                    page_to=self.page_to,
+                )
+            else:
+                pages = print_report(
+                    db_path=self.db_path,
+                    year=self.year,
+                    month=self.month,
+                    template_path=EXCEL_TEMPLATE_PATH,
+                    printer_name=self.printer_name,
+                    copies=self.copies,
+                    page_from=self.page_from,
+                    page_to=self.page_to,
+                    orientation=self.orientation,
+                    paper_size=self.paper_size,
+                    collate=self.collate,
+                )
+            if self.pdf_out:
+                self.finished_signal.emit(True, f"Табель сохранён в PDF ({pages} стр.)")
+            else:
+                self.finished_signal.emit(True, f"Документ отправлен на принтер ({pages} стр.)!")
+        except Exception as e:
+            self.finished_signal.emit(False, f"{e}")
+
+
 # ====================================================
 
 class UpdateStageWorker(QThread):
@@ -216,6 +372,78 @@ class UpdateScanWorker(QThread):
         except Exception:
             self.finished_signal.emit(None)
 
+
+class RemoteCheckWorker(QThread):
+    """Только узнаёт, есть ли новая версия на хранилище (ничего не качает)."""
+    finished_signal = Signal(object, str)  # info (или None), error
+
+    def __init__(self, base_url, current_version, current_build=0):
+        super().__init__()
+        self.base_url = (base_url or "").strip()
+        self.current_version = current_version or ""
+        self.current_build = int(current_build or 0)
+
+    def run(self):
+        try:
+            # 8 секунд на источник — ровно как в проверке при запуске
+            # программы (_startup_find_update): кнопка и запуск проверяют
+            # обновления одним и тем же способом.
+            info, err = app_update.fetch_update_info(self.base_url, timeout=8.0)
+            if not info:
+                self.finished_signal.emit(None, err or "Не удалось получить данные об обновлении с сервера")
+                return
+            direct_zip = bool(info.get("direct_zip"))
+            ver = str(info.get("version") or "").strip()
+            bld = int(info.get("build") or 0)
+            if not direct_zip:
+                if not ver:
+                    self.finished_signal.emit(None, "На сервере не указан номер версии")
+                    return
+                if not app_update.is_newer(ver, self.current_version, bld, self.current_build):
+                    # Версия не новее — обновления нет. Это не ошибка.
+                    self.finished_signal.emit(None, "")
+                    return
+            self.finished_signal.emit(info, "")
+        except Exception as e:
+            self.finished_signal.emit(None, str(e))
+
+
+class RemoteDownloadWorker(QThread):
+    """Качает zip по уже известной ссылке (info получена при проверке)."""
+    finished_signal = Signal(bool, str, str)  # ok, local_zip_path, message
+    progress_signal = Signal(int, int)          # done_bytes, total_bytes
+
+    def __init__(self, base_url, info, app_dir):
+        super().__init__()
+        self.base_url = (base_url or "").strip()
+        self.info = info or {}
+        self.app_dir = app_dir
+
+    def run(self):
+        try:
+            zip_ref = str(self.info.get("url") or self.info.get("zip") or "").strip()
+            if not zip_ref:
+                self.finished_signal.emit(False, "", "В version.json нет ссылки на архив")
+                return
+            dl_base = str(self.info.get("base_url") or "").strip() or self.base_url
+            dl_url = app_update.resolve_download_url(zip_ref, dl_base)
+            dest_dir = app_update.install_root(Path(self.app_dir)) / "update_download"
+            self.progress_signal.emit(0, 0)
+
+            def _prog(done, total):
+                self.progress_signal.emit(done, total)
+
+            local_zip = app_update.download_zip(
+                dl_url,
+                dest_dir,
+                sha256=str(self.info.get("sha256") or "").strip(),
+                progress=_prog,
+            )
+            self.finished_signal.emit(True, str(local_zip), "")
+        except Exception as e:
+            self.finished_signal.emit(False, "", str(e))
+
+
 # ====================================================
 
 class Backend(QObject):
@@ -225,6 +453,7 @@ class Backend(QObject):
     calendarDaysChanged = Signal()
     currentPeriodChanged = Signal()
     databaseOpened = Signal()
+    databaseOpenFailed = Signal(str)   # базу открыть не удалось (нет файла, повреждена)
     activeDepartmentNameChanged = Signal()
     selectedEmployeeChanged = Signal()
     monthSummaryChanged = Signal() # Сигнал для нижней панели итогов
@@ -233,8 +462,9 @@ class Backend(QObject):
     yearlyDataChanged = Signal()
     dayDetailsChanged = Signal()
     dayCompsChanged = Signal()
-    moneyCompsChanged = Signal()
+    moneyOrdersChanged = Signal()
     showToast = Signal(str, str)    
+    startupUpdateEnabledChanged = Signal()
     timeInputModeChanged = Signal()    
     hotkeysListChanged = Signal()
     printerListChanged = Signal()
@@ -244,12 +474,18 @@ class Backend(QObject):
     itemDeleted = Signal(str, str)
     startHiddenChanged = Signal()
     reminderEnabledChanged = Signal()
+    reducedMotionChanged = Signal()      # «Меньше анимаций» (настройки)
     updateReadyChanged = Signal()
     updateBusyChanged = Signal()
+    updateCheckingChanged = Signal()   # идёт ли полная проверка обновлений
     updateVersionChanged = Signal()
     updateStatusTextChanged = Signal()
+    updateUrlChanged = Signal()
     appVersionChanged = Signal()
     whatsNewChanged = Signal()
+    remoteUpdateAvailableChanged = Signal()   # есть ли новая версия на сайте
+    remoteDownloadingChanged = Signal()       # идёт ли скачивание
+    remoteDownloadProgressChanged = Signal()  # прогресс скачивания (0..100)
 
     def __init__(self, start_hidden=False):
         super().__init__()
@@ -264,11 +500,11 @@ class Backend(QObject):
         self._hotkeys_list = []
         self._day_duties = []
         self._day_comps = []  
-        self._money_comps = []
+        self._money_orders = []
         self._yearly_data = []
         self._month_pulse = {} # {1: True, 5: True} - значит в январе и мае есть данные        
         self._year_list = []
-        self._time_input_mode = "slider" # По умолчанию будет ползунок      
+        self._time_input_mode = "tumbler" # По умолчанию — крутящиеся барабаны      
         self._selected_employee_ratio = 0.0
         self._printer_list = []      # <--- Добавили
         self._default_printer = ""   # <--- Добавили
@@ -276,20 +512,33 @@ class Backend(QObject):
         self._year_summary = {}
         self._is_dark_theme = True
         self._reminder_enabled = True    # Напоминание "сдать табель" (28-е — 5-е число)
+        self._reduced_motion = False     # «Меньше анимаций» (тумблер в настройках)
+        self._startup_update_enabled = True    # обновление при запуске
         self._tray_hint_shown = False    # Показывали ли подсказку про работу в фоне
-        # Делаем программу портативной: папка data прямо внутри папки с программой
+        # Данные хранятся в Documents\OverTimeTab; из папки программы автоматически переносятся
         self.app_dir = Path(__file__).parent
-        self.config_path = self.app_dir / "data" / "config.json"
+        # Папка данных: начиная с этой версии — Documents\OverTimeTab.
+        # Данные со старых версий автоматически переносятся сюда (режим copy).
+        self._data_dir = self._resolve_data_dir()
+        self.config_path = self._data_dir / "config.json"
+        # Отчёт о непринятом сертификате при проверке обновлений
+        # кладём в папку данных — папка программы бывает надоступна
+        app_update.set_ssl_report_dir(self._data_dir)
         
-        # Если есть старый конфиг из прошлых версий программы, копируем его сюда
-        old_config = Path.home() / ".overtimetab" / "config.json"
-        if old_config.exists() and not self.config_path.exists():
-            self.config_path.parent.mkdir(parents=True, exist_ok=True)
-            import shutil
-            shutil.copy2(old_config, self.config_path)
+        # Данные старых версий (включая самые старые с папкой
+        # %USERPROFILE%\.overtimetab) переносятся в Documents в _resolve_data_dir().
         self.loadHotkeys()
         self.generateYearList() # <--- Сразу вызываем функцию        
         self.active_db = None
+        
+        # Отложенная перерисовка года: панорама и «точки» месяцев не нужны
+        # немедленно после правки. Считаем их в следующем такте цикла
+        # событий, а серию быстрых правок схлопываем в один пересчёт —
+        # окно не замирает после каждого удаления.
+        self._lazy_year_timer = QTimer(self)
+        self._lazy_year_timer.setSingleShot(True)
+        self._lazy_year_timer.setInterval(120)
+        self._lazy_year_timer.timeout.connect(self._lazy_year_refresh)
         
         self.current_year = date.today().year
         self.current_month = date.today().month
@@ -300,58 +549,437 @@ class Backend(QObject):
         self._selected_employee_id = 0
         self._active_department_name = ""
         
+        # Адрес хранилища обновлений читается из config.json внутри load_databases.
+        # Инициализируем ПЕРЕД загрузкой, чтобы он не затирался пустой строкой.
+        self._update_url = ""
         self.load_databases()
+        # Базы, лежащие в папке хранения, подключаем сами: положил файлы
+        # в папку — и они появились в списке (молча, без вопросов)
+        try:
+            self._scan_db_folder()
+        except Exception:
+            pass
 
         self._update_ready = False
         self._update_busy = False
         self._update_version = ""
         self._update_status = ""
         self._update_source = ""
+        self._background_auto = False   # фоновая авто-проверка: всё тихо, без тостов
+        self._staging_silent = False
+        self._remote_update_available = False   # на сайте есть более новая версия
+        self._remote_downloading = False        # идёт скачивание
+        self._remote_download_progress = 0      # 0..100
+        self._remote_info = None                # данные о доступном обновлении
+        self._remote_active_url = ""            # какой адрес-кандидат дал обновление
+        self._remote_candidates = []            # очередь удалённых адресов для проверки
+        self._remote_idx = 0                    # индекс текущего кандидата
+        self._last_remote_error = ""            # первая/последняя сетевая ошибка за проход
+        self._pending_notify = False            # показывать ли тосты по итогам полной проверки
+        self._remote_saw_reachable = False      # хоть одно хранилище ответило «не новее»
+        self._update_checking = False           # идёт ли полная последовательность проверки
         self._whats_new = []
+        self._whats_new_scenes = ["neutral"]
         self._scan_running = False
         self._app_version = app_update.current_app_version(self.app_dir)
         self._app_build = app_update.current_app_build(self.app_dir)
         self._init_updates()
+    def _documents_dir(self):
+        """Возвращает настоящую папку «Документы» пользователя (Known Folder на Windows)."""
+        try:
+            import ctypes
+            from ctypes import wintypes
+            buf = wintypes.create_unicode_buffer(wintypes.MAX_PATH)
+            # SHGetFolderPathW, CSIDL_PERSONAL = 0x0005
+            if ctypes.windll.shell32.SHGetFolderPathW(None, 0x0005, None, 0, buf) == 0 and buf.value:
+                p = Path(buf.value)
+                if p.exists():
+                    return p
+        except Exception:
+            pass
+        # Запасные варианты для не-Windows и нестандартных систем
+        home = os.environ.get("USERPROFILE") or os.environ.get("HOME")
+        if home:
+            p = Path(home) / "Documents"
+            if p.exists():
+                return p
+        return Path.home() / "Documents"
+
+    def _resolve_data_dir(self):
+        """Определяет постоянную папку данных программы.
+        
+        Каноническое место данных — Documents\OverTimeTab. Данные из старых версий
+        (и портативных с data\ рядом с exe, и самых старых с папкой в профиле
+        %USERPROFILE%\.overtimetab) переносятся сюда автоматически один раз
+        в режиме copy: оригиналы остаются на месте как резервные копии.
+        """
+        target = self._documents_dir() / "OverTimeTab"
+        target_config = target / "config.json"
+
+        # Источники данных старых версий по приоритету (от новых к самым старым).
+        portable = self.app_dir / "data"          # портативный: data рядом с exe
+        profile = Path.home() / ".overtimetab"    # самый старый: папка в профиле
+        # Старые версии могли класть данные в «Документы» профиля, даже
+        # когда системная папка «Документы» перенесена в другое место, —
+        # такой источник тоже переносим в каноническое место
+        home_documents = Path.home() / "Documents" / "OverTimeTab"
+        sources = [
+            (portable, "data"),
+            (home_documents, None),
+            (profile, None),
+        ]
+
+        # Если каноническое место уже заполнено — работаем оттуда и не трогаем его.
+        if target_config.exists():
+            self._relocate_external_dbs(target)
+            return target
+
+        authoritative = True
+        for src, prefix in sources:
+            src_cfg = src / "config.json"
+            if not src_cfg.exists() or self._source_migrated(src_cfg):
+                continue
+            try:
+                self._migrate_legacy_source(src, target, prefix, authoritative)
+            except Exception:
+                # Первый (главный) источник не перенёсся — не ломаем запуск,
+                # работаем прямо из него; остальные пропускаем.
+                if authoritative:
+                    return src
+                continue
+            authoritative = False
+
+        # После переноса данных или если они уже были в Documents — собираем разбросанные базы.
+        self._relocate_external_dbs(target)
+        return target
+
+    def _source_migrated(self, src_cfg):
+        """Перенесён ли источник в Documents уже раньше."""
+        try:
+            ui = json.loads(src_cfg.read_text(encoding="utf-8")).get("ui") or {}
+            return bool(ui.get("over_time_migrated_to_documents"))
+        except Exception:
+            return False
+
+    def _migrate_legacy_source(self, src, target, prefix, authoritative):
+        """Копирует данные источника в Documents\OverTimeTab (режим copy) и помечает их."""
+        src_cfg = src / "config.json"
+        if not src_cfg.exists():
+            return
+        import shutil
+        target.mkdir(parents=True, exist_ok=True)
+
+        for child in src.iterdir():
+            dst = target / child.name
+            if child.is_dir():
+                shutil.copytree(child, dst, dirs_exist_ok=True)
+            elif not dst.exists():
+                shutil.copy2(child, dst)
+
+        # Пути в конфиге переписываем на новое место только для главного источника —
+        # остальные не должны затирать уже записанный канонический конфиг.
+        if authoritative:
+            try:
+                data = json.loads((target / "config.json").read_text(encoding="utf-8"))
+                self._rewrite_paths_into_target(data, src, target, prefix)
+                data.setdefault("ui", {})["over_time_migrated_to_documents"] = True
+                (target / "config.json").write_text(
+                    json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+            except Exception:
+                pass
+
+        # Помечаем источник перенесённым, чтобы не таскать его при каждом запуске.
+        try:
+            sdata = json.loads(src_cfg.read_text(encoding="utf-8"))
+            sdata.setdefault("ui", {})["over_time_migrated_to_documents"] = True
+            src_cfg.write_text(json.dumps(sdata, ensure_ascii=False, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+
+    def _relocate_external_dbs(self, target):
+        """Собирает базы в Documents\OverTimeTab\databases.
+        
+        У старых версий базы могли лежать где угодно вне папки данных
+        (их абсолютные пути записаны в config.json). Копируем их
+        в \"databases\" внутри Documents и перенаправляем путь на копию, чтобы
+        программа работала с ними в Documents. Оригиналы
+        остаются как резервные копии. Выполняется один раз.
+        """
+        cfg = target / "config.json"
+        if not cfg.exists():
+            return
+        try:
+            data = json.loads(cfg.read_text(encoding="utf-8"))
+        except Exception:
+            return
+        ui = data.get("ui") or {}
+        if ui.get("over_time_dbs_relocated"):
+            return
+        # Всё в тры/except: отдельная база может быть занята другим
+        # процессом — не ломаем запуск, попробуем в следующий раз.
+        try:
+            import shutil
+            db_target = target / "databases"
+
+            def src_of(path_str):
+                p = Path(path_str)
+                return (p.resolve() if p.is_absolute() else (target / p).resolve())
+
+            def relocate(path_str):
+                abs_p = src_of(path_str)
+                try:
+                    abs_p.relative_to(target.resolve())
+                    return str(abs_p).replace("\\", "/")  # уже внутри Documents
+                except ValueError:
+                    pass
+                if not abs_p.is_file():
+                    return str(abs_p).replace("\\", "/")
+                dest = db_target / abs_p.name
+                i = 2
+                while dest.exists() and dest.resolve() != abs_p.resolve():
+                    dest = db_target / f"{abs_p.stem}_{i}{abs_p.suffix}"
+                    i += 1
+                if not dest.exists():
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(abs_p, dest)
+                return str(dest).replace("\\", "/")
+
+            src_to_dest = {}
+            if isinstance(data.get("db_paths"), list):
+                new_paths = []
+                for x in data["db_paths"]:
+                    dest = relocate(x)
+                    src_to_dest[src_of(x)] = dest
+                    new_paths.append(dest)
+                data["db_paths"] = new_paths
+            if isinstance(data.get("last_db_path"), str) and data["last_db_path"]:
+                lp = data["last_db_path"]
+                s = src_of(lp)
+                if s in src_to_dest:
+                    data["last_db_path"] = src_to_dest[s]
+                else:
+                    data["last_db_path"] = relocate(lp)
+            if ui.get("default_db_dir"):
+                dd = Path(ui["default_db_dir"])
+                if dd.is_absolute():
+                    try:
+                        dd.resolve().relative_to(target.resolve())
+                    except ValueError:
+                        ui["default_db_dir"] = str(db_target).replace("\\", "/")
+            data.setdefault("ui", {})["over_time_dbs_relocated"] = True
+            cfg.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+
+    def _rewrite_paths_into_target(self, data, src_dir, target, prefix=None):
+        """Переписывает пути в конфиге со старого места на новое (Documents)."""
+        try:
+            src_res = src_dir.resolve()
+        except Exception:
+            return
+
+        def remap(path_str):
+            p = Path(path_str)
+            if p.is_absolute():
+                try:
+                    rel = p.resolve().relative_to(src_res)
+                    return str(target / rel).replace("\\", "/")
+                except ValueError:
+                    return path_str  # абсолютный путь вне источника — оставляем
+            # Относительный путь. В портативной схеме он был относительно папки
+            # программы и начинался с "data/"; в старом профиле — относительно
+            # самой папки-источника, без префикса.
+            parts = p.parts
+            if prefix and parts and parts[0] == prefix:
+                return str(target.joinpath(*parts[1:])).replace("\\", "/")
+            return str(target.joinpath(*parts)).replace("\\", "/")
+
+        if isinstance(data.get("db_paths"), list):
+            data["db_paths"] = [remap(x) for x in data["db_paths"]]
+        if isinstance(data.get("last_db_path"), str) and data["last_db_path"]:
+            data["last_db_path"] = remap(data["last_db_path"])
+        ui = data.setdefault("ui", {})
+        if ui.get("default_db_dir"):
+            d = Path(ui["default_db_dir"])
+            if d.is_absolute():
+                try:
+                    rel = d.resolve().relative_to(src_res)
+                    ui["default_db_dir"] = str(target / rel).replace("\\", "/")
+                except ValueError:
+                    pass
 
     def load_databases(self):
         loaded_dbs = []
         unique_paths = set() # Сет (множество) для защиты от дубликатов!
-        
+        raw_paths = []
+        healed = {}   # пропавший путь -> найденный (файл перенесли руками)
+
         if self.config_path.exists():
             try:
                 data = json.loads(self.config_path.read_text(encoding="utf-8"))
-                for p in data.get("db_paths", []):
-                    path_obj = Path(p)
-                    # Если путь "относительный" (сохранен с флешки), склеиваем его с текущей папкой программы
-                    if not path_obj.is_absolute():
-                        path_obj = (self.app_dir / path_obj).resolve()
-                    else:
-                        path_obj = path_obj.resolve()
-                    
-                    # Если такой путь мы еще не добавляли и файл реально существует
-                    if str(path_obj) not in unique_paths and path_obj.exists():
-                        try:
-                            temp_db = DB(str(path_obj))
-                            dept_name = temp_db.get_department_name()
-                            temp_db.close()
-                            
-                            loaded_dbs.append({"name": dept_name, "path": str(path_obj)})
-                            unique_paths.add(str(path_obj)) # Запоминаем, что этот путь уже есть
-                        except Exception: 
-                            pass
-                        
+                raw_paths = list(data.get("db_paths", []))
+
                 # Читаем настройку интерфейса!
                 ui_cfg = data.get("ui", {})
-                self._time_input_mode = ui_cfg.get("time_input_mode", "slider")
+                self._time_input_mode = ui_cfg.get("time_input_mode", "tumbler")
                 self._is_dark_theme = ui_cfg.get("theme", "dark") == "dark"
                 self._reminder_enabled = ui_cfg.get("reminder_enabled", True)
+                self._reduced_motion = bool(ui_cfg.get("reduced_motion", False))
+                self._startup_update_enabled = bool(ui_cfg.get("startup_update", True))
                 self._tray_hint_shown = ui_cfg.get("tray_hint_shown", False)
-                
-            except Exception as e: 
+                self._update_url = str(ui_cfg.get("update_url", "") or "").strip()
+
+            except Exception as e:
                 print(f"Ошибка чтения конфига: {e}")
+
+        for p in raw_paths:
+            path_obj = Path(p)
+            # Если путь "относительный" (сохранен с флешки), склеиваем его с текущей папкой программы
+            if not path_obj.is_absolute():
+                path_obj = (self.app_dir / path_obj).resolve()
+            else:
+                path_obj = path_obj.resolve()
+
+            if str(path_obj) in unique_paths:
+                continue
+
+            # Файла нет на старом месте — ищем одноимённый в известных папках
+            # (базу могли перенести руками в папку хранения)
+            if not path_obj.exists():
+                alt = self._find_db_by_name(path_obj.name)
+                if alt is not None:
+                    healed[str(path_obj)] = str(alt)
+                    path_obj = alt
+
+            # Файла нет и не нашёлся — базу не показываем (выбрать всё равно
+            # нельзя); путь остаётся в конфиге: положишь файл на место —
+            # база вернётся в список сама
+            if not path_obj.exists():
+                continue
+
+            try:
+                temp_db = DB(str(path_obj))
+                dept_name = temp_db.get_department_name()
+                temp_db.close()
+                loaded_dbs.append({"name": dept_name, "path": str(path_obj)})
+                unique_paths.add(str(path_obj)) # Запоминаем, что этот путь уже есть
+            except Exception:
+                pass
+
+        # Найденные заново пути сохраняем в конфиг — не искать каждый запуск
+        if healed:
+            try:
+                self._persist_healed_paths(raw_paths, healed)
+            except Exception:
+                pass
 
         self._db_list = loaded_dbs
         self.dbListChanged.emit()
+
+    def _known_db_dirs(self):
+        """Папки, где имеет смысл искать базы: папка хранения (выбранная
+        в настройках или стандартная) и папка данных программы."""
+        dirs = []
+        try:
+            d = Path(self._get_db_dir())
+            if d not in dirs:
+                dirs.append(d)
+        except Exception:
+            pass
+        for d in (Path(self._data_dir), Path(self._data_dir) / "databases",
+                  Path(self.app_dir)):
+            if d not in dirs:
+                dirs.append(d)
+        return dirs
+
+    def _find_db_by_name(self, file_name):
+        """Ищет базу с таким именем файла в известных папках (Path или None).
+
+        Так чинятся пути, сломанные переносом файлов руками: после
+        переноса базы в папку хранения программа находит её сама."""
+        if not file_name:
+            return None
+        for d in self._known_db_dirs():
+            cand = Path(d) / file_name
+            try:
+                if cand.is_file():
+                    ok, _err = self._validate_db_file(str(cand))
+                    if ok:
+                        return cand.resolve()
+            except Exception:
+                continue
+        return None
+
+    def _persist_healed_paths(self, raw_paths, healed):
+        """Записывает перепривязанные пути в config.json."""
+        data = {"db_paths": [], "last_db_path": None, "ui": {}}
+        if self.config_path.exists():
+            try:
+                data = json.loads(self.config_path.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+
+        def remap(p):
+            po = Path(p)
+            key = str(po.resolve() if po.is_absolute() else (Path(self.app_dir) / po).resolve())
+            if key in healed:
+                return healed[key].replace("\\", "/")
+            return p
+
+        if isinstance(data.get("db_paths"), list):
+            data["db_paths"] = [remap(x) for x in data["db_paths"]]
+        if isinstance(data.get("last_db_path"), str) and data["last_db_path"]:
+            data["last_db_path"] = remap(data["last_db_path"])
+        self.config_path.parent.mkdir(parents=True, exist_ok=True)
+        self.config_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def _scan_db_folder(self):
+        """Подключает базы, найденные в папке хранения (молча, без вопросов).
+
+        Сценарий: человек кладёт файлы баз в папку (или выбирает её папкой
+        хранения) — базы сами появляются в списке. Чужие файлы и базы не
+        нашего формата пропускаются. Возвращает число подключённых."""
+        known = set()
+        data = {"db_paths": []}
+        if self.config_path.exists():
+            try:
+                data = json.loads(self.config_path.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+        for p in (data.get("db_paths") or []):
+            po = Path(p)
+            if not po.is_absolute():
+                po = (Path(self.app_dir) / po).resolve()
+            known.add(str(po.resolve()).lower())
+
+        added = 0
+        try:
+            folder = Path(self._get_db_dir())
+            for cand in sorted(folder.glob("*.sqlite")) + sorted(folder.glob("*.db")):
+                if not cand.is_file():
+                    continue
+                # Пустые файлы не подключаем: валидатор пустышки пускает
+                # (из них создаются новые базы), а молча тащить в список
+                # всякие пустые файлы не нужно
+                try:
+                    if cand.stat().st_size == 0:
+                        continue
+                except OSError:
+                    continue
+                if str(cand.resolve()).lower() in known:
+                    continue
+                ok, _err = self._validate_db_file(str(cand))
+                if not ok:
+                    continue
+                self.add_to_config(str(cand))
+                known.add(str(cand.resolve()).lower())
+                added += 1
+        except Exception:
+            pass
+        if added:
+            self.load_databases()
+        return added
+
 
     def add_to_config(self, new_path: str):
         data = {"db_paths": [], "last_db_path": None, "ui": {}}
@@ -408,22 +1036,33 @@ class Backend(QObject):
                     return Path(custom_dir)
             except: pass
             
-        # Если папка не задана, используем стандартную внутри программы
-        db_dir = self.app_dir / "data" / "databases"
+        # Если папка не задана, используем стандартную в папке данных
+        db_dir = self._data_dir / "databases"
         db_dir.mkdir(parents=True, exist_ok=True)
         return db_dir
 
     @Slot()
     def loadPrinters(self):
+        printers, default = [], ""
         try:
             # Читаем все локальные и сетевые принтеры
             flags = win32print.PRINTER_ENUM_LOCAL | win32print.PRINTER_ENUM_CONNECTIONS
             printers = [p[2] for p in win32print.EnumPrinters(flags)]
-            self._printer_list = printers
-            self._default_printer = win32print.GetDefaultPrinter()
-            self.printerListChanged.emit()
-        except Exception as e:
-            print(f"Ошибка загрузки принтеров: {e}")
+            default = win32print.GetDefaultPrinter()
+        except Exception:
+            printers = []
+        if not printers:
+            # win32print недоступен или списка нет — спросим у Qt
+            try:
+                from PySide6.QtPrintSupport import QPrinterInfo
+                printers = [pi.printerName() for pi in QPrinterInfo.availablePrinters()]
+                dp = QPrinterInfo.defaultPrinter()
+                default = dp.printerName() if dp and not dp.isNull() else ""
+            except Exception:
+                pass
+        self._printer_list = printers
+        self._default_printer = default
+        self.printerListChanged.emit()
 
     @Property(list, notify=printerListChanged)
     def printerList(self): return self._printer_list
@@ -470,8 +1109,8 @@ class Backend(QObject):
     @Property(list, notify=dayCompsChanged)
     def dayComps(self): return self._day_comps
 
-    @Property(list, notify=moneyCompsChanged)
-    def moneyComps(self): return self._money_comps
+    @Property(list, notify=moneyOrdersChanged)
+    def moneyOrders(self): return self._money_orders
 
     @Property(dict, notify=departmentDataChanged)
     def departmentData(self): return self._department_data    
@@ -567,6 +1206,30 @@ class Backend(QObject):
     def reminderEnabled(self):
         return self._reminder_enabled
 
+    # ── «Меньше анимаций» (тумблер в настройках) ───────────────────────
+    @Property(bool, notify=reducedMotionChanged)
+    def reducedMotion(self):
+        return self._reduced_motion
+
+    @Slot(bool)
+    def setReducedMotion(self, enabled):
+        if self._reduced_motion == bool(enabled): return
+        self._reduced_motion = bool(enabled)
+        self._write_ui_config("reduced_motion", self._reduced_motion)
+        self.reducedMotionChanged.emit()
+
+    # ── Обновление при запуске (тумблер в настройках) ────────────────
+    @Property(bool, notify=startupUpdateEnabledChanged)
+    def startupUpdateEnabled(self):
+        return self._startup_update_enabled
+
+    @Slot(bool)
+    def setStartupUpdateEnabled(self, enabled):
+        if self._startup_update_enabled == bool(enabled): return
+        self._startup_update_enabled = bool(enabled)
+        self._write_ui_config("startup_update", self._startup_update_enabled)
+        self.startupUpdateEnabledChanged.emit()
+
     @Slot(bool)
     def setReminderEnabled(self, enabled):
         if self._reminder_enabled == bool(enabled): return
@@ -631,7 +1294,7 @@ class Backend(QObject):
 
         ok, err = self._validate_db_file(path)
         if not ok:
-            self.showToast.emit(f"Не удалось подключить: {err}", "error")
+            self.showToast.emit(f"Не удалось подключить базу: {err}. Проверьте файл и попробуйте снова", "error")
             return
 
         self.add_to_config(path)
@@ -644,13 +1307,15 @@ class Backend(QObject):
         # Если нет — честно ругаемся и ОСТАЕМСЯ на старой базе, а не ломаемся посередине.
         ok, err = self._validate_db_file(path)
         if not ok:
-            self.showToast.emit(f"Не удалось открыть базу: {err}", "error")
+            self.showToast.emit(f"Не удалось открыть базу: {err}. Проверьте файл и попробуйте снова", "error")
+            self.databaseOpenFailed.emit(err)
             return
 
         try:
             new_db = DB(path)
         except Exception as e:
-            self.showToast.emit(f"Не удалось открыть базу: {e}", "error")
+            self.showToast.emit(f"Не удалось открыть базу: {e}. Возможно, файл открыт в другой программе — закройте её и попробуйте снова", "error")
+            self.databaseOpenFailed.emit(str(e))
             return
 
         if self.active_db:
@@ -747,8 +1412,8 @@ class Backend(QObject):
                     breaks_data = json.loads(breaks_json)
                     breaks_list = []
                     for b in breaks_data:
-                        bs_time = time(int(b["start_h"]), int(b["start_m"]))
-                        be_time = time(int(b["end_h"]), int(b["end_m"]))
+                        bs_time = dt_time(int(b["start_h"]), int(b["start_m"]))
+                        be_time = dt_time(int(b["end_h"]), int(b["end_m"]))
                         
                         bs_dt = datetime.combine(d0, bs_time)
                         if bs_dt < start_dt: bs_dt += timedelta(days=1)
@@ -764,7 +1429,7 @@ class Backend(QObject):
             self.showToast.emit("Дежурство сохранено", "success")
             
         except Exception as e:
-            self.showToast.emit(f"Ошибка сохранения: {e}", "error")
+            self.showToast.emit(f"Не удалось сохранить дежурство: {e}. Проверьте время и попробуйте снова", "error")
 
     @Slot(str, str, str, str, bool)
     def saveCompensation(self, dates_csv, comp_type, amount_str, comment, use_prev_year):
@@ -782,10 +1447,20 @@ class Backend(QObject):
                             (self._selected_employee_id, comp_type, "day_off", d_iso(logic_date), d_iso(d0), int(amount_str), comment or None)
                         )
                 else:
-                    # Дни
+                    # День сотрудника не может входить в две компенсации сразу:
+                    # скажем человеку, с чем пересеклись дни, а не дадим SQLite
+                    # упасть с непонятной ошибкой UNIQUE.
+                    conflicts = self.active_db.find_day_conflicts(
+                        self._selected_employee_id,
+                        [d_iso(d) for d in dates_list])
+                    if conflicts:
+                        raise Exception(format_day_conflicts(conflicts))
+                    # Дни. order_date — НАЧАЛО ПЕРИОДА: по нему списание
+                    # крепится к году, где период начался (даже для «за пред.
+                    # год», чей event_date — техническая метка 1900-01-01).
                     cur = self.active_db.conn.execute(
-                        "INSERT INTO compensation(employee_id,unit,method,amount_days,comment,event_date) VALUES (?,?,?,?,?,?)",
-                        (self._selected_employee_id, "days", "day_off", len(dates_list), comment or None, d_iso(logic_date)),
+                        "INSERT INTO compensation(employee_id,unit,method,amount_days,comment,event_date,order_date) VALUES (?,?,?,?,?,?,?)",
+                        (self._selected_employee_id, "days", "day_off", len(dates_list), comment or None, d_iso(logic_date), d_iso(dates_list[0])),
                     )
                     comp_id = cur.lastrowid
                     for d0 in dates_list:
@@ -794,15 +1469,97 @@ class Backend(QObject):
                             (comp_id, self._selected_employee_id, d_iso(d0))
                         )
 
-                is_valid, err = validate_non_negative_over_year(self.active_db, self._selected_employee_id, self.current_year)
-                if not is_valid:
-                    raise Exception(err)
+                # Период может шагнуть через 1 января: проверяем все годы,
+                # которые он задел, а не только открытый сейчас.
+                y0 = min([self.current_year] + [d.year for d in dates_list])
+                y1 = max([self.current_year] + [d.year for d in dates_list])
+                for y in range(y0, y1 + 1):
+                    is_valid, err = validate_non_negative_over_year(self.active_db, self._selected_employee_id, y)
+                    if not is_valid:
+                        raise Exception(err)
 
             self.refresh_calendar()
-            self.refresh_yearly_panorama()
-            self.refresh_pulse()
+            self._defer_year_refresh()
         except Exception as e:
-            self.showToast.emit(str(e), "error")
+            self.showToast.emit(f"Не удалось сохранить компенсацию: {e}. Проверьте значения и попробуйте снова", "error")
+
+    @Slot(str, str, str, str)
+    def saveCompensationBoth(self, dates_csv, comp_type, amount_str, comment):
+        # Период «за оба года»: одна кнопка — две записи.
+        # Сначала дни берёт текущий год (свой поочерёдный период с начала), остаток — заначка
+        # прошлого года (event_date=1900) — ровно так, как человек делал двумя периодами вручную.
+        # Дни не пересекаются, каждая копилка считает своё.
+        if not self.active_db or self._selected_employee_id == 0 or not dates_csv: return
+        try:
+            dates_list = [d_parse(d.strip()) for d in dates_csv.split(",") if d.strip()]
+            if not dates_list: return
+            with self.active_db.transaction():
+                y = dates_list[0].year
+                cur = self.getAvailableBalances(y)
+                prev = self.getAvailableBalances(y - 1)
+                total = int(amount_str) if comp_type in ("hours", "overtime") else len(dates_list)
+                n1, n2 = split_both_years(cur, prev, comp_type, total)
+
+                if comp_type in ("hours", "overtime"):
+                    if n1 > 0:
+                        self.active_db.conn.execute(
+                            "INSERT INTO compensation(employee_id,unit,method,event_date,order_date,amount_minutes,comment) VALUES (?,?,?,?,?,?,?)",
+                            (self._selected_employee_id, comp_type, "day_off", d_iso(dates_list[0]), d_iso(dates_list[0]), n1, comment or None))
+                    if n2 > 0:
+                        self.active_db.conn.execute(
+                            "INSERT INTO compensation(employee_id,unit,method,event_date,order_date,amount_minutes,comment) VALUES (?,?,?,?,?,?,?)",
+                            (self._selected_employee_id, comp_type, "day_off", "1900-01-01", d_iso(dates_list[0]), n2, comment or None))
+                else:
+                    conflicts = self.active_db.find_day_conflicts(
+                        self._selected_employee_id,
+                        [d_iso(d) for d in dates_list])
+                    if conflicts:
+                        raise Exception(format_day_conflicts(conflicts))
+                    if n1 > 0:
+                        cur_ins = self.active_db.conn.execute(
+                            "INSERT INTO compensation(employee_id,unit,method,amount_days,comment,event_date,order_date) VALUES (?,?,?,?,?,?,?)",
+                            (self._selected_employee_id, "days", "day_off", n1, comment or None, d_iso(dates_list[0]), d_iso(dates_list[0])))
+                        for d0 in dates_list[:n1]:
+                            self.active_db.conn.execute(
+                                "INSERT INTO comp_day_off_date(compensation_id,employee_id,day_off_date) VALUES (?,?,?)",
+                                (cur_ins.lastrowid, self._selected_employee_id, d_iso(d0)))
+                    if n2 > 0:
+                        prev_ins = self.active_db.conn.execute(
+                            "INSERT INTO compensation(employee_id,unit,method,amount_days,comment,event_date,order_date) VALUES (?,?,?,?,?,?,?)",
+                            (self._selected_employee_id, "days", "day_off", n2, comment or None, "1900-01-01", d_iso(dates_list[0])))
+                        for d0 in dates_list[n1:]:
+                            self.active_db.conn.execute(
+                                "INSERT INTO comp_day_off_date(compensation_id,employee_id,day_off_date) VALUES (?,?,?)",
+                                (prev_ins.lastrowid, self._selected_employee_id, d_iso(d0)))
+
+                y0 = min([self.current_year] + [d.year for d in dates_list])
+                y1 = max([self.current_year] + [d.year for d in dates_list])
+                for y in range(y0, y1 + 1):
+                    is_valid, err = validate_non_negative_over_year(self.active_db, self._selected_employee_id, y)
+                    if not is_valid:
+                        raise Exception(err)
+
+            self.refresh_calendar()
+            self._defer_year_refresh()
+        except Exception as e:
+            self.showToast.emit(f"Не удалось сохранить компенсацию: {e}. Проверьте значения и попробуйте снова", "error")
+
+    @Slot(str, int, result="QVariant")
+    def checkDayConflicts(self, dates_csv, exclude_comp_id):
+        # Пересечение запрошенных дней с уже существующими
+        # компенсациями. Окно вызывает перед сохранением, чтобы
+        # показать ошибку прямо в окне (как с остатками), а не тостом.
+        # exclude_comp_id — запись, которую сейчас правим: свои дни не мешают.
+        if not self.active_db or self._selected_employee_id == 0:
+            return {"has": False, "message": ""}
+        dates = [d.strip() for d in (dates_csv or "").split(",") if d.strip()]
+        if not dates:
+            return {"has": False, "message": ""}
+        conflicts = self.active_db.find_day_conflicts(
+            self._selected_employee_id, dates, int(exclude_comp_id or 0))
+        return {"has": bool(conflicts),
+                "message": format_day_conflicts(conflicts) if conflicts else "",
+                "count": len(conflicts)}
 
     @Slot(int, result="QVariant")
     def getAvailableBalances(self, year):
@@ -817,37 +1574,16 @@ class Backend(QObject):
         hire_y, hire_m = safe_get_hire_date(emp["start_month"])
         
         # 1. СЛУЧАЙ: СПИСАНИЕ ИЗ ПРОШЛОГО ГОДА (ЭТАЛОНА)
-        # Если запрашиваемый год меньше текущего рабочего года
+        # Заначка больше не берётся «как есть» из карточки сотрудника: с 1 января
+        # она формируется из остатка «этого года» на конец прошлого года и
+        # уменьшается только списаниями текущего года. Это ровно те числа, что
+        # показаны серой скобкой в панели балансов, поэтому диалог и панель
+        # никогда не расходятся.
         if year < self.current_year:
-            # Берем чистые цифры из карточки (наш Эталон)
-            h = int(emp["prev_opening_minutes"] or 0)
-            o = int(emp["prev_opening_overtime_minutes"] or 0)
-            d = int(emp["prev_opening_days"] or 0)
-            
-            # Считаем, сколько мы УЖЕ потратили из этого Эталона в ТЕКУЩЕМ году.
-            # (Ищем все записи с меткой 1900, сделанные в текущем self.current_year)
-            current_y_str = str(self.current_year)
-            
-            # Вычитаем потраченные часы и сверхнорму
-            r_h = self.active_db.conn.execute("""
-                SELECT unit, SUM(amount_minutes) as sm 
-                FROM compensation 
-                WHERE employee_id=? AND event_date='1900-01-01' AND unit IN ('hours', 'overtime')
-                  AND substr(order_date, 1, 4) = ?
-                GROUP BY unit
-            """, (self._selected_employee_id, current_y_str)).fetchall()
-            
-            # Вычитаем потраченные дни
-            r_d = self.active_db.conn.execute("""
-                SELECT COUNT(*) as cd FROM comp_day_off_date 
-                WHERE employee_id=? AND day_off_date >= ? AND day_off_date <= ?
-                  AND compensation_id IN (SELECT id FROM compensation WHERE event_date='1900-01-01' AND unit='days')
-            """, (self._selected_employee_id, current_y_str + "-01-01", current_y_str + "-12-31")).fetchone()["cd"] or 0
-            
-            for row in r_h:
-                if row["unit"] == "hours": h -= int(row["sm"] or 0)
-                elif row["unit"] == "overtime": o -= int(row["sm"] or 0)
-            d -= r_d
+            summ = compute_month_summary(self.active_db, self._selected_employee_id, self.current_year, self.current_month)
+            h = int(summ.get("prev_h_end", 0) or 0)
+            o = int(summ.get("prev_o_end", 0) or 0)
+            d = int(summ.get("prev_d_end", 0) or 0)
 
             # Возвращаем результат (часы переводим в целые числа для интерфейса)
             return {
@@ -864,43 +1600,6 @@ class Backend(QObject):
             "overtime": max(0, (summ["start_overtime"] + summ["acc_overtime"]) // 60),
             "days": max(0, summ["start_days"] + summ["acc_days"])
         }
-
-    @Slot(str, str, str, str)
-    def saveMoneyCompList(self, comps_json, order_no, order_date_str, comment):
-        if not self.active_db or self._selected_employee_id == 0: return
-        try:
-            order_date = d_parse(order_date_str)
-            comps = json.loads(comps_json)
-            with self.active_db.transaction():
-                for c in comps:
-                    unit, amount = c["unit"], int(c["amount"])
-                    is_prev = c.get("usePrevYear", False)
-                    
-                    if is_prev:
-                        # ПРОВЕРКА ЭТАЛОНА
-                        balances = self.getAvailableBalances(self.current_year - 1)
-                        max_val = balances[unit]
-                        if amount > max_val:
-                            raise Exception(f"Ошибка: Недостаточно средств в остатках прошлого года. Доступно: {max_val}")
-
-                    # Сохранение
-                    if unit in ("hours", "overtime"):
-                        self.active_db.add_compensation_money(self._selected_employee_id, unit, amount * 60, None, order_no, order_date, comment)
-                    else:
-                        self.active_db.add_compensation_money(self._selected_employee_id, unit, None, amount, order_no, order_date, comment)
-                    
-                    if is_prev:
-                        last_id = self.active_db.conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-                        self.active_db.conn.execute("UPDATE compensation SET event_date='1900-01-01' WHERE id=?", (last_id,))
-                
-                # Общая проверка на минусы в течение года
-                is_valid, err = validate_non_negative_over_year(self.active_db, self._selected_employee_id, self.current_year)
-                if not is_valid: raise Exception(err)
-                
-            self.refresh_calendar(); self.refresh_employees(); self.refresh_yearly_panorama(); self.loadMoneyComps()
-            self.showToast.emit("Приказ сохранен", "success")
-        except Exception as e:
-            self.showToast.emit(str(e), "error")
 
     @Slot(str)
     def loadDayDetails(self, date_str):
@@ -948,15 +1647,15 @@ class Backend(QObject):
             suffix = " (за прошлый год)" if is_prev else ""
 
             if unit == "hours":
-                type_str = "Ночные часы"
+                type_str = "В ночное время"
                 amount_str = fmt_minutes_ru_words(int(c["amount_minutes"] or 0))
                 raw = int(c["amount_minutes"] or 0)
             elif unit == "overtime":
-                type_str = "Сверх нормы"
+                type_str = "Сверхурочно"
                 amount_str = fmt_minutes_ru_words(int(c["amount_minutes"] or 0))
                 raw = int(c["amount_minutes"] or 0)
             else:
-                type_str = "Дни"
+                type_str = "Дни отдыха"
                 amount_str = "1 день"
                 raw = 1
 
@@ -980,14 +1679,13 @@ class Backend(QObject):
             self.active_db.conn.execute("COMMIT;")
             
             self.refresh_calendar()
-            self.refresh_yearly_panorama()
-            self.refresh_pulse()            
+            self._defer_year_refresh()
             self.loadDayDetails(current_day_str)
             self.showToast.emit("Дежурство удалено. Отменить: Ctrl+Z", "success")
             
         except Exception as e:
             self.active_db.conn.execute("ROLLBACK;")
-            self.showToast.emit(f"Не удалось удалить дежурство: {e}", "error")
+            self.showToast.emit(f"Не удалось удалить дежурство: {e}. Возможно, база открыта в другой программе", "error")
 
     @Slot(int, str)
     def deleteCompensation(self, comp_id, current_day_str):
@@ -1016,8 +1714,7 @@ class Backend(QObject):
             self.active_db.conn.execute("COMMIT;")
 
             self.refresh_calendar()
-            self.refresh_yearly_panorama()
-            self.refresh_pulse()            
+            self._defer_year_refresh()
             self.loadDayDetails(current_day_str)
             self.showToast.emit("Компенсация удалена. Отменить: Ctrl+Z", "success")
 
@@ -1049,8 +1746,7 @@ class Backend(QObject):
             self.active_db.conn.execute("COMMIT;")
             
             self.refresh_calendar()
-            self.refresh_yearly_panorama()
-            self.refresh_pulse()            
+            self._defer_year_refresh()
             self.showToast.emit(f"Дежурства удалены. Отменить: Ctrl+Z", "success")
             # ...
         except Exception as e:
@@ -1097,8 +1793,7 @@ class Backend(QObject):
             self.active_db.conn.execute("COMMIT;")
             
             self.refresh_calendar()
-            self.refresh_yearly_panorama()
-            self.refresh_pulse()            
+            self._defer_year_refresh()
             self.showToast.emit(f"Компенсации удалены. Отменить: Ctrl+Z", "success")
         except Exception as e:
             self.active_db.conn.execute("ROLLBACK;")
@@ -1171,8 +1866,7 @@ class Backend(QObject):
                     "name": g_name,
                     "group_id": int(gid) if gid is not None else 0,
                     "subtitle": "", "is_active": True, "has_overtime": False,
-                    "shift_minutes": 0, "norm_minutes": 0, "last_name": "", "first_name": "", "middle_name": "", "rank": "", "position": "", "start_month": ""
-                })
+                    "shift_minutes": 0, "norm_minutes": 0, "last_name": "", "first_name": "", "middle_name": "", "rank": "", "position": "",                 })
                 current_header_gid = gid
 
             # Собираем красивый текст для карточки
@@ -1232,6 +1926,7 @@ class Backend(QObject):
                 "rank": e["rank"] or "",
                 "position": e["position"] or "",
                 "start_month": e["start_month"],
+                "hire_date": e["hire_date"] or "",
                 "opening_minutes": int(e["opening_minutes"] or 0),
                 "opening_overtime": int(e["opening_overtime_minutes"] or 0),
                 "opening_days": int(e["opening_days"] or 0),
@@ -1242,7 +1937,7 @@ class Backend(QObject):
             })
             
         self._employee_list = formatted_emps
-        self.employeeListChanged.emit() 
+        self.employeeListChanged.emit()
 
     def refresh_pulse(self):
         """Проверяет каждый из 12 месяцев: есть ли там данные для 'зеленой точки'"""
@@ -1290,6 +1985,24 @@ class Backend(QObject):
             build_shifted_weekend_checker(self.active_db, self._selected_employee_id)
             if self._selected_employee_id > 0 else None
         )
+        # Дата приема выбранного сотрудника: дни до неё в месяце
+        # приема — серые неактивные (как вкладки месяцев до приема).
+        hire_date_iso = ""
+        if self._selected_employee_id > 0:
+            try:
+                emp_h = self.active_db.get_employee(self._selected_employee_id)
+                hire_date_iso = str(emp_h["hire_date"] or "").strip()
+                if not hire_date_iso and emp_h["start_month"]:
+                    hire_date_iso = str(emp_h["start_month"])[:7] + "-01"
+            except Exception:
+                hire_date_iso = ""
+        # Дата увольнения/перевода: дни после неё — так же серые неактивные.
+        end_date_iso = ""
+        if self._selected_employee_id > 0:
+            try:
+                end_date_iso = str(emp_h["end_date"] or "").strip()
+            except Exception:
+                end_date_iso = ""
         
         duty_map = {}
         comp_set = set()
@@ -1352,6 +2065,8 @@ class Backend(QObject):
                     "date_str": d_str,
                     "day_number": d.day,
                     "is_current_month": d.month == self.current_month,
+                    "is_before_hire": bool(hire_date_iso) and d_str < hire_date_iso,
+                    "is_after_end": bool(end_date_iso) and d_str > end_date_iso,
                     "is_weekend": (not is_working) and (not is_holiday),
                     "is_holiday": is_holiday,
                     "is_pre_holiday": d in pre_holidays_set,
@@ -1379,28 +2094,15 @@ class Backend(QObject):
             except Exception:
                 money_txt = "—"
 
-            # Умная функция для скобочек в остатках
-            # Умная функция для скобочек в остатках (НА НАЧАЛО / НА КОНЕЦ)
-            def fmt_dual(val, prev_val, is_days=False):
-                main = (f"{val} д." if is_days else fmt_minutes_ru_words(val))
-                if prev_val == 0: return main
-                # Зеленые скобки для Эталона
-                return f"{main} <font color='#4CAF50'>({fmt_minutes_ru_words(prev_val) if not is_days else str(prev_val) + ' д.'})</font>"
+            # Остатки и итоги оформляются общими правилами (см. fmt_dual / fmt_comp /
+            # total_overtime_days в начале файла) — они же используются в годовом виде.
 
-            # Умная функция для колонки КОМПЕНСИРОВАНО
-            def fmt_comp(real_val, prev_val, is_days=False):
-                # Если вообще ничего не списывали - рисуем прочерк
-                if real_val == 0 and prev_val == 0: return "—"
-                
-                # Форматируем основную часть (этот год)
-                main = (f"{real_val} д." if is_days else fmt_minutes_ru_words(real_val))
-                
-                # Если прошлого года нет - отдаем только основную
-                if prev_val == 0: return main
-                
-                # Если этот год 0, а прошлый есть - пишем "0 (за прошлый...)"
-                suffix = (f"{prev_val} д." if is_days else fmt_minutes_ru_words(prev_val))
-                return f"{main} <font color='#4CAF50'>(за пред. год: {suffix})</font>"
+            # «Всего дней» — переработка сотрудника в днях (остаток на конец месяца).
+            total_days = total_overtime_days(
+                summ["end_hours"], summ["prev_h_end"],
+                summ["end_overtime"], summ["prev_o_end"],
+                summ["end_days"], summ["prev_d_end"],
+            )
 
             self._month_summary = {
                 "is_shift": summ["is_shift"], 
@@ -1429,13 +2131,42 @@ class Backend(QObject):
                 
                 "is_overtime_negative": summ["end_overtime"] < 0,
                 "is_hours_negative": summ["end_hours"] < 0,
-                "is_days_negative": summ["end_days"] < 0
+                "is_days_negative": summ["end_days"] < 0,
+                "total_days": int(total_days)
             }
         else:
             self._month_summary = {}
         self.monthSummaryChanged.emit()
 
+    def _lazy_year_refresh(self):
+        if not self.active_db:
+            return
+        with summary_cache_scope():
+            self.refresh_yearly_panorama()
+            self.refresh_pulse()
+
+    def _defer_year_refresh(self):
+        """Панорама года и точки месяцев — чуть позже, после отрисовки.
+
+        Календарь и панель дня обновляются сразу (пользователь ждёт
+        отклика), а пересчёт года не блокирует окно.
+        """
+        try:
+            self._lazy_year_timer.start()
+        except Exception:
+            self.refresh_yearly_panorama()
+            self.refresh_pulse()
+
     def refresh_yearly_panorama(self):
+        """Собирает данные за весь год для годовой сетки.
+
+        Считается под кэшем итогов месяцев: 12 месяцев делят между
+        собой декабри прошлых лет вместо десятков повторных расчётов.
+        """
+        with summary_cache_scope():
+            self._refresh_yearly_panorama_impl()
+
+    def _refresh_yearly_panorama_impl(self):
         """Собирает данные за весь год для годовой сетки"""
         if not self.active_db or self._selected_employee_id == 0:
             self._yearly_data = []
@@ -1525,20 +2256,48 @@ class Backend(QObject):
         self.yearlyDataChanged.emit()
 
         # === СОБИРАЕМ ИТОГИ ЗА ГОД ДЛЯ НИЖНЕЙ ПАНЕЛИ ===
+        # Панель балансов — одна на месяц и на год, поэтому годовой набор полей
+        # повторяет месячный: «на начало года / начислено / компенсировано /
+        # остаток на конец года» + скобка прошлого года у остатков.
         t_acc_h = t_acc_o = t_acc_d = 0
-        t_comp_h = t_comp_o = t_comp_d = 0
+        # Списано: отдельно этот год (real) и прошлый год (prev) — для серой скобки
+        t_comp_h = t_comp_hp = 0
+        t_comp_o = t_comp_op = 0
+        t_comp_d = t_comp_dp = 0
+        # Остаток на конец года (декабрь) и на начало года (первый активный месяц)
         end_h = end_o = end_d = 0
-        
+        prev_h_end = prev_o_end = prev_d_end = 0
+        start_h = start_o = start_d = 0
+        prev_h_start = prev_o_start = prev_d_start = 0
+        start_taken = False
+
         for m in range(1, 13):
             s = compute_month_summary(self.active_db, eid, self.current_year, m)
             t_acc_h += s["acc_hours"]
             t_acc_o += s["acc_overtime"]
             t_acc_d += s["acc_days"]
-            t_comp_h += s.get("comp_hours", 0)
-            t_comp_o += s.get("comp_overtime", 0)
-            t_comp_d += s.get("comp_days", 0)
+            t_comp_h += s.get("comp_h_real", 0)
+            t_comp_hp += s.get("comp_h_prev", 0)
+            t_comp_o += s.get("comp_o_real", 0)
+            t_comp_op += s.get("comp_o_prev", 0)
+            t_comp_d += s.get("comp_d_real", 0)
+            t_comp_dp += s.get("comp_d_prev", 0)
+            # До приёма сотрудника compute_month_summary отдаёт нули без «прошлогодних»
+            # ключей — по их наличию и берём первый содержательный месяц как «на начало».
+            if not start_taken and "prev_h_start" in s:
+                start_taken = True
+                start_h, start_o, start_d = s["start_hours"], s["start_overtime"], s["start_days"]
+                prev_h_start = s["prev_h_start"]
+                prev_o_start = s["prev_o_start"]
+                prev_d_start = s["prev_d_start"]
             if m == 12:
                 end_h, end_o, end_d = s["end_hours"], s["end_overtime"], s["end_days"]
+                prev_h_end = s.get("prev_h_end", 0)
+                prev_o_end = s.get("prev_o_end", 0)
+                prev_d_end = s.get("prev_d_end", 0)
+
+        # «Всего дней» — та же формула, что и в месячном виде.
+        total_days = total_overtime_days(end_h, prev_h_end, end_o, prev_o_end, end_d, prev_d_end)
 
         b_days = o_days = k_days = 0
         for date_str, info in data_map.items():
@@ -1562,22 +2321,35 @@ class Backend(QObject):
             money_txt = "—"
 
         self._year_summary = {
+            # НА НАЧАЛО ГОДА: остаток на 1 января + серая скобка прошлого года
+            "start_hours": fmt_dual(start_h, prev_h_start),
+            "start_overtime": fmt_dual(start_o, prev_o_start),
+            "start_days": fmt_dual(start_d, prev_d_start, True),
+
+            # НАЧИСЛЕНО ЗА ГОД
             "acc_hours": fmt_minutes_ru_words(t_acc_h),
             "acc_overtime": fmt_minutes_ru_words(t_acc_o),
             "acc_days": f"{t_acc_d} д.",
-            "comp_hours": fmt_minutes_ru_words(t_comp_h),
-            "comp_overtime": fmt_minutes_ru_words(t_comp_o),
-            "comp_days": f"{t_comp_d} д.",
+
+            # КОМПЕНСИРОВАНО ЗА ГОД: этот год + серая скобка прошлого
+            "comp_hours": fmt_comp(t_comp_h, t_comp_hp),
+            "comp_overtime": fmt_comp(t_comp_o, t_comp_op),
+            "comp_days": fmt_comp(t_comp_d, t_comp_dp, True),
             "comp_money": money_txt,
-            "end_hours": fmt_minutes_ru_words(end_h),
-            "end_overtime": fmt_minutes_ru_words(end_o),
-            "end_days": f"{end_d} д.",
+
+            # ОСТАТОК НА КОНЕЦ ГОДА: этот год + серая скобка прошлого
+            "end_hours": fmt_dual(end_h, prev_h_end),
+            "end_overtime": fmt_dual(end_o, prev_o_end),
+            "end_days": fmt_dual(end_d, prev_d_end, True),
+
+            # СТАТУСЫ ДНЕЙ ЗА ГОД
             "b_days": f"{b_days} дн." if b_days else "—",
             "o_days": f"{o_days} дн." if o_days else "—",
             "k_days": f"{k_days} дн." if k_days else "—",
             "is_hours_negative": end_h < 0,
             "is_overtime_negative": end_o < 0,
-            "is_days_negative": end_d < 0
+            "is_days_negative": end_d < 0,
+            "total_days": int(total_days)
         }
         self.yearSummaryChanged.emit()
 
@@ -1593,8 +2365,7 @@ class Backend(QObject):
             
             self.refresh_calendar()
 
-            self.refresh_yearly_panorama()
-            self.refresh_pulse()
+            self._defer_year_refresh()
 
         except Exception as e:
             if self.active_db:
@@ -1614,12 +2385,29 @@ class Backend(QObject):
             
             self.refresh_calendar()
             #self.refresh_employees()
-            self.refresh_yearly_panorama()
+            self._defer_year_refresh()
             print(f"ПИТОН: День {date_str} стал -> {day_type}")
             
         except Exception as e:
             self.active_db.conn.execute("ROLLBACK;")
             print(f"ОШИБКА смены типа дня: {e}")
+
+    @Slot(list, str)
+    def setDayStatusBulk(self, dates, status_code):
+        """Статус сразу нескольким дням (выделение протяжкой)."""
+        if not self.active_db or self._selected_employee_id == 0:
+            return
+        try:
+            self.active_db.begin()
+            for date_str in (dates or []):
+                self.active_db.set_day_status(
+                    self._selected_employee_id, d_parse(date_str), status_code)
+            self.active_db.conn.execute("COMMIT;")
+            self.refresh_calendar()
+            self._defer_year_refresh()
+        except Exception:
+            if self.active_db:
+                self.active_db.conn.execute("ROLLBACK;")
 
     @Slot(str, str, str, str, str, str, int, int, int, int, int, int)
     def saveEmployee(self, last_name, first_name, middle_name, rank, position, start_month, open_mins, open_overtime_mins, open_days, prev_mins, prev_overtime, prev_days):
@@ -1672,6 +2460,11 @@ class Backend(QObject):
             self.refresh_employees()
             self.refresh_calendar()
             self.showToast.emit("Сотрудник обновлен", "success")
+            # Если правили выбранного сотрудника — дата приема могла сместиться:
+            # вкладки месяцев и прочие панели слушают этот сигнал и без него остаются старыми,
+            # пока пользователь не перевыберет сотрудника.
+            if emp_id == self._selected_employee_id:
+                self.selectedEmployeeChanged.emit()
         except Exception as e:
             self.active_db.conn.execute("ROLLBACK;")
             self.showToast.emit(f"Ошибка: {e}", "error")
@@ -1742,66 +2535,382 @@ class Backend(QObject):
             self.active_db.conn.execute("ROLLBACK;")
             print(f"ОШИБКА отмены увольнения: {e}")
 
+    # ============================================================
+    # ВЕДОМОСТЬ: один приказ — всем сотрудникам сразу
+    # ============================================================
+    def _money_balances(self, emp_id):
+        """Доступные к денежной компенсации часы/сверхурочные/дни
+        сотрудника на текущий месяц — остаток на конец месяца, как в
+        панели балансов: из начисленного вычтено всё, что уже
+        компенсировано в этом месяце (отгулы и денежные приказы).
+        Раньше здесь было «начало + начислено» без вычета: «Компенсировать
+        всё» подставляло больше, чем есть на дату приказа, и приказ
+        падал уже на годовой проверке — с запутанной ошибкой про ночные
+        часы (день сверх копилки закрывается восемью ночными часами)."""
+        from logic import compute_month_summary as _cms
+        summ = _cms(self.active_db, emp_id, self.current_year, self.current_month)
+        return {
+            "hours": max(0, summ["end_hours"] // 60),
+            "overtime": max(0, summ["end_overtime"] // 60),
+            "days": max(0, summ["end_days"]),
+        }
+
+    def _money_prev_balances(self, emp_id):
+        """Заначка прошлого года, доступная прямо сейчас: остаток
+        прошлого года минус всё, что уже списали из неё (в этом и
+        прошлых месяцах). Считается так же, как в панели балансов и
+        в проверке лимитов — единый источник истины."""
+        from logic import compute_month_summary as _cms
+        summ = _cms(self.active_db, emp_id, self.current_year, self.current_month)
+        return {
+            "hours": max(0, summ["prev_h_end"] // 60),
+            "overtime": max(0, summ["prev_o_end"] // 60),
+            "days": max(0, summ["prev_d_end"]),
+        }
+
+    def _money_balances_for(self, emp_id, source_mode):
+        """Остатки по режиму: 0 — текущий год, 1 — заначка прошлого
+        года, 2 — оба года вместе."""
+        cur = self._money_balances(emp_id)
+        if source_mode == 1:
+            return self._money_prev_balances(emp_id)
+        if source_mode == 2:
+            prev = self._money_prev_balances(emp_id)
+            return {k: cur[k] + prev[k] for k in cur}
+        return cur
+
+    @Slot(result="QVariant")
+    def moneyOrderEmployees(self):
+        """Список сотрудников подразделения с остатками для ведомости
+        (текущий год + заначка прошлого года)."""
+        if not self.active_db:
+            return []
+        emps = self.active_db.list_employees_for_month(
+            self.current_year, self.current_month, True, "")
+        res = []
+        for e in emps:
+            eid = int(e["id"])
+            b = self._money_balances(eid)
+            pv = self._money_prev_balances(eid)
+            fio = f"{e['last_name']} {e['first_name']} {e['middle_name'] or ''}".strip()
+            sub = " — ".join([x for x in [(e["rank"] or "").strip(),
+                                          (e["position"] or "").strip()] if x])
+            res.append({
+                "id": eid, "name": fio, "subtitle": sub,
+                "hours": b["hours"], "overtime": b["overtime"], "days": b["days"],
+                "prevHours": pv["hours"], "prevOvertime": pv["overtime"],
+                "prevDays": pv["days"],
+            })
+        return res
+
+    @Slot(str, str, str, str, result="QVariant")
+    def _money_add(self, eid, unit, amount, order_no, order_date, comment,
+                   from_prev):
+        """Одна денежная запись; from_prev=True помечает её списанием
+        из заначки прошлого года (event_date='1900-01-01')."""
+        if unit == "days":
+            self.active_db.add_compensation_money(
+                eid, unit, None, amount, order_no, order_date, comment)
+        else:
+            self.active_db.add_compensation_money(
+                eid, unit, amount * 60, None, order_no, order_date, comment)
+        if from_prev:
+            last_id = self.active_db.conn.execute(
+                "SELECT last_insert_rowid()").fetchone()[0]
+            self.active_db.conn.execute(
+                "UPDATE compensation SET event_date='1900-01-01' WHERE id=?",
+                (last_id,))
+
+    def _money_order_write(self, rows, order_no, order_date, comment,
+                           source_mode):
+        """Проверка остатков и запись строк приказа. Вызывается ВНУТРИ
+        транзакции вызывающего. Возвращает (checked, errors): при
+        ошибках записей нет, транзакцию откатывает вызывающий.
+
+        source_mode: 0 — текущий год, 1 — заначка прошлого года,
+        2 — оба года: сначала списывается текущий год, остаток —
+        из заначки (двумя записями)."""
+        errors = []
+        checked = []
+        names = {}   # eid → ФИО: годовая проверка падает после записи,
+        # её ошибка приписывается сотруднику (подсветка строки и имя)
+        for r in rows:
+            eid = int(r.get("id") or 0)
+            hours = max(0, int(r.get("hours") or 0))
+            overtime = max(0, int(r.get("overtime") or 0))
+            days = max(0, int(r.get("days") or 0))
+            if eid <= 0 or (hours + overtime + days) <= 0:
+                continue
+            emp = self.active_db.get_employee(eid)
+            if emp is None:
+                continue
+            b = self._money_balances_for(eid, source_mode)
+            fio = f"{emp['last_name']} {emp['first_name']}".strip()
+            names[eid] = fio
+            ok = True
+            # field — какое поле строки не сошлось (часы/дни/сверхурочные):
+            # окно вспыхивает красной рамкой именно его, как у текстовых полей
+            if hours > b["hours"]:
+                errors.append({"id": eid, "name": fio, "field": "hours",
+                               "message": f"не хватает часов: доступно {b['hours']}, запрошено {hours}"})
+                ok = False
+            if overtime > b["overtime"]:
+                errors.append({"id": eid, "name": fio, "field": "overtime",
+                               "message": f"не хватает сверхурочных: доступно {b['overtime']}, запрошено {overtime}"})
+                ok = False
+            if days > b["days"]:
+                errors.append({"id": eid, "name": fio, "field": "days",
+                               "message": f"не хватает дней: доступно {b['days']}, запрошено {days}"})
+                ok = False
+            if ok:
+                checked.append((eid, hours, overtime, days))
+
+        if errors:
+            return checked, errors
+        if not checked:
+            return [], [{"id": 0, "name": "",
+                         "message": "отметьте сотрудников и укажите суммы"}]
+
+        for eid, hours, overtime, days in checked:
+            cur = self._money_balances(eid) if source_mode == 2 else None
+            for unit, amount in (("hours", hours),
+                                 ("overtime", overtime), ("days", days)):
+                if amount <= 0:
+                    continue
+                if source_mode == 2:
+                    # оба года: сначала текущий, остаток — из заначки
+                    take_cur = min(amount, cur[unit])
+                    take_prev = amount - take_cur
+                    if take_cur > 0:
+                        self._money_add(eid, unit, take_cur, order_no,
+                                        order_date, comment, False)
+                    if take_prev > 0:
+                        self._money_add(eid, unit, take_prev, order_no,
+                                        order_date, comment, True)
+                else:
+                    self._money_add(eid, unit, amount, order_no, order_date,
+                                    comment, source_mode == 1)
+            is_valid, err = validate_non_negative_over_year(
+                self.active_db, eid, self.current_year)
+            if not is_valid:
+                # Раньше здесь было «raise»: ошибка годовой проверки
+                # уходила безымянной (id 0) — окно не могло подсветить
+                # виновника и показывало голый текст. Теперь она
+                # приписывается сотруднику; записанное откатывается
+                # вызывающим (транзакция)
+                errors.append({"id": eid, "name": names.get(eid, ""),
+                               "field": "", "message": err})
+                break
+        if errors:
+            return checked, errors
+        return checked, []
+
+    @staticmethod
+    def _norm_source_mode(source_mode):
+        return 1 if source_mode == 1 else (2 if source_mode == 2 else 0)
+
+    @Slot(str, str, str, str, int, result="QVariant")
+    def saveMoneyOrder(self, rows_json, order_no, order_date_str, comment,
+                       source_mode):
+        """Проводит один приказ сразу нескольким сотрудникам.
+
+        rows_json: [{id, hours, overtime, days}] — суммы компенсации
+        каждому. source_mode: 0 — текущий год, 1 — прошлый, 2 — оба.
+        Всё или ничего: при любой ошибке база не трогается,
+        а окну возвращается список ошибок по сотрудникам.
+        """
+        if not self.active_db:
+            return {"ok": False, "errors": []}
+        # номер и дата приказа обязательны (окно проверяет само,
+        # но база не должна принять пустой приказ даже «в обход»)
+        if not (order_no or "").strip():
+            return {"ok": False, "errors": [{"id": 0, "name": "",
+                                             "message": "укажите номер приказа"}]}
+        try:
+            order_date = d_parse(order_date_str or "")
+        except Exception:
+            return {"ok": False, "errors": [{"id": 0, "name": "",
+                                             "message": "укажите дату приказа"}]}
+        try:
+            rows = json.loads(rows_json or "[]")
+        except Exception:
+            return {"ok": False, "errors": []}
+        source_mode = self._norm_source_mode(source_mode)
+
+        # одной транзакцией: проверка остатков, потом запись
+        try:
+            self.active_db.begin()
+            checked, errors = self._money_order_write(
+                rows, order_no, order_date, comment, source_mode)
+            if errors:
+                self.active_db.conn.execute("ROLLBACK;")
+                return {"ok": False, "errors": errors}
+            self.active_db.conn.execute("COMMIT;")
+        except Exception as e:
+            if self.active_db:
+                self.active_db.conn.execute("ROLLBACK;")
+            return {"ok": False, "errors": [{"id": 0, "name": "",
+                                             "message": str(e)}]}
+
+        self.refresh_calendar()
+        self.refresh_employees()
+        self._defer_year_refresh()
+        self.loadMoneyOrders()
+        self.showToast.emit(
+            f"Приказ № {order_no} проведён: {len(checked)} сотр. Отменить: Ctrl+Z",
+            "success")
+        return {"ok": True, "count": len(checked)}
+
+    @Slot(str, str, str, str, str, str, int, result="QVariant")
+    def updateMoneyOrder(self, orig_no, orig_date_str, rows_json, order_no,
+                         order_date_str, comment, source_mode):
+        """Редактирование приказа: старые записи приказа УДАЛЯЮТСЯ и
+        заменяются новыми (именно замена, не прибавление). Валидация
+        остатков идёт уже без старых записей — сотруднику в этом же
+        приказе можно поменять сумму на большую. При любой ошибке
+        приказ остаётся нетронутым (откат)."""
+        if not self.active_db:
+            return {"ok": False, "errors": []}
+        if not (order_no or "").strip():
+            return {"ok": False, "errors": [{"id": 0, "name": "",
+                                             "message": "укажите номер приказа"}]}
+        try:
+            order_date = d_parse(order_date_str or "")
+        except Exception:
+            return {"ok": False, "errors": [{"id": 0, "name": "",
+                                             "message": "укажите дату приказа"}]}
+        try:
+            rows = json.loads(rows_json or "[]")
+        except Exception:
+            return {"ok": False, "errors": []}
+        source_mode = self._norm_source_mode(source_mode)
+
+        try:
+            self.active_db.begin()
+            self.active_db.conn.execute(
+                "DELETE FROM compensation WHERE method='money' "
+                "AND order_no IS ? AND order_date IS ?",
+                (orig_no or None, orig_date_str or None))
+            checked, errors = self._money_order_write(
+                rows, order_no, order_date, comment, source_mode)
+            if errors:
+                self.active_db.conn.execute("ROLLBACK;")
+                return {"ok": False, "errors": errors}
+            self.active_db.conn.execute("COMMIT;")
+        except Exception as e:
+            if self.active_db:
+                self.active_db.conn.execute("ROLLBACK;")
+            return {"ok": False, "errors": [{"id": 0, "name": "",
+                                             "message": str(e)}]}
+
+        self.refresh_calendar()
+        self.refresh_employees()
+        self._defer_year_refresh()
+        self.loadMoneyOrders()
+        self.showToast.emit(
+            f"Приказ № {order_no} изменён: {len(checked)} сотр.", "success")
+        return {"ok": True, "count": len(checked)}
+
     @Slot()
-    def loadMoneyComps(self):
-        if not self.active_db or self._selected_employee_id == 0: return
-        
-        # Ищем по order_date (визуальной дате приказа)
+    def loadMoneyOrders(self):
+        """Журнал приказов месяца: приказ = один номер и дата,
+        сколько бы сотрудников он ни охватывал."""
+        self._money_orders = []
+        if not self.active_db:
+            self.moneyOrdersChanged.emit()
+            return
         current_month_str = f"{self.current_year:04d}-{self.current_month:02d}"
-        
         rows = self.active_db.conn.execute(
             """
-            SELECT id, unit, order_no, order_date, event_date, amount_minutes, amount_days, comment 
-            FROM compensation 
-            WHERE employee_id=? 
-              AND method='money' 
-              AND substr(order_date, 1, 7) = ?
-            ORDER BY order_date, id
+            SELECT c.employee_id, c.unit, c.amount_minutes, c.amount_days,
+                   c.order_no, c.order_date, c.comment, c.event_date,
+                   e.last_name, e.first_name, e.middle_name
+            FROM compensation c
+            LEFT JOIN employee e ON e.id = c.employee_id
+            WHERE c.method='money'
+              AND substr(c.order_date, 1, 7) = ?
+            ORDER BY c.order_date, c.order_no, c.id
             """,
-            (self._selected_employee_id, current_month_str)
+            (current_month_str,)
         ).fetchall()
-        
-        res = []
-        for r in rows:
-            u = r["unit"]
-            # Определяем, был ли это "Прошлый год" по технической дате 1900
-            is_prev = (r["event_date"] and r["event_date"].startswith("1900"))
-            
-            suffix = " (прошлый год)" if is_prev else ""
-            
-            if u == "hours": 
-                typ, amt = "Часы (ночные)" + suffix, fmt_minutes_ru_words(int(r["amount_minutes"] or 0))
-                raw_amt = int(r["amount_minutes"] or 0) // 60
-            elif u == "overtime": 
-                typ, amt = "Сверх нормы" + suffix, fmt_minutes_ru_words(int(r["amount_minutes"] or 0))
-                raw_amt = int(r["amount_minutes"] or 0) // 60
-            else: 
-                typ, amt = "Дни" + suffix, f"{int(r['amount_days'] or 0)} дн."
-                raw_amt = int(r["amount_days"] or 0)
-            
-            res.append({
-                "id": int(r["id"]),
-                "date": fmt_date_iso(r["order_date"]),
-                "type": typ,
-                "unit": u,
-                "raw_amount": raw_amt,
-                "amount": amt,
-                "order_no": r["order_no"] or "",
-                "comment": r["comment"] or ""
-            })
-        self._money_comps = res
-        self.moneyCompsChanged.emit()
 
-    @Slot(int)
-    def deleteMoneyComp(self, comp_id):
-        if not self.active_db: return
+        groups = {}
+        order = []
+        for r in rows:
+            key = (r["order_no"] or "", r["order_date"] or "")
+            if key not in groups:
+                groups[key] = {
+                    "order_no": r["order_no"] or "",
+                    "order_date": r["order_date"] or "",
+                    "comment": r["comment"] or "",
+                    "employees": {},
+                    "prev": 0, "cur": 0,
+                }
+                order.append(key)
+            g = groups[key]
+            if (r["event_date"] or "") == "1900-01-01":
+                g["prev"] += 1
+            else:
+                g["cur"] += 1
+            eid = int(r["employee_id"])
+            if eid not in g["employees"]:
+                fio = f"{r['last_name'] or ''} {r['first_name'] or ''} {r['middle_name'] or ''}".strip()
+                g["employees"][eid] = {"id": eid, "name": fio,
+                                       "hours": 0, "overtime": 0, "days": 0}
+            emp = g["employees"][eid]
+            if r["unit"] == "hours":
+                emp["hours"] += int(r["amount_minutes"] or 0) // 60
+            elif r["unit"] == "overtime":
+                emp["overtime"] += int(r["amount_minutes"] or 0) // 60
+            else:
+                emp["days"] += int(r["amount_days"] or 0)
+
+        res = []
+        for key in order:
+            g = groups[key]
+            emps = list(g["employees"].values())
+            # режим приказа: только заначка → 1, вперемешку → 2, иначе 0
+            source_mode = 1 if g["prev"] > 0 and g["cur"] == 0 else (
+                2 if g["prev"] > 0 else 0)
+            res.append({
+                "order_no": g["order_no"],
+                "order_date": g["order_date"],
+                "date": fmt_date_iso(g["order_date"]),
+                "comment": g["comment"],
+                "source_mode": source_mode,
+                "count": len(emps),
+                "hours": sum(e["hours"] for e in emps),
+                "overtime": sum(e["overtime"] for e in emps),
+                "days": sum(e["days"] for e in emps),
+                "employees": emps,
+            })
+        self._money_orders = res
+        self.moneyOrdersChanged.emit()
+
+    @Slot(str, str)
+    def deleteMoneyOrder(self, order_no, order_date_str):
+        """Удаляет приказ целиком — у всех получателей сразу."""
+        if not self.active_db:
+            return
         try:
-            with self.active_db.transaction():
-                self.active_db.delete_compensation(comp_id)
-            self.refresh_calendar(); self.refresh_employees(); self.refresh_yearly_panorama(); self.loadMoneyComps()
-            self.showToast.emit("Выплата удалена", "success")
+            self.active_db.begin()
+            cur = self.active_db.conn.execute(
+                "DELETE FROM compensation WHERE method='money' AND order_no IS ? AND order_date IS ?",
+                (order_no or None, order_date_str or None))
+            removed = int(cur.rowcount or 0)
+            self.active_db.conn.execute("COMMIT;")
+            if removed == 0:
+                return
+            self.refresh_calendar()
+            self.refresh_employees()
+            self._defer_year_refresh()
+            self.loadMoneyOrders()
+            self.showToast.emit(
+                f"Приказ удалён ({removed} записей). Отменить: Ctrl+Z", "success")
         except Exception as e:
-            self.showToast.emit(f"Ошибка: {e}", "error")
+            if self.active_db:
+                self.active_db.conn.execute("ROLLBACK;")
+            self.showToast.emit(f"Ошибка удаления: {e}", "error")
 
     @Slot()
     def loadDepartmentData(self):
@@ -1846,7 +2955,7 @@ class Backend(QObject):
             
         except Exception as e:
             self.active_db.conn.execute("ROLLBACK;")
-            self.showToast.emit(f"Ошибка сохранения: {e}", "error")
+            self.showToast.emit(f"Не удалось сохранить настройки отдела: {e}. Проверьте значения и попробуйте снова", "error")
 
     @Slot(str)
     def removeDatabaseFromList(self, path):
@@ -1884,9 +2993,15 @@ class Backend(QObject):
             except Exception as e:
                 self.showToast.emit(f"Ошибка: {e}", "error")
 
-    @Slot(str)
-    def createNewDatabase(self, name):
-        """Создает новый файл .sqlite в стандартной папке и открывает его"""
+    @Slot(str, str, str, str, str, str)
+    def createNewDatabase(self, name, resp_position="", resp_rank="",
+                          resp_last="", resp_first="", resp_middle=""):
+        """Создает новый файл .sqlite в стандартной папке и открывает его.
+
+        Вместе с названием отдела сразу пишется ответственное лицо
+        (должность, звание, ФИО) — те же поля, что в настройках
+        «Данные подразделения»: они идут в шапки экспортируемых
+        документов, заполнять их после создания уже не нужно."""
         if not name.strip():
             self.showToast.emit("Имя базы не может быть пустым", "error")
             return
@@ -1910,7 +3025,15 @@ class Backend(QObject):
                 
             # Создаем пустую базу и пишем в нее имя отдела
             new_db = DB(str(db_path))
-            new_db.update_department_settings(department_name=name.strip())
+            # Сразу пишем и ответственное лицо, если указано в окне
+            new_db.update_department_settings(
+                department_name=name.strip(),
+                resp_position=resp_position.strip() or None,
+                resp_rank=resp_rank.strip() or None,
+                resp_last_name=resp_last.strip() or None,
+                resp_first_name=resp_first.strip() or None,
+                resp_middle_name=resp_middle.strip() or None
+            )
             new_db.conn.commit()
             new_db.close()
             
@@ -2017,7 +3140,7 @@ class Backend(QObject):
             self.loadHotkeys() # Обновляем список в интерфейсе
             self.showToast.emit("Горячие клавиши сохранены", "success")
         except Exception as e:
-            self.showToast.emit(f"Ошибка сохранения хоткеев: {e}", "error")
+            self.showToast.emit(f"Не удалось сохранить горячие клавиши: {e}. Проверьте сочетания и попробуйте снова", "error")
 
     @Slot(str, str)
     def executeHotkey(self, key_sequence, target_date_str):
@@ -2075,13 +3198,30 @@ class Backend(QObject):
                     self.active_db.replace_duty_breaks(duty_id, breaks_list)
                     
             elif target_action["type"] == "comp":
+                # Компенсация хоткеем — та же механика, что в диалоге:
+                # «за прошлый год» = сентинел 1900-01-01 в event_date,
+                # реальный день пишется в order_date (для показа «В» в сетке)
                 unit = target_action["comp_unit"]
                 amount = int(target_action["comp_amount"])
+                prev_year = bool(target_action.get("comp_prev_year", False))
+                logic_date = date(1900, 1, 1) if prev_year else d0
                 if unit in ("hours", "overtime"):
-                    self.active_db.add_compensation_hours_dayoff(self._selected_employee_id, d0, amount * 60, f"Hotkey: {key_sequence}", unit=unit)
+                    self.active_db.conn.execute(
+                        "INSERT INTO compensation(employee_id,unit,method,event_date,order_date,amount_minutes,comment) VALUES (?,?,?,?,?,?,?)",
+                        (self._selected_employee_id, unit, "day_off", d_iso(logic_date), d_iso(d0), amount * 60, f"Hotkey: {key_sequence}")
+                    )
                 else:
                     dates_list = [d0 + timedelta(days=i) for i in range(amount)]
-                    self.active_db.add_compensation_days_dayoff(self._selected_employee_id, dates_list, f"Hotkey: {key_sequence}")
+                    cur = self.active_db.conn.execute(
+                        "INSERT INTO compensation(employee_id,unit,method,amount_days,comment,event_date) VALUES (?,?,?,?,?,?)",
+                        (self._selected_employee_id, "days", "day_off", len(dates_list), f"Hotkey: {key_sequence}", d_iso(logic_date)),
+                    )
+                    comp_id = cur.lastrowid
+                    for dd0 in dates_list:
+                        self.active_db.conn.execute(
+                            "INSERT INTO comp_day_off_date(compensation_id,employee_id,day_off_date) VALUES (?,?,?)",
+                            (comp_id, self._selected_employee_id, d_iso(dd0))
+                        )
             
             is_valid, err = validate_non_negative_over_year(self.active_db, self._selected_employee_id, d0.year)
             if not is_valid:
@@ -2092,8 +3232,7 @@ class Backend(QObject):
             self.active_db.conn.execute("COMMIT;")
             self.refresh_calendar()
             self.refresh_employees()
-            self.refresh_yearly_panorama()
-            self.refresh_pulse()
+            self._defer_year_refresh()
             self.showToast.emit(f"Применено: {key_sequence}", "success")
             
         except Exception as e:
@@ -2113,6 +3252,28 @@ class Backend(QObject):
             self.active_db.conn.execute("ROLLBACK;")
             self.showToast.emit(f"Ошибка: {e}", "error")
 
+    @Slot(int, str, bool, bool)
+    def updateGroup(self, group_id, name, is_shift, shifted_weekends):
+        """Редактирование группы из окна «Редактировать группу»:
+        меняет имя, график сменности и смещённые выходные разом."""
+        if not self.active_db or not name.strip() or not group_id:
+            return
+        try:
+            self.active_db.begin()
+            self.active_db.conn.execute(
+                "UPDATE employee_group SET name=?, is_shift=?, shifted_weekends=? WHERE id=?",
+                (name.strip(), 1 if is_shift else 0,
+                 1 if shifted_weekends else 0, group_id))
+            self.active_db.conn.execute("COMMIT;")
+            self.refresh_groups()
+            self.refresh_employees()
+            self.refresh_calendar()
+            self._defer_year_refresh()
+            self.showToast.emit("Группа сохранена", "success")
+        except Exception as e:
+            self.active_db.conn.execute("ROLLBACK;")
+            self.showToast.emit(f"Ошибка: {e}", "error")
+
     @Slot(int, bool)
     def setGroupShiftedWeekends(self, group_id, enabled):
         if not self.active_db or not group_id:
@@ -2124,7 +3285,7 @@ class Backend(QObject):
             self.refresh_groups()
             self.refresh_employees()
             self.refresh_calendar()
-            self.refresh_yearly_panorama()
+            self._defer_year_refresh()
             self.showToast.emit(
                 "Смещённые выходные включены" if enabled else "Обычные выходные",
                 "success",
@@ -2183,8 +3344,7 @@ class Backend(QObject):
                 
                 # 3. ПОЛНОСТЬЮ ПЕРЕСЧИТЫВАЕМ И ПЕРЕРИСОВЫВАЕМ ЕГО ДАННЫЕ
                 self.refresh_calendar()
-                self.refresh_yearly_panorama()
-                self.refresh_pulse()
+                self._defer_year_refresh()
             
             self.showToast.emit("Сотрудник перемещен", "success")
         except Exception as e:
@@ -2207,7 +3367,7 @@ class Backend(QObject):
                 emp_data = self.active_db.get_employee(emp_id)
                 current_group = emp_data["group_id"]
                 # Превращаем "2022-05" в "2022-05-01"
-                start_date = f"{emp_data['start_month']}-01" if emp_data["start_month"] else "2000-01-01"
+                start_date = (emp_data["hire_date"] or f"{emp_data['start_month']}-01") if emp_data["start_month"] else "2000-01-01"
                 
                 self.active_db.conn.execute("INSERT INTO employee_transfer (employee_id, transfer_date, group_id) VALUES (?, ?, ?)", (emp_id, start_date, current_group))
                 
@@ -2222,8 +3382,7 @@ class Backend(QObject):
             if emp_id == self._selected_employee_id:
                 self.selectedEmployeeChanged.emit()
                 self.refresh_calendar()
-                self.refresh_yearly_panorama()
-                self.refresh_pulse()
+                self._defer_year_refresh()
             self.showToast.emit(f"Официальный перевод с {date_str} сохранен", "success")
         except Exception as e:
             self.active_db.conn.execute("ROLLBACK;")
@@ -2290,13 +3449,65 @@ class Backend(QObject):
             self.showToast.emit(f"Шаблон не найден: {Path(template_path).name}", "error")
             return
 
-        # Показываем уведомление, что процесс пошел
-        self.showToast.emit("Формирование документа... (Фоновый режим)", "success")
+        # Виртуальный PDF-принтер («Microsoft Print to PDF» и т.п.):
+        # пишем PDF собственным средством, без драйвера принтера.
+        # Спрашиваем имя файла здесь, в главном потоке — до запуска печати.
+        pdf_out = None
+        if "pdf" in (printer_name or "").lower():
+            from PySide6.QtWidgets import QFileDialog
+            from PySide6.QtCore import QStandardPaths
+            docs = QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation)
+            suggested = os.path.join(docs, pdf_suggested_filename(self.activeDepartmentName, self.current_year, self.current_month))
+            pdf_out, _ = QFileDialog.getSaveFileName(
+                None, "Сохранить табель в PDF", suggested, "PDF (*.pdf)")
+            if not pdf_out:
+                return  # передумали сохранять
+
+        # Параметры печати — для запасного пути через Excel
+        self._last_print_args = dict(
+            printer_name=printer_name, copies=copies, page_from=page_from,
+            page_to=page_to, orientation=orientation, paper_size=paper_size,
+            collate=collate,
+        )
+
+        self.showToast.emit("Формирование документа...", "success")
+
+        if not pdf_out:
+            # Реальный принтер: печатаем СИНХРОННО В ГЛАВНОМ ПОТОКЕ.
+            # Драйверная печать Windows внутри движка Qt трогает объекты,
+            # разрешённые только в GUI-потоке (QPixmap и пр.) — из фонового
+            # потока это приводило к вылету программы. PDF-путь (QPdfWriter)
+            # потокобезопасен и остаётся фоновым.
+            try:
+                QApplication.processEvents()  # дать тосту отрисоваться
+                QApplication.setOverrideCursor(Qt.WaitCursor)
+                try:
+                    from print_engine import print_report
+                    pages = print_report(
+                        db_path=self.active_db.path,
+                        year=self.current_year,
+                        month=self.current_month,
+                        template_path=EXCEL_TEMPLATE_PATH,
+                        printer_name=printer_name,
+                        copies=copies,
+                        page_from=page_from,
+                        page_to=page_to,
+                        orientation=orientation,
+                        paper_size=paper_size,
+                        collate=collate,
+                    )
+                finally:
+                    QApplication.restoreOverrideCursor()
+                self.showToast.emit(f"Документ отправлен на принтер ({pages} стр.)!", "success")
+            except Exception as e:
+                self._fallback_excel_print(e)
+            return
 
         try:
-            # Запускаем Работягу
-            self.print_thread = PrintWorker(
+            # Виртуальный PDF-принтер: собственный движок в фоне (без Excel)
+            self.print_thread = PrintWorkerQt(
                 db_path=self.active_db.path,
+                pdf_out=pdf_out,
                 year=self.current_year,
                 month=self.current_month,
                 printer_name=printer_name,
@@ -2307,11 +3518,50 @@ class Backend(QObject):
                 paper_size=paper_size,
                 collate=collate
             )
+            self.print_thread.finished_signal.connect(self.on_qt_print_finished)
+            self.print_thread.start()
+        except Exception as e:
+            self.showToast.emit(f"Не удалось запустить печать: {e}", "error")
+
+    @Slot(str)
+    def copyToClipboard(self, text):
+        """Копирует текст ошибки в системный буфер обмена (ЛКМ по тосту)."""
+        try:
+            QApplication.clipboard().setText(text or "")
+        except Exception:
+            pass
+
+    def _fallback_excel_print(self, reason):
+        """Запасной путь: старый добрый Excel"""
+        reason = str(reason)[:140]
+        self.showToast.emit(f"Движок печати не смог ({reason}) — печатаем через Excel...", "warning")
+        a = getattr(self, "_last_print_args", {})
+        try:
+            self.print_thread = PrintWorker(
+                db_path=self.active_db.path,
+                year=self.current_year,
+                month=self.current_month,
+                printer_name=a.get("printer_name", ""),
+                copies=a.get("copies", 1),
+                page_from=a.get("page_from", ""),
+                page_to=a.get("page_to", ""),
+                orientation=a.get("orientation", "landscape"),
+                paper_size=a.get("paper_size", "A4"),
+                collate=a.get("collate", True)
+            )
             self.print_thread.finished_signal.connect(self.on_print_finished)
             self.print_thread.start()
         except Exception as e:
             self.showToast.emit(f"Не удалось запустить печать: {e}", "error")
 
+    def on_qt_print_finished(self, success, message):
+        """Результат собственного движка печати; при сбое — печать через Excel"""
+        if success:
+            self.showToast.emit(message, "success")
+            return
+        self._fallback_excel_print(message)
+
+    @Slot(bool, str)
     def on_print_finished(self, success, message):
         """Срабатывает автоматически, когда фоновая печать завершена"""
         if success:
@@ -2385,8 +3635,7 @@ class Backend(QObject):
                         
                 self.active_db.conn.execute("COMMIT;")
                 self.refresh_calendar()
-                self.refresh_yearly_panorama()
-                self.refresh_pulse()
+                self._defer_year_refresh()
                 self.showToast.emit(f"Очищено: {date_str}", "success")
                 
             except Exception as e:
@@ -2496,11 +3745,37 @@ class Backend(QObject):
         else:
             self.showToast.emit("Больше нечего возвращать", "error")
 
-    @Slot(int)  # <--- ВОТ ЭТА МАГИЧЕСКАЯ СТРОЧКА!
+    def _nearest_month_for_employee(self, month):
+        """Ближайший существующий месяц для выбранного сотрудника.
+
+        Если сотрудник принят позже января выбранного года, январь ему
+        ещё не существует — открываем месяц приёма.
+        """
+        try:
+            if self.active_db and self._selected_employee_id:
+                from logic import safe_get_hire_date
+                emp = self.active_db.get_employee(self._selected_employee_id)
+                hire_y, hire_m = safe_get_hire_date(emp["start_month"])
+                if hire_y == self.current_year and month < hire_m:
+                    return hire_m
+        except Exception:
+            pass
+        return max(1, min(12, month))
+
+    @Slot(int)
     def setYear(self, new_year):
-        """Меняет год и перерисовывает всё"""
+        """Меняет год и перерисовывает всё.
+
+        Другой год открывается с января этого года; при возврате в
+        текущий (сегодняшний) — с идущего месяца. Если январь выбранного
+        года сотруднику ещё не существует (принят позже) — открывается
+        ближайший существующий месяц, а не пустой.
+        """
         if self.current_year != new_year:
             self.current_year = new_year
+            today = date.today()
+            want_month = today.month if new_year == today.year else 1
+            self.current_month = self._nearest_month_for_employee(want_month)
             self.refresh_calendar()
             self.refresh_employees()
             self.refresh_yearly_panorama()
@@ -2598,7 +3873,7 @@ class Backend(QObject):
         
         # Вычисляем возможные даты "невидимых" якорей
         anchor_date1 = "2000-01-01"
-        anchor_date2 = f"{emp_data['start_month']}-01" if emp_data["start_month"] else "2000-01-01"
+        anchor_date2 = (emp_data["hire_date"] or f"{emp_data['start_month']}-01") if emp_data["start_month"] else "2000-01-01"
         
         res = []
         for r in rows:
@@ -2639,12 +3914,12 @@ class Backend(QObject):
             if emp_id == self._selected_employee_id:
                 self.selectedEmployeeChanged.emit()
                 self.refresh_calendar()
-                self.refresh_yearly_panorama()
+                self._defer_year_refresh()
                 
             self.showToast.emit("Запись сохранена", "success")
         except Exception as e:
             self.active_db.conn.execute("ROLLBACK;")
-            self.showToast.emit(f"Ошибка сохранения: {e}", "error")
+            self.showToast.emit(f"Не удалось сохранить запись: {e}. Проверьте значения и попробуйте снова", "error")
 
     @Slot(int, int)
     def deleteTransferRecord(self, emp_id, record_id):
@@ -2660,7 +3935,7 @@ class Backend(QObject):
             if emp_id == self._selected_employee_id:
                 self.selectedEmployeeChanged.emit()
                 self.refresh_calendar()
-                self.refresh_yearly_panorama()
+                self._defer_year_refresh()
         except Exception as e:
             self.active_db.conn.execute("ROLLBACK;")
             self.showToast.emit(f"Ошибка удаления: {e}", "error")
@@ -2690,8 +3965,8 @@ class Backend(QObject):
                     breaks_data = json.loads(breaks_json)
                     breaks_list = []
                     for b in breaks_data:
-                        bs_time = time(int(b["start_h"]), int(b["start_m"]))
-                        be_time = time(int(b["end_h"]), int(b["end_m"]))
+                        bs_time = dt_time(int(b["start_h"]), int(b["start_m"]))
+                        be_time = dt_time(int(b["end_h"]), int(b["end_m"]))
                         bs_dt = datetime.combine(d0, bs_time)
                         if bs_dt < start_dt: bs_dt += timedelta(days=1)
                         be_dt = datetime.combine(bs_dt.date(), be_time)
@@ -2723,40 +3998,16 @@ class Backend(QObject):
                         (comment or None, logic_date, comp_id)
                     )
 
-                is_valid, err = validate_non_negative_over_year(self.active_db, self._selected_employee_id, self.current_year)
-                if not is_valid:
-                    raise Exception(err)
+                uy = d_parse(date_str).year
+                for y in range(min(self.current_year, uy), max(self.current_year, uy) + 1):
+                    is_valid, err = validate_non_negative_over_year(self.active_db, self._selected_employee_id, y)
+                    if not is_valid:
+                        raise Exception(err)
 
             self.refresh_calendar()
             self.loadDayDetails(date_str)
         except Exception as e:
             self.showToast.emit(str(e), "error")
-
-    @Slot(int, str, str, str, str)
-    def updateMoneyComp(self, comp_id, unit, amount_str, order_no, comment):
-        if not self.active_db or self._selected_employee_id == 0: return
-        try:
-            amount = int(amount_str)
-            with self.active_db.transaction():
-                # Обновляем
-                if unit in ("hours", "overtime"):
-                    self.active_db.conn.execute("UPDATE compensation SET amount_minutes=?, order_no=?, comment=? WHERE id=?", (amount * 60, order_no, comment or None, comp_id))
-                else:
-                    self.active_db.conn.execute("UPDATE compensation SET amount_days=?, order_no=?, comment=? WHERE id=?", (amount, order_no, comment or None, comp_id))
-                
-                # Получаем год события для проверки
-                row = self.active_db.conn.execute("SELECT event_date FROM compensation WHERE id=?", (comp_id,)).fetchone()
-                event_date = d_parse(row["event_date"])
-                
-                is_valid, error_msg = validate_non_negative_over_year(self.active_db, self._selected_employee_id, event_date.year)
-                if not is_valid: raise Exception(error_msg)
-                
-            self.refresh_calendar()
-            self.refresh_yearly_panorama()
-            self.loadMoneyComps()
-            self.showToast.emit("Приказ обновлен", "success")
-        except Exception as e:
-            self.showToast.emit(f"Ошибка: {e}", "error")
 
     @Slot(str)
     def openDbFolder(self, path):
@@ -2778,10 +4029,67 @@ class Backend(QObject):
             self.showToast.emit(f"Ошибка открытия папки: {e}", "error")
 
     @Slot(str, str, result="QVariant")
+    def getWorkingDaysForPeriod(self, start_date_str: str, end_date_str: str):
+        """Рабочие дни периода по ФАКТИЧЕСКОМУ календарю.
+
+        Учитывает праздники и дни, отредактированные вручную («этот
+        вторник — праздничный», «эта суббота — рабочая»), и график
+        сотрудника — ровно те же клетки, что в календаре не красные.
+        Нужно окну компенсации периодом: «пропускать нерабочие дни»
+        смотрит на реальный календарь, а не только на сб/вс.
+        """
+        if not self.active_db or self._selected_employee_id == 0:
+            return []
+        try:
+            d0, d1 = d_parse(start_date_str), d_parse(end_date_str)
+            if d1 < d0:
+                return []
+            if (d1 - d0).days > 400:
+                d1 = d0 + timedelta(days=400)
+            work_map = self.active_db.get_calendar_month(d_iso(d0), d_iso(d1))
+            holidays_set = self.active_db.get_holidays_month(d_iso(d0), d_iso(d1))
+            override_set = self.active_db.get_calendar_overrides(d_iso(d0), d_iso(d1))
+            shifted_checker = build_shifted_weekend_checker(self.active_db, self._selected_employee_id)
+            out = []
+            cur = d0
+            while cur <= d1:
+                if resolve_is_working(cur, bool(shifted_checker(cur)),
+                                      work_map, holidays_set, override_set):
+                    out.append(d_iso(cur))
+                cur += timedelta(days=1)
+            return out
+        except Exception:
+            return []
+
+    @Slot(result="QVariant")
+    def getRecoSections(self):
+        """Методические рекомендации для окна с оглавлением.
+
+        Текст перенесён из официального PDF (см. methodical_data.py);
+        календарь разделов и подпунктов — в стиле справки КонсультантПлюс.
+        """
+        try:
+            from methodical_data import RECO_SECTIONS, RECO_TITLE
+            return {"title": RECO_TITLE, "sections": RECO_SECTIONS}
+        except Exception:
+            return {"title": "", "sections": []}
+
+    @Slot(int, result="QVariant")
+    def getProdCalendar(self, year):
+        """Производственный календарь года (2026/2027): сетки месяцев,
+        праздники, переносы и нормы рабочего времени. Данные сверены
+        с таблицей норм до часа."""
+        try:
+            from methodical_data import PROD_CALENDARS
+            return PROD_CALENDARS.get(int(year)) or {}
+        except Exception:
+            return {}
+
+    @Slot(str, str, result="QVariant")
     def getShiftDatesForPeriod(self, start_date_str: str, end_date_str: str):
         """
         Анализирует паттерн сменщика и возвращает даты его рабочих дней
-        в заданном периоде. Вызывается из DayEventDialog.
+        в заданном периоде. Вызывается из окна компенсации (DayCompDialog).
         """
         if not self.active_db or self._selected_employee_id == 0:
             return {"dates": [], "error": "Нет активного сотрудника", "confidence": 0.0}
@@ -2860,7 +4168,12 @@ class Backend(QObject):
                         break
                         
             self.load_databases()
-            self.showToast.emit(f"Все базы перенесены в {target_path.name}", "success")
+            # В выбранной папке могли уже лежать базы — подключаем их сами
+            found = self._scan_db_folder()
+            msg = f"Все базы перенесены в {target_path.name}"
+            if found:
+                msg += f" · найдено в папке и подключено: {found}"
+            self.showToast.emit(msg, "success")
             
         except Exception as e:
             self.showToast.emit(f"Ошибка переноса: {e}", "error")
@@ -2910,6 +4223,14 @@ class Backend(QObject):
             self._app_version = qrc_ver
         if qrc_bld:
             self._app_build = qrc_bld
+        # Обновление прошло успешно: наша сборка не меньше той, что
+        # отмечали как «пробуем поставить» — журнал попыток чистим
+        try:
+            log = json.loads((self._data_dir / "update_apply.log").read_text(encoding="utf-8"))
+            if int(self._app_build or 0) >= int(log.get("build") or 0):
+                (self._data_dir / "update_apply.log").unlink(missing_ok=True)
+        except Exception:
+            pass
         if self._app_version:
             try:
                 root = app_update.install_root(self.app_dir)
@@ -2948,6 +4269,12 @@ class Backend(QObject):
     def updateBusy(self):
         return self._update_busy
 
+    @Property(bool, notify=updateCheckingChanged)
+    def updateChecking(self):
+        # Флаг _update_checking раньше не показывался интерфейсу вовсе —
+        # кнопка обновления не могла изобразить «сейчас проверяю».
+        return self._update_checking
+
     @Property(str, notify=updateVersionChanged)
     def updateVersion(self):
         return self._update_version
@@ -2956,13 +4283,47 @@ class Backend(QObject):
     def updateStatusText(self):
         return self._update_status
 
+    @Property(str, notify=updateUrlChanged)
+    def updateUrl(self):
+        return app_update.resolve_update_url(self._update_url)
+
+    @Property(bool, notify=remoteUpdateAvailableChanged)
+    def remoteUpdateAvailable(self):
+        return self._remote_update_available
+
+    @Property(bool, notify=remoteDownloadingChanged)
+    def remoteDownloading(self):
+        return self._remote_downloading
+
+    @Property(int, notify=remoteDownloadProgressChanged)
+    def remoteDownloadProgress(self):
+        return self._remote_download_progress
+
+    @Slot(str)
+    def setUpdateUrl(self, url):
+        """Сохраняет адрес хранилища обновлений. Проверку запускает кнопка «Проверить»."""
+        url = (url or "").strip()
+        if url == self._update_url:
+            return
+        self._update_url = url
+        self._write_ui_config("update_url", url)
+        self.updateUrlChanged.emit()
+
     @Property(list, notify=whatsNewChanged)
     def whatsNew(self):
         return self._whats_new
 
-    @Property(int, notify=updateReadyChanged)
-    def updateChromeExtra(self):
-        return 52 if (self._update_ready or self._update_busy) else 0
+    @Property(bool, notify=whatsNewChanged)
+    def whatsNewFresh(self):
+        # True — обновление ещё не пролистано (окно само открывается
+        # при старте); False — прочитано, но из справки можно перечитать
+        return bool(getattr(self, "_whats_new_fresh", False))
+
+    @Property(list, notify=whatsNewChanged)
+    def whatsNewScenes(self):
+        # Живые сцены окна «Что нового»: по одной на каждую «показывающую»
+        # новинку обновления — виньетка листает их по очереди
+        return getattr(self, "_whats_new_scenes", ["neutral"])
 
     def _set_update_busy(self, busy, text=""):
         self._update_busy = bool(busy)
@@ -3003,39 +4364,130 @@ class Backend(QObject):
         return ""
 
     def _prepare_whats_new(self):
-        last = ""
+        # Окно «Что нового» показывает ИЗМЕНЕНИЯ ПОСЛЕДНЕГО ОБНОВЛЕНИЯ —
+        # записи сборок интервала (since, cur]. Пока обновление не
+        # прочитано (last < cur), интервал начинается с последней
+        # прочитанной сборки и окно само открывается при старте.
+        # После прочтения начало интервала запоминается в prev —
+        # и кнопка в справке показывает ту же порцию снова,
+        # чтобы освежить память, а не пустоту.
+        last_build = 0
+        prev_build = 0
         try:
             if self.config_path.exists():
                 data = json.loads(self.config_path.read_text(encoding="utf-8"))
-                last = str(data.get("ui", {}).get("last_changelog_version") or "")
+                ui_cfg = data.get("ui", {})
+                last_build = int(ui_cfg.get("last_changelog_build") or 0)
+                if not last_build:
+                    last_build = app_update.build_from_version_key(
+                        str(ui_cfg.get("last_changelog_version") or ""))
+                prev_build = int(ui_cfg.get("prev_changelog_build") or 0)
         except Exception:
-            last = ""
-        current_key = self._version_key()
-        if last and last == current_key:
+            last_build, prev_build = 0, 0
+        cur_build = int(self._app_build or 0)
+        self._whats_new_fresh = bool(cur_build and last_build < cur_build)
+        if not cur_build:
             self._whats_new = []
+            self._whats_new_scenes = ["neutral"]
+            return
+        since = last_build if last_build < cur_build else prev_build
+        if since >= cur_build:
+            self._whats_new = []
+            self._whats_new_scenes = ["neutral"]
             return
         text = self._read_changelog_text()
-        # Одна версия — один список. Сборка 71→72 внутри 20 показывает весь блок 20.
-        blocks = app_update.changelog_for_version(text, self._app_version or "")
-        self._whats_new = app_update.changelog_for_qml(blocks)
+        blocks = app_update.changelog_for_builds(text, since, cur_build)
+        self._whats_new = app_update.whats_new_qml(blocks)
+        self._whats_new_scenes = app_update.whats_new_scenes_for_builds(since, cur_build)
+        # Обновление вышло, а записей в журнале нет (правки внутренние) —
+        # показываем стандартную фразу, чтобы окно не молчало
+        if self._whats_new_fresh:
+            has_any = any(b.get("hasAdded") or b.get("hasChanged")
+                          or b.get("hasFixed") or b.get("hasRemoved")
+                          for b in self._whats_new)
+            if not has_any:
+                self._whats_new = app_update.whats_new_fallback()
+                self._whats_new_scenes = ["neutral"]
 
     @Slot()
     def ackWhatsNew(self):
-        """Закрыли «Что нового» — больше не показываем эту сборку."""
+        """Закрыли «Что нового» — запоминаем, что просмотрено.
+        Интервал последнего обновления сохраняется (prev), чтобы кнопка
+        в справке показывала его снова. Повторное закрытие окна ничего
+        не затирает (идемпотентно)."""
         try:
             self.config_path.parent.mkdir(parents=True, exist_ok=True)
         except Exception:
             pass
-        if self._app_version:
-            self._write_ui_config("last_changelog_version", self._version_key())
-        self._whats_new = []
+        cur_build = int(self._app_build or 0)
+        last = 0
+        try:
+            if self.config_path.exists():
+                data = json.loads(self.config_path.read_text(encoding="utf-8"))
+                last = int(data.get("ui", {}).get("last_changelog_build") or 0)
+        except Exception:
+            last = 0
+        if cur_build and last != cur_build:
+            self._write_ui_config("prev_changelog_build", last)
+            if self._app_version:
+                self._write_ui_config("last_changelog_version", self._version_key())
+            self._write_ui_config("last_changelog_build", cur_build)
+        self._whats_new_fresh = False
+        # содержимое НЕ стираем: справка покажет его ещё раз
         self.whatsNewChanged.emit()
 
     @Slot()
-    def scanForUpdates(self):
-        """Ищет zip/папку новой версии рядом с программой и на флешках."""
-        if self._update_busy or self._scan_running:
+    def checkAllUpdateSources(self):
+        """Кнопка «Проверить» в настройках и клик по неактивной шапочной кнопке:
+        полная последовательность локально → адрес из настроек → вшитый GitHub."""
+        if not self._begin_update_check(True):
             return
+        self._start_local_scan()
+
+    # ---- Единая последовательность проверки обновлений ------------------
+    # Все входы (кнопка «Проверить», клик по неактивной шапочной кнопке,
+    # фоновая автопроверка при старте и по таймеру) гоняют одну схему:
+    #   1) локально — архив/папка рядом с программой, флешки (без сети);
+    #   2) адрес хранилища из настроек — если он задан;
+    #   3) вшитый GitHub — только запасной, если адрес настроек пуст/недоступен
+    #      или на нём обновления не нашлось.
+    # Разница между входами — лишь показывать ли итоговые тосты (notify).
+
+    def _begin_update_check(self, notify: bool) -> bool:
+        """Начало полной проверки. False — сейчас нельзя (идёт/занято)."""
+        if self._update_checking or self._update_busy or self._remote_downloading:
+            return False
+        self._update_checking = True
+        self.updateCheckingChanged.emit()
+        self._pending_notify = bool(notify)
+        self._background_auto = not bool(notify)
+        self._remote_active_url = ""
+        # _remote_info НЕ сбрасываем: уже найденное обновление переживает
+        # повторную проверку. Если сеть молчит, _remote_no_result оставит
+        # его кнопке; если сервер ответит «не новее» — уберёт там же.
+        return True
+
+    def _finish_update_check(self):
+        if self._update_checking:
+            self._update_checking = False
+            self.updateCheckingChanged.emit()
+        self._pending_notify = False
+
+    def _remote_candidate_urls(self):
+        """Очередь удалённых адресов: сначала адрес из настроек (если задан),
+        затем вшитый GitHub и вшитый сервер post.mvd.ru (всегда, как запасные;
+        дубликаты пропускаем)."""
+        stored = (self._update_url or "").strip()
+        urls = []
+        if stored:
+            urls.append(stored)
+        for builtin in (app_update.DEFAULT_UPDATE_URL, app_update.FALLBACK_UPDATE_URL):
+            if builtin and builtin not in urls:
+                urls.append(builtin)
+        return urls
+
+    def _start_local_scan(self):
+        """Этап 1 — локально. Может сразу найти уже подготовленное (staged) обновление."""
         staged = app_update.staged_info(self.app_dir)
         staged_ver = (staged or {}).get("version") or ""
         staged_bld = int((staged or {}).get("build") or 0)
@@ -3045,11 +4497,169 @@ class Backend(QObject):
             if label != dismissed:
                 self._update_source = staged["root"]
                 self._set_update_ready(True, label)
+                if self._pending_notify:
+                    self.showToast.emit(f"Доступна новая версия: {label} (готова к установке)", "success")
+            self._finish_update_check()
             return
         self._scan_running = True
         self._scan_thread = UpdateScanWorker(str(self.app_dir), self._app_version, self._app_build)
         self._scan_thread.finished_signal.connect(self._on_update_scanned)
         self._scan_thread.start()
+
+    @Slot()
+    def scanForUpdates(self):
+        """Фоновая проверка (при старте и по таймеру): та же последовательность, но без тостов."""
+        if not self._begin_update_check(False):
+            return
+        self._start_local_scan()
+
+    def _on_update_scanned(self, found):
+        self._scan_running = False
+        if self._update_busy or not self._update_checking:
+            self._finish_update_check()
+            return
+        if not found:
+            # Локально ничего нет — переходим к удалённым адресам (этапы 2-3).
+            self._start_remote_checks()
+            return
+        dismissed = self._dismissed_update_version()
+        label = self._version_label(
+            found.get("display") or found.get("version") or "",
+            int(found.get("build") or 0),
+        )
+        if label and label == dismissed:
+            self._finish_update_check()
+            return
+        if found.get("already_staged"):
+            self._update_source = found["root"]
+            self._set_update_ready(True, label or found.get("version") or "")
+            self._finish_update_check()
+            return
+        # Найден локальный кандидат — подготавливаем его, в сеть не ходим.
+        self._finish_update_check()
+        self.prepareUpdateFromPath(found["root"])
+
+    def _start_remote_checks(self):
+        """Этапы 2-3 — удалённые хранилища по очереди (по одному RemoteCheckWorker)."""
+        if self._update_busy or self._remote_downloading:
+            self._finish_update_check()
+            return
+        self._remote_candidates = self._remote_candidate_urls()
+        self._remote_idx = 0
+        self._last_remote_error = ""
+        self._remote_saw_reachable = False
+        self._next_remote_candidate()
+
+    def _next_remote_candidate(self):
+        if self._update_busy or self._remote_downloading:
+            self._finish_update_check()
+            return
+        if self._remote_idx >= len(self._remote_candidates):
+            self._remote_no_result()
+            return
+        url = self._remote_candidates[self._remote_idx]
+        self._remote_idx += 1
+        self._remote_active_url = url
+        self._remote_check_thread = RemoteCheckWorker(url, self._app_version, self._app_build)
+        self._remote_check_thread.finished_signal.connect(self._on_remote_check_done)
+        self._remote_check_thread.start()
+
+    def _on_remote_check_done(self, info, error):
+        if not self._update_checking:
+            return
+        if info:
+            # Нашли обновление на текущем адресе (self._remote_active_url) — дальше не идём.
+            info = dict(info)
+            info.setdefault("base_url", self._remote_active_url)
+            self._remote_info = info
+            if not self._remote_update_available:
+                self._remote_update_available = True
+                self.remoteUpdateAvailableChanged.emit()
+            if self._pending_notify:
+                label = self._version_label(
+                    info.get("display") or info.get("version") or "",
+                    int(info.get("build") or 0),
+                )
+                self.showToast.emit(f"Доступна новая версия: {label}", "success")
+            self._finish_update_check()
+            return
+        # На этом адресе обновления нет (или адрес недоступен) — пробуем следующий.
+        if error:
+            self._last_remote_error = error
+        else:
+            # Хранилище доступно и ответило «версия не новее» — сеть в порядке.
+            self._remote_saw_reachable = True
+        self._next_remote_candidate()
+
+    def _remote_no_result(self):
+        """Все удалённые адреса проверены — обновление не найдено."""
+        if (not self._remote_saw_reachable and self._last_remote_error
+                and self._remote_info and self._remote_update_available):
+            # Ни один адрес не ответил, но обновление мы УЖЕ нашли раньше.
+            # «Не смогли проверить» — не значит «обновления нет»: не прячем
+            # найденное, иначе кнопка теряла обновление при каждом сбое сети.
+            if self._pending_notify:
+                self.showToast.emit(f"Не удалось проверить обновления: {self._last_remote_error}", "error")
+            self._finish_update_check()
+            return
+        self._remote_info = None
+        if self._remote_update_available:
+            self._remote_update_available = False
+            self.remoteUpdateAvailableChanged.emit()
+        if self._pending_notify:
+            if not self._remote_saw_reachable and self._last_remote_error:
+                self.showToast.emit(f"Не удалось проверить обновления: {self._last_remote_error}", "error")
+            else:
+                self.showToast.emit("У вас уже установлена последняя версия", "success")
+        self._finish_update_check()
+
+    @Slot()
+    def startRemoteDownload(self):
+        """Кнопка загрузки в шапке: скачать обновление, которое уже обнаружено."""
+        if not self._remote_info or self._remote_downloading:
+            # Идущая фоновая проверка — не препятствие: обновление уже
+            # известно, скачивание — явное желание пользователя. Проверка
+            # сама тихо завершится, увидев начавшуюся загрузку.
+            return
+        # Качаем именно с того адреса, который дал найденное обновление.
+        base_url = (str(self._remote_info.get("base_url") or "")).strip() \
+            or self._remote_active_url \
+            or app_update.resolve_update_url(self._update_url)
+        if not base_url:
+            return
+        self._remote_downloading = True
+        self._remote_download_progress = 0
+        self.remoteDownloadingChanged.emit()
+        self.remoteDownloadProgressChanged.emit()
+        self._download_thread = RemoteDownloadWorker(base_url, self._remote_info, str(self.app_dir))
+        self._download_thread.finished_signal.connect(self._on_remote_download_done)
+        self._download_thread.progress_signal.connect(self._on_remote_download_progress)
+        self._download_thread.start()
+
+    def _on_remote_download_progress(self, done, total):
+        if not self._remote_downloading:
+            return
+        pct = int((done * 100) / total) if total > 0 else 0
+        self._remote_download_progress = max(0, min(100, pct))
+        self.remoteDownloadProgressChanged.emit()
+        if total > 0:
+            self._update_status = f"Скачиваем обновление… {pct}%"
+        else:
+            self._update_status = "Скачиваем обновление…"
+        self.updateStatusTextChanged.emit()
+
+    def _on_remote_download_done(self, ok, zip_path, message):
+        self._remote_downloading = False
+        self.remoteDownloadingChanged.emit()
+        if ok and zip_path:
+            self._background_auto = False
+            self.prepareUpdateFromPath(zip_path)
+            # После подготовки обновление «готово» — кнопка в шапке покажет статус.
+            return
+        if message:
+            self.showToast.emit(f"Не удалось скачать обновление: {message}", "error")
+        else:
+            self.showToast.emit("Не удалось скачать обновление", "error")
 
     def _dismissed_update_version(self) -> str:
         try:
@@ -3060,58 +4670,43 @@ class Backend(QObject):
             return ""
         return ""
 
-    def _on_update_scanned(self, found):
-        self._scan_running = False
-        if self._update_busy:
-            return
-        if not found:
-            return
-        dismissed = self._dismissed_update_version()
-        label = self._version_label(
-            found.get("display") or found.get("version") or "",
-            int(found.get("build") or 0),
-        )
-        if label and label == dismissed:
-            return
-        if found.get("already_staged"):
-            self._update_source = found["root"]
-            self._set_update_ready(True, label or found.get("version") or "")
-            return
-        self.prepareUpdateFromPath(found["root"])
-
     @Slot(str)
     def prepareUpdateFromPath(self, file_url):
         """Готовит обновление из zip или папки. Можно вызвать из диалога настроек."""
         if not file_url or self._update_busy:
             return
+        silent = self._background_auto  # фоновая проверка — ошибки не показываем
         path = QUrl(file_url).toLocalFile() if str(file_url).startswith("file:") else file_url
         if not path:
             path = file_url
         try:
             info = app_update.describe_package(Path(path))
         except Exception as e:
-            self.showToast.emit(str(e), "error")
+            if not silent:
+                self.showToast.emit(str(e), "error")
             return
 
         ver = info.get("version") or ""
         bld = int(info.get("build") or 0)
         shown = info.get("display") or ver
         if not ver:
-            self.showToast.emit("В архиве нет номера версии — так обновляться нельзя", "error")
+            if not silent:
+                self.showToast.emit("В архиве нет номера версии — так обновляться нельзя", "error")
             return
         if not app_update.is_newer(ver, self._app_version, bld, int(self._app_build or 0)):
-            cand = self._version_label(shown, bld)
-            here = self._version_label()
-            if bld and bld == int(self._app_build or 0):
-                self.showToast.emit(f"Это та же сборка ({cand})", "error")
-            elif ver == self._app_version and not bld:
-                self.showToast.emit(f"Это та же версия ({cand})", "error")
-            else:
-                self.showToast.emit(f"Откат запрещён: {cand} старше текущей {here}", "error")
+            if not silent:
+                cand = self._version_label(shown, bld)
+                here = self._version_label()
+                if bld and bld == int(self._app_build or 0):
+                    self.showToast.emit(f"Это та же сборка ({cand})", "error")
+                elif ver == self._app_version and not bld:
+                    self.showToast.emit(f"Это та же версия ({cand})", "error")
+                else:
+                    self.showToast.emit(f"Откат запрещён: {cand} старше текущей {here}", "error")
             return
 
+        self._staging_silent = silent
         self._set_update_busy(True, "Готовим обновление…")
-        self.showToast.emit("Готовим обновление. Можно продолжать работу.", "success")
         self.update_thread = UpdateStageWorker(info["root"], str(self.app_dir))
         self.update_thread.finished_signal.connect(self._on_update_staged)
         self.update_thread.start()
@@ -3119,7 +4714,8 @@ class Backend(QObject):
     def _on_update_staged(self, ok, message, version):
         self._set_update_busy(False, "")
         if not ok:
-            self.showToast.emit(f"Не удалось подготовить обновление: {message}", "error")
+            if not self._staging_silent:
+                self.showToast.emit(f"Не удалось подготовить обновление: {message}", "error")
             return
         staged = app_update.staged_info(self.app_dir)
         self._update_source = staged["root"] if staged else ""
@@ -3128,7 +4724,47 @@ class Backend(QObject):
             int((staged or {}).get("build") or 0),
         )
         self._set_update_ready(True, label)
-        self.showToast.emit(f"Готово. Можно обновить до {label or 'новой версии'}", "success")
+        # Скачанный из сети zip больше не нужен — убрать, чтобы не копить 60 МБ.
+        try:
+            dldir = app_update.install_root(self.app_dir) / "update_download"
+            if dldir.is_dir():
+                app_update._clear_dir(dldir)
+        except Exception:
+            pass
+
+    @Slot()
+    def _apply_log_path(self):
+        try:
+            return self._data_dir / "update_apply.log"
+        except Exception:
+            return Path(self.app_dir) / "update_apply.log"
+
+    def _apply_attempts(self, build):
+        """Сколько раз уже пробовали поставить эту сборку (защита от петли)."""
+        try:
+            data = json.loads(self._apply_log_path().read_text(encoding="utf-8"))
+            if int(data.get("build") or 0) == int(build):
+                return int(data.get("count") or 0)
+        except Exception:
+            pass
+        return 0
+
+    def _record_apply_attempt(self, build):
+        """Помечаем попытку установки; чистится при успехе (см. _init_updates)."""
+        try:
+            p = self._apply_log_path()
+            p.parent.mkdir(parents=True, exist_ok=True)
+            count = self._apply_attempts(build) + 1
+            p.write_text(json.dumps({"build": int(build), "count": count}),
+                         encoding="utf-8")
+        except Exception:
+            pass
+
+    def _clear_apply_log(self):
+        try:
+            self._apply_log_path().unlink(missing_ok=True)
+        except Exception:
+            pass
 
     @Slot()
     def applyReadyUpdate(self):
@@ -3142,6 +4778,17 @@ class Backend(QObject):
         if not staged_ver or not app_update.is_newer(staged_ver, self._app_version, staged_bld, self._app_build):
             self.showToast.emit("Откат на старую версию запрещён", "error")
             return
+        # Защита от петли: если эту сборку уже дважды пробовали поставить и
+        # программа всё ещё на старой — обновление не приклеивается (битый
+        # архив, заблокированные файлы). Крутить «скачать → перезапуск»
+        # бесконечно нельзя: предлагаем установщик.
+        if self._apply_attempts(staged_bld) >= 2:
+            self.showToast.emit(
+                "Обновление до этой сборки уже дважды не устанавливалось. "
+                "Скачайте установщик с сайта и запустите его — данные и базы останутся на месте.",
+                "error")
+            return
+        self._record_apply_attempt(staged_bld)
         dest_root = app_update.install_root(self.app_dir)
         if not (dest_root / "OVERTIMETAB.exe").exists() and not IS_FROZEN:
             self.showToast.emit("Обновление ставится в собранную программу, не из редактора кода", "error")
@@ -3160,6 +4807,11 @@ class Backend(QObject):
             )
             # Помощник ждёт смерти PID. Не прячемся в трей и не ждём таймер —
             # иначе старый процесс живёт, а консоль обновления крутится вечно.
+            try:
+                import recovery
+                recovery.mark_updating()
+            except Exception:
+                pass
             os._exit(0)
         except Exception as e:
             self.showToast.emit(f"Не удалось запустить обновление: {e}", "error")
@@ -3185,6 +4837,293 @@ import ctypes # <--- Добавляем системную библиотеку 
 # Уникальный ID сервера для общения между процессами
 APP_ID = "OvertimeTab_v2_SingleInstance_Key"
 
+# ---------------------------------------------------------------------------
+# СООБЩЕНИЯ ОБ ОШИБКАХ
+# Любая непойманная ошибка: пишем лог в файл в Documents\OverTimeTab,
+# показываем окно с логом и кнопкой «Скопировать в буфер обмена».
+# ---------------------------------------------------------------------------
+
+def _data_root() -> Path:
+    try:
+        return app_update.install_root(Path(__file__).resolve().parent)
+    except Exception:
+        return Path.cwd()
+
+
+def _crash_log_path() -> Path:
+    try:
+        # Лог кладём рядом с данными пользователя (Documents\OverTimeTab),
+        # чтобы он переживал обновление и был доступен без прав администратора.
+        home = os.environ.get("USERPROFILE") or os.environ.get("HOME")
+        base = Path(home) / "Documents" if home else Path.home() / "Documents"
+        return base / "OverTimeTab" / "crash_log.txt"
+    except Exception:
+        return _data_root() / "crash_log.txt"
+
+
+def _write_crash_log(details: str) -> None:
+    try:
+        p = _crash_log_path()
+        p.parent.mkdir(parents=True, exist_ok=True)
+        header = "===== " + datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " ====="
+        with open(p, "a", encoding="utf-8") as f:
+            f.write(header + "\n" + details + "\n\n")
+    except Exception:
+        pass
+
+
+def show_error_dialog(title: str, details: str) -> None:
+    """Нативное окно с логом и кнопкой «Скопировать в буфер обмена»."""
+    try:
+        from PySide6.QtWidgets import QApplication, QMessageBox
+        from PySide6.QtCore import Qt
+        app = QApplication.instance()
+        box = QMessageBox()
+        box.setIcon(QMessageBox.Icon.Critical)
+        box.setWindowTitle(title)
+        box.setText("Произошла ошибка. Лог можно скопировать в буфер обмена и отправить разработчику.")
+        shown = details if len(details) <= 4000 else details[:4000] + "\n… (обрезка, полный лог в crash_log.txt)"
+        box.setInformativeText(shown)
+        copy_btn = box.addButton("Скопировать лог", QMessageBox.ButtonRole.ActionRole)
+        close_btn = box.addButton(QMessageBox.StandardButton.Close)
+        box.exec()
+        if box.clickedButton() == copy_btn:
+            try:
+                clip = app.clipboard()
+                if clip:
+                    clip.setText(details)
+            except Exception:
+                pass
+    except Exception:
+        # Окно не построить (например, упали до QApplication) — пишем в stderr.
+        try:
+            sys.stderr.write(details)
+        except Exception:
+            pass
+
+
+def _handle_uncaught(exc_type, exc_value, exc_tb):
+    if issubclass(exc_type, KeyboardInterrupt):
+        sys.__excepthook__(exc_type, exc_value, exc_tb)
+        return
+    details = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
+    _write_crash_log(details)
+    try:
+        import recovery
+        recovery.mark_crash(details)
+    except Exception:
+        pass
+    try:
+        show_error_dialog("Непредвиденная ошибка", details)
+    except Exception:
+        try:
+            sys.stderr.write(details)
+        except Exception:
+            pass
+
+
+# ============================================================
+# ШРИФТ ПЕЧАТИ ТАБЕЛЯ — PT Astra Serif, вшит в программу.
+# Четыре начертания лежат в fonts/ и пакуются в exe. При запуске:
+#   1) добавляем их в базу шрифтов Qt — печать и PDF программы
+#      рисуют табель правильным шрифтом на любой машине;
+#   2) если в Windows шрифта нет (у коллег без шрифта Excel молча
+#      подменяет его системным) — ставим шрифт «для меня», без прав
+#      администратора: файл в %LOCALAPPDATA%\...\Fonts + запись
+#      в реестре HKCU (Windows 10 поддерживает пользовательские шрифты).
+# ============================================================
+PRINT_FONT_FILES = [
+    "PT-Astra-Serif_Regular.ttf",
+    "PT-Astra-Serif_Bold.ttf",
+    "PT-Astra-Serif_Italic.ttf",
+    "PT-Astra-Serif_Bold-Italic.ttf",
+]
+
+
+def _parse_name_table(data, off):
+    """Записи таблицы name: {id: текст}. Windows-имена приоритетнее Mac."""
+    import struct
+    count = struct.unpack(">H", data[off + 2:off + 4])[0]
+    storage = off + struct.unpack(">H", data[off + 4:off + 6])[0]
+    mac, win = {}, {}
+    for i in range(count):
+        rec = off + 6 + 12 * i
+        if rec + 12 > len(data):
+            break
+        platform, encoding, _lang, name_id, str_len, str_off = \
+            struct.unpack(">HHHHHH", data[rec:rec + 12])
+        raw = data[storage + str_off:storage + str_off + str_len]
+        if platform == 3 and encoding in (0, 1):
+            try:
+                win.setdefault(name_id, raw.decode("utf-16-be"))
+            except Exception:
+                pass
+        elif platform == 1:
+            try:
+                mac.setdefault(name_id, raw.decode("mac-roman"))
+            except Exception:
+                pass
+    out = dict(mac)
+    out.update(win)
+    return out
+
+
+def _ttf_font_names(data):
+    """(семейство, полное имя) из файла TTF/OTF (байты).
+
+    Полное имя идёт в запись реестра при установке шрифта в Windows."""
+    import struct
+    if len(data) < 12 or data[:4] not in (b"\x00\x01\x00\x00", b"true", b"OTTO", b"ttcf"):
+        return "", ""
+    num_tables = struct.unpack(">H", data[4:6])[0]
+    for i in range(num_tables):
+        rec = 12 + 16 * i
+        if rec + 16 > len(data):
+            break
+        if data[rec:rec + 4] == b"name":
+            table_off = struct.unpack(">I", data[rec + 8:rec + 12])[0]
+            names = _parse_name_table(data, table_off)
+            family = names.get(1, "")
+            full = names.get(4, "") or family
+            return family, full
+    return "", ""
+
+
+def _print_font_bytes(name):
+    """Байты файла шрифта: из ресурсов exe (qrc) или из папки программы."""
+    try:
+        from PySide6.QtCore import QFile
+        f = QFile(":/fonts/" + name)
+        if f.open(QFile.ReadOnly):
+            data = bytes(f.readAll())
+            f.close()
+            if data:
+                return data
+    except Exception:
+        pass
+    p = Path(ASSETS_DIR) / "fonts" / name
+    try:
+        if p.is_file():
+            return p.read_bytes()
+    except Exception:
+        pass
+    return b""
+
+
+def _excel_fonts_installed_names():
+    """Очищенные имена шрифтов из реестра Windows (HKLM + HKCU), нижний регистр."""
+    names = set()
+    try:
+        import winreg
+    except ImportError:
+        return names
+    for root in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
+        try:
+            with winreg.OpenKey(
+                    root, r"Software\Microsoft\Windows NT\CurrentVersion\Fonts") as key:
+                i = 0
+                while True:
+                    try:
+                        value_name, _data, _type = winreg.EnumValue(key, i)
+                    except OSError:
+                        break
+                    clean = str(value_name).strip().lower()
+                    if clean.endswith(" (truetype)"):
+                        clean = clean[:-len(" (truetype)")]
+                    names.add(clean)
+                    i += 1
+        except Exception:
+            continue
+    return names
+
+
+def _needs_excel_font_install(full_name, installed_names):
+    """Надо ли ставить шрифт: полного имени нет среди установленных."""
+    target = (full_name or "").strip().lower()
+    if not target:
+        return False
+    for existing in installed_names:
+        clean = str(existing).strip().lower()
+        if clean.endswith(" (truetype)"):
+            clean = clean[:-len(" (truetype)")]
+        if clean == target:
+            return False
+    return True
+
+
+def _broadcast_fonts_changed():
+    """Сообщает запущенным программам, что набор шрифтов изменился."""
+    try:
+        import ctypes
+        result = ctypes.c_ulong(0)
+        ctypes.windll.user32.SendMessageTimeoutW(
+            0xFFFF, 0x001D, 0, 0, 2, 1000, ctypes.byref(result))
+    except Exception:
+        pass
+
+
+def _ensure_excel_fonts_windows():
+    """Ставит шрифты печати в Windows «для меня» (без прав администратора).
+
+    Excel печатает табель шрифтом PT Astra Serif только если шрифт есть
+    в Windows. Копируем файл в пользовательскую папку шрифтов и пишем
+    запись в HKCU — так умеет Windows 10. Возвращает число установленных."""
+    if sys.platform != "win32":
+        return 0
+    installed = _excel_fonts_installed_names()
+    fonts_root = Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "Windows" / "Fonts"
+    installed_count = 0
+    import winreg
+    for name in PRINT_FONT_FILES:
+        data = _print_font_bytes(name)
+        if not data:
+            continue
+        _family, full = _ttf_font_names(data)
+        if not _needs_excel_font_install(full, installed):
+            continue
+        fonts_root.mkdir(parents=True, exist_ok=True)
+        dst = fonts_root / name
+        dst.write_bytes(data)
+        value_name = (full or name) + " (TrueType)"
+        try:
+            with winreg.CreateKey(
+                    winreg.HKEY_CURRENT_USER,
+                    r"Software\Microsoft\Windows NT\CurrentVersion\Fonts") as key:
+                winreg.SetValueEx(key, value_name, 0, winreg.REG_SZ, str(dst))
+            installed.add((full or "").strip().lower())
+            installed_count += 1
+        except Exception:
+            try:
+                dst.unlink()
+            except Exception:
+                pass
+    if installed_count:
+        _broadcast_fonts_changed()
+    return installed_count
+
+
+def _register_print_fonts():
+    """Встраивает шрифт печати: в Qt (печать/PDF программы) и в Windows
+    (чтобы Excel печатал табель этим шрифтом на любой машине).
+    Возвращает число начертаний, добавленных в Qt."""
+    added = 0
+    from PySide6.QtGui import QFontDatabase
+    for name in PRINT_FONT_FILES:
+        data = _print_font_bytes(name)
+        if not data:
+            continue
+        try:
+            if QFontDatabase.addApplicationFontFromData(data) != -1:
+                added += 1
+        except Exception:
+            pass
+    try:
+        _ensure_excel_fonts_windows()
+    except Exception:
+        pass
+    return added
+
+
 def main():
     try:
         myappid = 'mycompany.overtimetab.version2'
@@ -3194,7 +5133,18 @@ def main():
 
     os.environ["QT_QUICK_CONTROLS_STYLE"] = "Basic" 
     
+    # Любая непойманная ошибка — окно с логом и кнопкой «Скопировать».
+    sys.excepthook = _handle_uncaught
+
     app = QApplication(sys.argv)
+
+    # Шрифт печати табеля (PT Astra Serif) вшит в программу: подключаем
+    # к Qt и, если в Windows его нет, ставим «для меня» — Excel печатает
+    # табель правильным шрифтом на любой машине.
+    try:
+        _register_print_fonts()
+    except Exception:
+        pass
 
     # --- ЛОГИКА ОДНОГО ЭКЗЕМПЛЯРА ---
     socket = QLocalSocket()
@@ -3213,11 +5163,23 @@ def main():
     server.listen(APP_ID)
     # --------------------------------
 
+    # Обновление при запуске (в стиле Discord): проверка, скачивание и
+    # установка до открытия главного окна. False — обновляемся, процесс
+    # завершится, помощник откроет программу заново уже новой.
+    try:
+        if not _startup_update_flow(app):
+            return
+    except Exception:
+        # Страховка: сбой обновления при запуске никогда не должен
+        # мешать открыться программе.
+        _startup_log("СБОЙ проверки обновления: "
+                     + traceback.format_exc(limit=3))
+
     app_icon = QIcon(APP_ICON_PATH)
     app.setWindowIcon(app_icon)
 
     tray_icon = QSystemTrayIcon(app_icon, app)
-    tray_icon.setToolTip("OVERTIMETAB — табель учёта переработок")
+    tray_icon.setToolTip("OVERTIMETAB — табель учёта служебного времени")
     
     tray_menu = QMenu()
     open_action = QAction("Развернуть", app)
@@ -3231,7 +5193,7 @@ def main():
     my_backend = Backend()
     engine = QQmlApplicationEngine()
     engine.rootContext().setContextProperty("backend", my_backend)
-    
+        
     def show_window():
         if engine.rootObjects():
             window = engine.rootObjects()[0]
@@ -3260,11 +5222,37 @@ def main():
             
     tray_icon.activated.connect(tray_activated)
 
+    qml_errors: list[str] = []
+
+    def _on_qml_warnings(warnings):
+        for w in warnings:
+            try:
+                qml_errors.append(str(w.toString()))
+            except Exception:
+                pass
+
+    engine.warnings.connect(_on_qml_warnings)
+
     engine.load(QML_PATH)
-    
-    if not engine.rootObjects(): 
+
+    if not engine.rootObjects():
+        # Не удалось собрать интерфейс (чаще всего — ошибка QML).
+        # Показываем лог и даём скопировать его в буфер обмена.
+        details = "\n".join(qml_errors) if qml_errors else "Не удалось загрузить интерфейс (QML). Подробности в crash_log.txt."
+        _write_crash_log("QML load error\n" + details)
+        try:
+            import recovery
+            recovery.mark_crash("QML load error")
+        except Exception:
+            pass
+        show_error_dialog("Не удалось запустить OverTimeTab", details)
         sys.exit(-1)
         
+    try:
+        import recovery
+        recovery.mark_ok()
+    except Exception:
+        pass
     app.setQuitOnLastWindowClosed(False)
 
     exit_code = app.exec()
@@ -3272,9 +5260,358 @@ def main():
     del engine
     sys.exit(exit_code)
 
+
+# ═══════════════════════════════════════════════════════════════════
+# ОБНОВЛЕНИЕ ПРИ ЗАПУСКЕ (в стиле Discord)
+# До открытия главного окна: маленькое окно → проверка → скачивание →
+# установка → программа открывается уже новой. Отложенное обновление
+# (скачали, но не установили) ставится при следующем запуске первым
+# делом. Управляется тумблером в настройках, по умолчанию включено.
+# ═══════════════════════════════════════════════════════════════════
+
+def _startup_ui_config(cfg_paths=None):
+    """Секция ui конфига без Qt — решаем, обновляться ли при старте."""
+    if cfg_paths is None:
+        cfg_paths = [
+            Path.home() / "Documents" / "OverTimeTab" / "config.json",
+            Path(sys.argv[0]).resolve().parent / "data" / "config.json",
+            Path.home() / ".overtimetab" / "config.json",
+        ]
+    for cfg in cfg_paths:
+        try:
+            if cfg.exists():
+                return json.loads(cfg.read_text(encoding="utf-8")).get("ui", {}) or {}
+        except Exception:
+            continue
+    return {}
+
+
+def _startup_candidate_urls(ui):
+    """Тот же порядок источников, что и у проверки в программе:
+    адрес из настроек → GitHub → post.mvd.ru (дубликаты пропускаем)."""
+    urls = []
+    stored = str(ui.get("update_url") or "").strip()
+    if stored:
+        urls.append(stored)
+    urls.append(app_update.DEFAULT_UPDATE_URL)
+    urls.append(app_update.FALLBACK_UPDATE_URL)
+    seen, out = set(), []
+    for u in urls:
+        u = (u or "").strip()
+        if u and u not in seen:
+            seen.add(u)
+            out.append(u)
+    return out
+
+
+def _startup_find_update(app_dir, cur_ver, cur_bld, ui, fetch=None, log=None):
+    """Синхронный поиск нового обновления по всем источникам.
+
+    Возвращает info (с base_url) или None. fetch подменяется в тестах.
+    Каждый источник и вердикт пишутся в журнал (log) — «проверила и
+    не нашла» больше не отличима от «не смогла проверить».
+    """
+    fetch = fetch or app_update.fetch_update_info
+    log = log or (lambda msg: None)
+    for base in _startup_candidate_urls(ui):
+        try:
+            info, err = fetch(base, timeout=8.0)
+        except Exception as e:
+            log(f"источник {base}: ошибка {type(e).__name__}: {e}")
+            continue
+        if not info:
+            log(f"источник {base}: данных нет ({err})")
+            continue
+        ver = str(info.get("version") or "")
+        bld = int(info.get("build") or 0)
+        newer = bool(ver) and app_update.is_newer(ver, cur_ver, bld, cur_bld)
+        log(f"источник {base}: {ver} · сборка {bld} → "
+            f"{'НОВЕЕ — забираем' if newer else 'не новее, пропускаем'}")
+        if newer:
+            info = dict(info)
+            info["base_url"] = base
+            return info
+    return None
+
+
+class _UpdaterSplash(QWidget):
+    """Маленькое тёмное окно обновления — как в Discord при запуске."""
+
+    def __init__(self):
+        super().__init__(None)
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setFixedSize(400, 232)
+
+        card = QWidget(self)
+        card.setObjectName("splashCard")
+        card.setGeometry(0, 0, self.width(), self.height())
+
+        logo = QLabel("ОТ", card)
+        logo.setObjectName("splashLogo")
+        logo.setAlignment(Qt.AlignCenter)
+        logo.setFixedSize(56, 56)
+
+        title = QLabel("OVERTIMETAB", card)
+        title.setObjectName("splashTitle")
+        self._status = QLabel("…", card)
+        self._status.setObjectName("splashStatus")
+        self._status.setWordWrap(True)
+
+        self._bar = QProgressBar(card)
+        self._bar.setObjectName("splashBar")
+        self._bar.setTextVisible(False)
+        self._bar.setFixedHeight(6)
+        self._bar.setRange(0, 0)          # «бегунок», пока нет процентов
+
+        hint = QLabel("обновление при запуске", card)
+        hint.setObjectName("splashHint")
+
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(16)
+        row.addWidget(logo)
+        col = QVBoxLayout()
+        col.setContentsMargins(0, 0, 0, 0)
+        col.setSpacing(4)
+        col.addWidget(title)
+        col.addWidget(self._status)
+        row.addLayout(col)
+
+        v = QVBoxLayout(card)
+        v.setContentsMargins(28, 30, 28, 20)
+        v.setSpacing(14)
+        v.addLayout(row)
+        v.addStretch(1)
+        v.addWidget(self._bar)
+        v.addWidget(hint)
+
+        self.setStyleSheet("""
+            #splashCard  { background: #1F2328; border-radius: 14px; }
+            #splashLogo  { background: #0374B5; color: #FFFFFF;
+                           border-radius: 14px; font-size: 20px; font-weight: 800; }
+            #splashTitle { color: #FFFFFF; font-size: 17px; font-weight: 700; }
+            #splashStatus{ color: #A6B0B9; font-size: 12.5px; }
+            #splashHint  { color: #77828B; font-size: 11px; }
+            #splashBar   { background: #2A2F36; border: none; border-radius: 3px; }
+            #splashBar::chunk { background: #4FA3D8; border-radius: 3px; }
+        """)
+
+        screen = QApplication.primaryScreen().availableGeometry()
+        self.move(screen.center().x() - self.width() // 2,
+                  screen.center().y() - self.height() // 2)
+
+    def set_state(self, text):
+        self._status.setText(text)
+        self._bar.setRange(0, 0)
+        QApplication.processEvents()
+
+    def set_progress(self, done, total):
+        if total > 0:
+            self._bar.setRange(0, 100)
+            self._bar.setValue(max(0, min(100, int(done * 100 / total))))
+        else:
+            self._bar.setRange(0, 0)
+        QApplication.processEvents()
+
+
+def _startup_log(msg):
+    """Журнал обновления при запуске: Documents\OverTimeTab\startup_update.log"""
+    try:
+        log_path = (Path.home() / "Documents" / "OverTimeTab"
+                    / "startup_update.log")
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(f"{datetime.now():%Y-%m-%d %H:%M:%S}  {msg}\n")
+    except Exception:
+        pass
+
+
+def _startup_update_flow(app) -> bool:
+    """Проверка/установка обновления до запуска программы.
+
+    True  — запускаемся дальше как обычно.
+    False — обновляемся: помощник доустановит файлы и сам откроет
+            программу заново (наш процесс завершается).
+    """
+    if not IS_FROZEN:
+        return True                      # из редактора кода не обновляемся
+
+    # Установка «с заменой»: убираем файлы прошлых сборок, если новая
+    # версия была поставлена поверх старой (руками или обновлением).
+    try:
+        removed = app_update.cleanup_stale_files(
+            Path(sys.executable).resolve().parent, log=_startup_log)
+        if removed:
+            _startup_log("старые файлы: %s" % "; ".join(removed[:5]))
+    except Exception as e:
+        _startup_log("чистка старых файлов не удалась: %s" % e)
+
+    try:
+        ui = _startup_ui_config()
+        if not ui.get("startup_update", True):
+            return True                  # выключено тумблером в настройках
+    except Exception:
+        ui = {}
+
+    app_dir = Path(sys.executable).resolve().parent
+    try:
+        cur_ver = app_update.current_app_version(app_dir)
+        cur_bld = app_update.current_app_build(app_dir)
+    except Exception:
+        return True
+
+    # 1) Отложенное обновление: скачали в прошлый раз, но не установили —
+    #    ставим ПЕРВЫМ делом, до открытия программы.
+    try:
+        staged = app_update.staged_info(app_dir)
+    except Exception:
+        staged = None
+    if staged and app_update.is_newer(
+            str(staged.get("version") or ""), cur_ver,
+            int(staged.get("build") or 0), cur_bld):
+        splash = _UpdaterSplash()
+        splash.show()
+        splash.set_state(
+            f"Устанавливаем {staged.get('display') or staged.get('version')}…")
+        try:
+            _startup_log(f"ставим отложенное обновление {staged.get('version')} · сборка {staged.get('build')}")
+            app_update.launch_file_swap(
+                Path(staged["root"]), app_update.install_root(app_dir), os.getpid())
+            try:
+                import recovery
+                recovery.mark_updating()
+            except Exception:
+                pass
+            os._exit(0)
+        except Exception as e:
+            _startup_log(f"установка отложенного не удалась: {type(e).__name__}: {e}")
+            splash.set_state("Не удалось установить — запускаем программу")
+            QApplication.processEvents()
+            time.sleep(1.0)
+            splash.close()
+            return True
+
+    # 2) Проверка в интернете. Сеть бывает медленной (GitHub из закрытых
+    #    сетей отвечает дольше пары секунд), поэтому: 8 секунд на источник,
+    #    до 30 на всё, окно живёт (processEvents) и ГОВОРИТ исход —
+    #    «последняя версия», «не удалось проверить» или «проверка затянулась».
+    splash = _UpdaterSplash()
+    splash.show()
+    splash.set_state("Проверяем обновления…")
+
+    _startup_log(f"── запуск программы: сейчас {cur_ver} · сборка {cur_bld}")
+
+    found = {}
+    check_error = []
+
+    def _check():
+        try:
+            info = _startup_find_update(app_dir, cur_ver, cur_bld, ui,
+                                        log=_startup_log)
+            if info:
+                found.update(info)
+        except Exception as e:
+            check_error.append(f"{type(e).__name__}: {e}")
+
+    t = threading.Thread(target=_check, daemon=True)
+    t.start()
+    deadline = time.time() + 30.0
+    while time.time() < deadline and t.is_alive():
+        QApplication.processEvents()
+        time.sleep(0.1)
+
+    if not found:
+        if t.is_alive():
+            _startup_log("проверка не уложилась в 30 секунд — запускаемся без обновления")
+            splash.set_state("Проверка затянулась — запускаем программу")
+        elif check_error:
+            _startup_log("проверка закончилась ошибкой: " + check_error[0])
+            splash.set_state("Не удалось проверить обновления — запускаем")
+        else:
+            _startup_log("обновлений нет — у пользователя последняя версия")
+            splash.set_state(f"У вас последняя версия · сборка {cur_bld}")
+        QApplication.processEvents()
+        time.sleep(1.0)
+        splash.close()
+        return True
+    _startup_log(f"найдено обновление: {found.get('version')} · сборка {found.get('build')}")
+
+    # 3) Скачивание с прогрессом (заглохло — запускаемся, докачает
+    #    кнопка в шапке уже открытой программы).
+    display = found.get("display") or found.get("version") or "новую версию"
+    zip_ref = str(found.get("url") or found.get("zip") or "").strip()
+    if not zip_ref:
+        splash.close()
+        return True
+    splash.set_state(f"Скачиваем {display}…")
+    try:
+        dl_url = app_update.resolve_download_url(
+            zip_ref, str(found.get("base_url") or ""))
+        _startup_log(f"скачиваем {dl_url}")
+        dest_dir = app_update.install_root(app_dir) / "update_download"
+        deadline = {"total": time.time() + 900, "last_change": time.time(),
+                    "last_done": -1}
+        def _prog(done, total):
+            if time.time() > deadline["total"]:
+                raise app_update.UpdateError("Скачивание прервано: слишком долго")
+            if done != deadline["last_done"]:
+                deadline["last_done"] = done
+                deadline["last_change"] = time.time()
+            elif time.time() - deadline["last_change"] > 90:
+                raise app_update.UpdateError("Скачивание заглохло")
+            splash.set_progress(done, total)
+        local_zip = app_update.download_zip(
+            dl_url, dest_dir,
+            sha256=str(found.get("sha256") or "").strip(),
+            progress=_prog)
+        _startup_log(f"скачано: {local_zip}")
+    except Exception as e:
+        _startup_log(f"скачивание не удалось: {type(e).__name__}: {e}")
+        splash.set_state("Не удалось скачать — запускаем программу")
+        QApplication.processEvents()
+        time.sleep(1.0)
+        splash.close()
+        return True
+
+    # 4) Подготовка и установка — помощник докопирует и откроет программу.
+    splash.set_state("Устанавливаем…")
+    try:
+        app_update.stage_package(Path(local_zip), app_dir)
+        staged = app_update.staged_info(app_dir)
+        _startup_log("обновление подготовлено (pending_update)")
+    except Exception as e:
+        _startup_log(f"подготовка не удалась: {type(e).__name__}: {e}")
+        splash.set_state("Не удалось установить — запускаем программу")
+        QApplication.processEvents()
+        time.sleep(1.0)
+        splash.close()
+        return True
+    if staged and app_update.is_newer(
+            str(staged.get("version") or ""), cur_ver,
+            int(staged.get("build") or 0), cur_bld):
+        _startup_log("передаём установщику, процесс завершается")
+        app_update.launch_file_swap(
+            Path(staged["root"]), app_update.install_root(app_dir), os.getpid())
+        try:
+            import recovery
+            recovery.mark_updating()
+        except Exception:
+            pass
+        os._exit(0)
+    _startup_log("подготовленное обновление не новее текущего — запускаемся")
+    splash.close()
+    return True
+
+
 if __name__ == "__main__":
     apply = app_update.parse_apply_argv(sys.argv)
     if apply:
+        try:
+            import recovery
+            recovery.mark_updating()
+        except Exception:
+            pass
         try:
             app_update.apply_update_inplace(
                 Path(apply["source"]),
@@ -3285,4 +5622,5 @@ if __name__ == "__main__":
             print(f"Ошибка применения обновления: {e}")
             sys.exit(1)
         sys.exit(0)
+
     main()

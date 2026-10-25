@@ -58,7 +58,7 @@ Item {
                         // мыши (amplitude > 0). Раньше счётчик крутился ВСЕГДА,
                         // заставляя видеокарту перерисовывать экран 60 раз в
                         // секунду даже в простое. Теперь — только когда нужно.
-                        running: titleWrapper.amplitude > 0.001
+                        running: titleWrapper.amplitude > 0.001 && !AppTheme.reducedMotion
                     }
 
                     Row {
@@ -93,6 +93,7 @@ Item {
                         }
                     }
                     
+                    HoverHandler { cursorShape: Qt.PointingHandCursor }
                     MouseArea {
                         anchors.fill: parent
                         cursorShape: Qt.PointingHandCursor
@@ -140,6 +141,24 @@ Item {
                         isVisible: settingsHover.hovered
                     }
                 }
+
+                Item {
+                    Layout.preferredWidth: 32
+                    Layout.preferredHeight: 32
+                    Layout.alignment: Qt.AlignVCenter
+                    HoverHandler { id: printHover }
+                    AnimatedPrintButton {
+                        anchors.fill: parent
+                        onClicked: customPrintDialog.show()
+                    }
+                    AppToolTip {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        anchors.bottom: parent.top
+                        anchors.bottomMargin: AppTheme.spaceS
+                        text: "Печать"
+                        isVisible: printHover.hovered
+                    }
+                }
             }
 
             RowLayout {
@@ -150,7 +169,7 @@ Item {
                     Layout.fillWidth: true
                     Layout.preferredHeight: 36
                     variant: "secondary" 
-                    text: "Сотрудник" 
+                    text: "Новый сотрудник" 
                     iconSource: "../icons/user_plus.svg" 
                     onClicked: {
                         empDialog.editId = 0
@@ -169,50 +188,46 @@ Item {
                         if (!currentYear) {
                             currentYear = new Date().getFullYear().toString();
                         }
-                        empDialog.startMonth = currentYear + "-01"
+                        empDialog.hireDate = currentYear + "-01-01"
                         empDialog.showAt(parent, width / 2, -10)
                     }
                 }
 
-                Item {
+                // Круглая кнопка-₽: тот же вторичный стиль, что и у
+                // «Нового сотрудника» (рамка), но только символ рубля.
+                // «Новый сотрудник» забирает всю освободившуюся ширину.
+                AppIconButton {
                     Layout.preferredWidth: 36
                     Layout.preferredHeight: 36
-                    HoverHandler { id: printHover }
-                    AnimatedPrintButton {
-                        anchors.fill: parent
-                        onClicked: customPrintDialog.show()
-                    }
+                    Layout.alignment: Qt.AlignVCenter
+                    bgRadius: AppTheme.radiusPill
+                    iconSource: "../icons/ruble.svg"
+                    iconSize: 18
+                    iconColor: AppTheme.textPrimary
+                    iconHoverColor: AppTheme.textPrimary
+                    borderIdleColor: AppTheme.borderInput
+                    borderIdleWidth: 1
+                    onClicked: moneyOrderDialog.openNew()
+
+                    HoverHandler { id: moneyOrderHover }
                     AppToolTip {
                         anchors.horizontalCenter: parent.horizontalCenter
                         anchors.bottom: parent.top
                         anchors.bottomMargin: AppTheme.spaceS
-                        text: "Печать"
-                        isVisible: printHover.hovered
+                        text: "Приказ всем"
+                        isVisible: moneyOrderHover.hovered
                     }
                 }
 
-                Item {
-                    Layout.preferredWidth: 36
-                    Layout.preferredHeight: 36
-                    HoverHandler { id: exportHover }
-                    AnimatedExportButton {
-                        anchors.fill: parent
-                        onClicked: exportDialog.open()
-                    }
-                    AppToolTip {
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        anchors.bottom: parent.top
-                        anchors.bottomMargin: AppTheme.spaceS
-                        text: "Экспорт"
-                        isVisible: exportHover.hovered
-                    }
-                }
+
+
+
             }
         }
     }
     
     // МЕНЮ БАЗ ДАННЫХ (вне основного Rectangle)
-    AppDatabaseMenu {
+    AppMenu {
         id: dbSwitchMenu
         
         Repeater {

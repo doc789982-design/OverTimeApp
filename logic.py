@@ -123,6 +123,35 @@ def compute_month_norm_minutes(db, employee_id: int, year: int, month: int, shif
     shifted_checker = build_shifted_weekend_checker(db, employee_id)
     start_dt, end_dt = month_bounds_dt(year, month)
     cur, last = start_dt.date(), (end_dt - timedelta(days=1)).date()
+    # Неполный месяц приема: норма считается с даты приема по производственному
+    # календарю: человек обязан отработать только рабочие дни, идущие после приёма.
+    # Симметрично, месяц увольнения/перевода считается по последний день службы
+    # (дата увольнения включительно). У старых записей (дата = 1-е число)
+    # поведение не меняется.
+    hire_iso, end_iso = "", ""
+    try:
+        emp = db.get_employee(employee_id)
+        hire_iso = str(emp["hire_date"] or "").strip()
+        if not hire_iso:
+            sm = str(emp["start_month"] or "").strip()[:7]
+            hire_iso = sm + "-01" if len(sm) == 7 else ""
+        end_iso = str(emp["end_date"] or "").strip()
+    except Exception:
+        hire_iso, end_iso = "", ""
+    if len(hire_iso) == 10:
+        try:
+            hd = d_parse(hire_iso)
+            if cur < hd:
+                cur = hd
+        except Exception:
+            pass
+    if len(end_iso) == 10:
+        try:
+            ed = d_parse(end_iso)
+            if last > ed:
+                last = ed
+        except Exception:
+            pass
     work_map = db.get_calendar_month(d_iso(cur), d_iso(last))
     override_set = db.get_calendar_overrides(d_iso(cur), d_iso(last))
 
@@ -293,29 +322,190 @@ def _get_accruals_for_period(db, employee_id, start_dt, end_dt, shift_checker, h
     res["days"] += len(counted_days)
     return res
 
+# Кэш итогов месяцев. Живёт только внутри одного обновления экрана —
+# см. summary_cache_scope. Панорама года считает 12 месяцев, и каждый
+# тянет за собой декабри прошлых лет: без кэша это десятки повторных
+# расчётов и заметное подёргивание интерфейса при каждой правке.
+_SUMMARY_CACHE = {"depth": 0, "data": {}}
+
+
+class summary_cache_scope:
+    """Включает кэш итогов месяцев до выхода из контекста.
+
+    Протухнуть не может в принципе: кэш живёт ровно до конца одного
+    обновления, а любые правки данных происходят между обновлениями.
+    """
+
+    def __enter__(self):
+        _SUMMARY_CACHE["depth"] += 1
+        return self
+
+    def __exit__(self, *exc):
+        _SUMMARY_CACHE["depth"] -= 1
+        if _SUMMARY_CACHE["depth"] <= 0:
+            _SUMMARY_CACHE["depth"] = 0
+            _SUMMARY_CACHE["data"].clear()
+
+
+def total_overtime_days(end_hours, prev_h_end, end_overtime, prev_o_end, end_days, prev_d_end):
+    """«Всего дней» — переработка сотрудника в днях (остаток на конец периода).
+
+    Часовые копилки независимы: минус в одной не съедает часы другой
+    (каждая зажимается в ноль ОТДЕЛЬНО — ДВО и сверх нормы за этот год и за
+    предыдущий). Положительные часы складываются и делятся на 8-часовой
+    рабочий день с округлением вниз, затем прибавляются ДДО (дни).
+    """
+    minutes = 0
+    for m in (end_hours, prev_h_end, end_overtime, prev_o_end):
+        m = int(m)
+        if m > 0:
+            minutes += m
+    return minutes // (8 * 60) + int(end_days) + int(prev_d_end)
+
+
+def split_both_years(cur: dict, prev: dict, comp_type: str, amount: int) -> tuple[int, int]:
+    """Делит компенсацию «за оба года» между текущим годом и заначкой.
+
+    cur/prev — остатки, как их показывает окно (getAvailableBalances:
+    дни целыми днями, часы целыми часами). Сначала расходуется текущий
+    год, затем прошлый — ровно как человек делал это двумя периодами
+    вручную. Ёмкость года для дней = дни + часы//8 (лишние дни
+    закрываются ночными часами), для часов — часы этого вида.
+    Возвращает (сколько из текущего года, сколько из прошлого);
+    для часов — в минутах.
+    """
+    amount = int(amount)
+    if comp_type in ("hours", "overtime"):
+        cap = int((cur or {}).get(comp_type) or 0) * 60
+        first = min(max(0, amount), cap)
+        return first, amount - first
+    cur = cur or {}
+    cap = int(cur.get("days") or 0) + int(cur.get("hours") or 0) // 8
+    first = min(max(0, amount), cap)
+    return first, amount - first
+
+
+def _current_year_day_netting(db, employee_id: int, year: int, month: int, base_d: int) -> tuple[int, int]:
+    """Сколько дней компенсации текущего года взято из ночных часов.
+
+    Правило то же, что показывает окно компенсации: «Итого: N дн.» =
+    дни + часы/8. Когда дни отгулов исчерпали дневную копилку, каждый
+    следующий день списывается из ночных часов (8 часов за день).
+    Считаем по месяцам, в которые попадали дни компенсаций: между
+    такими месяцами копилка дней только растёт, поэтому перевес надо
+    искать в самих месяцах трат (раньше разобранный день обратно
+    в часы не возвращается).
+    Возвращает (на начало месяца, на конец месяца) — целые дни.
+    """
+    emp = db.get_employee(employee_id)
+    hy, hm = safe_get_hire_date(emp["start_month"])
+    if year < hy or (year == hy and month < hm):
+        return 0, 0
+    y_start = datetime(year, hm, 1) if year == hy else datetime(year, 1, 1)
+    y_s_iso, y_e_iso = d_iso(y_start.date()), d_iso(date(year + 1, 1, 1))
+
+    # Дни отгулов — по эффективным датам (тот же якорь начала периода,
+    # что и в get_comp_real), денежные дни — по дате приказа.
+    eff = """(CASE WHEN substr(cd.day_off_date,1,4) > substr(c.event_date,1,4)
+                  THEN substr(c.event_date,1,4) || '-12-31'
+                  ELSE cd.day_off_date END)"""
+    spend = {}
+    for r in db.conn.execute(f"""
+            SELECT substr({eff},1,7) ym, COUNT(*) c
+            FROM comp_day_off_date cd
+            JOIN compensation c ON c.id = cd.compensation_id
+            WHERE cd.employee_id=?
+              AND c.event_date IS NOT NULL AND c.event_date != ''
+              AND c.event_date != '1900-01-01'
+              AND {eff} >= ? AND {eff} < ?
+            GROUP BY 1
+        """, (employee_id, y_s_iso, y_e_iso)):
+        spend[r["ym"]] = spend.get(r["ym"], 0) + int(r["c"] or 0)
+    for r in db.conn.execute("""
+            SELECT substr(event_date,1,7) ym, SUM(amount_days) sd
+            FROM compensation
+            WHERE employee_id=? AND unit='days' AND method='money'
+              AND event_date IS NOT NULL AND event_date != ''
+              AND event_date != '1900-01-01'
+              AND event_date >= ? AND event_date < ?
+            GROUP BY 1
+        """, (employee_id, y_s_iso, y_e_iso)):
+        spend[r["ym"]] = spend.get(r["ym"], 0) + int(r["sd"] or 0)
+    if sum(spend.values()) <= base_d:
+        return 0, 0          # дневная копилка покрывает все траты — часы не трогаем
+
+    shift_checker = build_shift_checker(db, employee_id)
+    holidays = db.get_holidays_month(d_iso(date(year, 1, 1)), d_iso(date(year, 12, 31)))
+    before = after = cum = 0
+    for ym in sorted(spend):
+        m_k = int(ym[5:7])
+        if m_k > month:
+            break
+        cum += spend[ym]
+        accr = _get_accruals_for_period(db, employee_id, y_start,
+                                        month_bounds_dt(year, m_k)[1],
+                                        shift_checker, holidays)
+        over = max(0, cum - base_d - int(accr["days"] or 0))
+        if m_k < month:
+            before = max(before, over)
+        after = max(after, over)
+    return before, after
+
+
 def compute_month_summary(db, employee_id: int, year: int, month: int) -> dict:
+    _cms_key = None
+    if _SUMMARY_CACHE["depth"] > 0:
+        _cms_key = (id(db), employee_id, int(year), int(month))
+        _cms_hit = _SUMMARY_CACHE["data"].get(_cms_key)
+        if _cms_hit is not None:
+            return _cms_hit
     shift_checker = build_shift_checker(db, employee_id)
     emp = db.get_employee(employee_id)
     hire_y, hire_m = safe_get_hire_date(emp["start_month"])
     
     if year < hire_y or (year == hire_y and month < hire_m):
-        return {k: 0 for k in ["norm_minutes", "shift_minutes", "shift_night_minutes", "shift_holiday_minutes", "start_hours", "start_overtime", "start_days", "acc_hours", "acc_overtime", "acc_days", "comp_hours", "comp_overtime", "comp_days", "end_hours", "end_overtime", "end_days"]} | {"is_shift": False}
+        # Месяц до приёма сотрудника: полный набор нулей с ТОЧНО тем же
+        # составом ключей, что и у обычного итога месяца. Раньше здесь
+        # возвращался урезанный словарь (без prev_* и comp_*_prev), и
+        # открытие «несуществующего» месяца валило панель итогов с
+        # KeyError 'prev_h_end'.
+        return {k: 0 for k in [
+            "norm_minutes", "shift_minutes", "shift_night", "shift_holiday",
+            "start_hours", "start_overtime", "start_days",
+            "acc_hours", "acc_overtime", "acc_days",
+            "comp_h_real", "comp_h_prev", "comp_o_real", "comp_o_prev",
+            "comp_d_real", "comp_d_prev",
+            "comp_hours", "comp_overtime", "comp_days",
+            "end_hours", "end_overtime", "end_days",
+            "prev_h_start", "prev_o_start", "prev_d_start",
+            "prev_h_end", "prev_o_end", "prev_d_end",
+        ]} | {"is_shift": False}
 
     m_start, m_end = month_bounds_dt(year, month)
     m_s_iso, m_e_iso = d_iso(m_start.date()), d_iso(m_end.date())
     y_start = datetime(year, hire_m, 1) if year == hire_y else datetime(year, 1, 1)
 
     # 1. ТЕКУЩИЙ ГОД (База накоплений)
+    # С 1 января начинается новый учётный период: «этот год» стартует с нуля и
+    # копится заново. Вводные остатки из карточки сотрудника действуют только в
+    # год приёма (первый год учёта) — на следующие годы они не переносятся.
     if year == hire_y:
         base_h, base_o, base_d = int(emp["opening_minutes"] or 0), int(emp["opening_overtime_minutes"] or 0), int(emp["opening_days"] or 0)
     else:
-        # Для последующих лет баланс переходит из декабря прошлого года
-        # Рекурсия здесь безопасна, так как глубина - всего несколько лет
-        prev_summ = compute_month_summary(db, employee_id, year - 1, 12)
-        base_h, base_o, base_d = prev_summ["end_hours"], prev_summ["end_overtime"], prev_summ["end_days"]
+        base_h, base_o, base_d = 0, 0, 0
 
     # 2. ЭТАЛОН ПРОШЛОГО ГОДА (Заначка)
-    ph, po, pd = int(emp["prev_opening_minutes"] or 0), int(emp["prev_opening_overtime_minutes"] or 0), int(emp["prev_opening_days"] or 0)
+    # В год приёма заначка — это то, что ввели в карточке («Предыдущий год»).
+    # С каждого следующего года заначкой становится остаток «этого года» на
+    # 31 декабря прошлого года: на новый год переносится именно он. То, что лежало в
+    # заначке годом раньше (то есть остаток позапрошлого года), с 1 января
+    # сгорает — неиспользованные остатки старше одного года не учитываются.
+    # Рекурсия здесь безопасна, так как глубина - всего несколько лет.
+    if year == hire_y:
+        ph, po, pd = int(emp["prev_opening_minutes"] or 0), int(emp["prev_opening_overtime_minutes"] or 0), int(emp["prev_opening_days"] or 0)
+    else:
+        prev_summ = compute_month_summary(db, employee_id, year - 1, 12)
+        ph, po, pd = prev_summ["end_hours"], prev_summ["end_overtime"], prev_summ["end_days"]
 
     # Вспомогательная функция для списаний из Эталона (1900 год)
     def get_prev_year_spent(s_iso, e_iso):
@@ -331,17 +521,27 @@ def compute_month_summary(db, employee_id: int, year: int, month: int) -> dict:
         """, (employee_id, s_iso, e_iso)).fetchall()
 
         # Дни через отгулы (comp_day_off_date) — для day_off метода
-        r_d_dayoff = db.conn.execute("""
+                # Дни через отгулы (comp_day_off_date) — для day_off метода.
+        # Списание крепится к году НАЧАЛА ПЕРИОДА: у новых записей дата старта
+        # лежит в order_date родительской записи, у старых (order_date пуст)
+        # считается по самому дню. Дни периода, перешагнувшие 1 января,
+        # списываются декабрём того года, где период начался, — заначка
+        # следующего года не уходит в минус от чужих трат.
+        anchor_dayoff = """
+            (CASE WHEN substr(cd.day_off_date,1,4) > substr(COALESCE(c.order_date, cd.day_off_date),1,4)
+                  THEN substr(COALESCE(c.order_date, cd.day_off_date),1,4) || '-12-31'
+                  ELSE cd.day_off_date END)
+        """
+        r_d_dayoff = db.conn.execute(f"""
             SELECT COUNT(*) as cd 
-            FROM comp_day_off_date 
-            WHERE employee_id=? 
-              AND day_off_date >= ? AND day_off_date < ?
-              AND compensation_id IN (
-                  SELECT id FROM compensation 
-                  WHERE event_date='1900-01-01' 
-                    AND method='day_off'
-                    AND unit='days'
-              )
+            FROM comp_day_off_date cd
+            JOIN compensation c ON c.id = cd.compensation_id
+            WHERE cd.employee_id=? 
+              AND c.event_date='1900-01-01' 
+              AND c.method='day_off' 
+              AND c.unit='days' 
+              AND {anchor_dayoff} >= ? 
+              AND {anchor_dayoff} < ? 
         """, (employee_id, s_iso, e_iso)).fetchone()["cd"] or 0
 
         # Дни через приказ (amount_days) — для money метода
@@ -366,7 +566,13 @@ def compute_month_summary(db, employee_id: int, year: int, month: int) -> dict:
             elif row["unit"] == "overtime": res["overtime"] = int(row["sm"] or 0)
         return res
 
-    spent_before = get_prev_year_spent("1900-01-01", m_s_iso)
+    # Списания из заначки учитываются только в пределах своего года: на 1 января
+    # заначка формируется заново из остатка прошлого года, поэтому траты прошлых
+    # лет её больше не уменьшают (и не уводят в минус чужой остаток). Для года
+    # приёма окно прежнее — от начала учёта (1900-01-01), чтобы не менять
+    # поведение по уже введённым в карточку данным.
+    stash_from = "1900-01-01" if year == hire_y else f"{year:04d}-01-01"
+    spent_before = get_prev_year_spent(stash_from, m_s_iso)
     spent_now = get_prev_year_spent(m_s_iso, m_e_iso)
 
     # 3. СПИСАНИЯ ТЕКУЩЕГО ГОДА (Реальные)
@@ -391,17 +597,24 @@ def compute_month_summary(db, employee_id: int, year: int, month: int) -> dict:
             AND event_date < ?
         """, (employee_id, s_iso, e_iso)).fetchone()["sd"] or 0
 
-        r_d2 = db.conn.execute("""
+                # Дни отгула крепятся к году НАЧАЛА ПЕРИОДА (event_date записи):
+        # период, перешагнувший 1 января, целиком оплачивается тем годом,
+        # в котором начался — дни следующего года списываются его декабрём.
+        effective_day = """
+            (CASE WHEN substr(cd.day_off_date,1,4) > substr(c.event_date,1,4)
+                  THEN substr(c.event_date,1,4) || '-12-31'
+                  ELSE cd.day_off_date END)
+        """
+        r_d2 = db.conn.execute(f"""
             SELECT COUNT(*) as cd 
-            FROM comp_day_off_date 
-            WHERE employee_id=? 
-            AND day_off_date >= ? AND day_off_date < ? 
-            AND compensation_id IN (
-                SELECT id FROM compensation 
-                WHERE event_date IS NOT NULL 
-                AND event_date != ''
-                AND event_date != '1900-01-01'
-            )
+            FROM comp_day_off_date cd
+            JOIN compensation c ON c.id = cd.compensation_id
+            WHERE cd.employee_id=? 
+            AND c.event_date IS NOT NULL 
+            AND c.event_date != '' 
+            AND c.event_date != '1900-01-01' 
+            AND {effective_day} >= ? 
+            AND {effective_day} < ? 
         """, (employee_id, s_iso, e_iso)).fetchone()["cd"] or 0
 
         res = {"hours": 0, "overtime": 0, "days": int(r_d1 or 0) + int(r_d2 or 0)}
@@ -417,6 +630,29 @@ def compute_month_summary(db, employee_id: int, year: int, month: int) -> dict:
     ytd_before = _get_accruals_for_period(db, employee_id, y_start, m_start, shift_checker, db.get_holidays_month(d_iso(date(year, 1, 1)), d_iso(date(year, 12, 31))))
     this_acc = _get_accruals_for_period(db, employee_id, m_start, m_end, shift_checker, db.get_holidays_month(d_iso(date(year, 1, 1)), d_iso(date(year, 12, 31))))
     norm_m = compute_month_norm_minutes(db, employee_id, year, month, shift_checker)
+
+    # Дни сверх дневной копилки закрываются ночными часами (8 ч = день) —
+    # то же правило, что окно компенсации показывает как «Итого: N дн.»
+    # (дни + часы/8). Списание делится на «взято днями» и «взято часами»,
+    # поэтому остатки и графа «Компенсировано» сходятся арифметически.
+
+    # Заначка: её пул зафиксирован 1 января, лишние дни — из ночных часов.
+    def _net_stash(cum_d, cum_h):
+        over = max(0, cum_d - pd)
+        return cum_d - over, cum_h + over * 480
+    nb_d, nb_h = _net_stash(spent_before["days"], spent_before["hours"])
+    ne_d, ne_h = _net_stash(spent_before["days"] + spent_now["days"],
+                            spent_before["hours"] + spent_now["hours"])
+    spent_before = dict(spent_before, days=nb_d, hours=nb_h)
+    spent_now = dict(spent_now, days=ne_d - nb_d, hours=ne_h - nb_h)
+
+    # Текущий год: копилка дней растёт с начислениями — считаем по месяцам.
+    ex_b, ex_a = _current_year_day_netting(db, employee_id, year, month, base_d)
+    if ex_a:
+        comp_before = dict(comp_before, hours=comp_before["hours"] + ex_b * 480,
+                           days=comp_before["days"] - ex_b)
+        comp_now = dict(comp_now, hours=comp_now["hours"] + (ex_a - ex_b) * 480,
+                        days=comp_now["days"] - (ex_a - ex_b))
 
     # 4. РАСЧЕТ ИТОГОВ (МАТЕМАТИКА)
     
@@ -439,7 +675,7 @@ def compute_month_summary(db, employee_id: int, year: int, month: int) -> dict:
     prev_o_end = prev_o_start - spent_now["overtime"]
     prev_d_end = prev_d_start - spent_now["days"]
 
-    return {
+    result = {
         "norm_minutes": norm_m,
         "shift_minutes": this_acc["night"] if not shift_checker() else (norm_m + (this_acc["overtime_acc"] if norm_m > 0 else 0)),
         "is_shift": shift_checker(),
@@ -462,6 +698,9 @@ def compute_month_summary(db, employee_id: int, year: int, month: int) -> dict:
         "prev_h_start": prev_h_start, "prev_o_start": prev_o_start, "prev_d_start": prev_d_start,
         "prev_h_end": prev_h_end, "prev_o_end": prev_o_end, "prev_d_end": prev_d_end
     }
+    if _cms_key is not None:
+        _SUMMARY_CACHE["data"][_cms_key] = result
+    return result
 
 def validate_non_negative_over_year(db, employee_id: int, year: int) -> tuple[bool, str]:
     emp = db.get_employee(employee_id)

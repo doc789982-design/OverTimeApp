@@ -66,6 +66,7 @@ Item {
     }
 
     // 3. ЗОНА КЛИКА
+    HoverHandler { cursorShape: Qt.PointingHandCursor }
     MouseArea {
         id: mouseArea
         anchors.fill: parent

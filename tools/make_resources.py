@@ -30,8 +30,9 @@ ROOT_FILES = ["main.qml", "Template.xlsx", "app_icon.png", "CHANGELOG.md", "vers
 # скрипты и заготовки для ИИ в exe не попадают)
 INCLUDE_EXT = {".qml", ".svg", ".png", ".jpg", ".ttf", ".otf"}
 
-# Шрифты, которые программа реально открывает (см. AppTheme.qml).
-# Остальные файлы в fonts/ — запасные, в exe их не кладём:
+# Шрифты, которые программа реально открывает (см. AppTheme.qml и
+# PRINT_FONT_FILES в Main.py — шрифт печати табеля PT Astra Serif вшит
+# в программу). Остальные файлы в fonts/ — запасные, в exe их не кладём:
 # один только GoogleSans.ttf весит почти 5 МБ.
 FONT_ALLOW = {
     "Roboto-Regular.ttf",
@@ -39,31 +40,70 @@ FONT_ALLOW = {
     "Roboto-Bold.ttf",
     "RobotoCondensed-Regular.ttf",
     "RobotoCondensed-Bold.ttf",
+    "PT-Astra-Serif_Regular.ttf",
+    "PT-Astra-Serif_Bold.ttf",
+    "PT-Astra-Serif_Italic.ttf",
+    "PT-Astra-Serif_Bold-Italic.ttf",
 }
 
+def _short_sha() -> str:
+    """Короткий sha коммита (первые 7 символов) — так же называет zip workflow."""
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "--short=7", "HEAD"],
+            cwd=str(ROOT),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        s = (out.stdout or "").strip()
+        if len(s) == 7 and all(c in "0123456789abcdef" for c in s):
+            return s
+    except Exception:
+        pass
+    return ""
+
+
 def write_version_json():
-    """Кладём version.json рядом с exe, чтобы обновлятор понял номер сборки."""
+    """
+    Кладём version.json рядом с exe, чтобы обновлятор понял номер сборки.
+
+    Файл «универсальный»: помимо версии/сборки (нужны для локального обновления)
+    содержит и поле url — имя готового zip (версия + короткий sha). Поэтому этот
+    же файл можно достать из собранного архива и положить на веб-сервер рядом с
+    zip — интернет-обновление заработает без пересоздания файла.
+    Хэш (sha256) не пишем.
+    """
     theme = ROOT / "components" / "AppTheme.qml"
     text = theme.read_text(encoding="utf-8") if theme.exists() else ""
     import re
     m = re.search(r'appVersion:\s*"([^"]+)"', text)
     version = m.group(1) if m else "dev"
+    # Машинная строка строится из СЕМВЕРА (appSemver): scan("BETA.1")
+    # давал бы голое «2.0.0» без канала и сборки — строковые клиенты
+    # остались бы на месте
+    sm = re.search(r'appSemver:\s*"([^"]+)"', text)
+    semver = sm.group(1) if sm else version
     bm = re.search(r"appBuild:\s*(\d+)", text)
     build = int(bm.group(1)) if bm else 0
-    scan = version
+    scan = semver
     try:
         sys.path.insert(0, str(ROOT))
         from app_update import scan_version as _scan_version
 
-        scan = _scan_version(version, build)
+        scan = _scan_version(semver, build)
     except Exception:
-        if build and version:
-            scan = version.rsplit(".", 1)[0] + f".{build}" if "-" in version else version
+        if build and semver:
+            scan = semver.rsplit(".", 1)[0] + f".{build}" if "-" in semver else semver
     payload = {"name": "OVERTIMETAB", "version": scan}
     if build:
         payload["build"] = build
     if version and version != scan:
         payload["display"] = version
+    # url = имя zip, как его создаёт workflow (OVERTIMETAB_<версия>_<sha>.zip)
+    sha = _short_sha()
+    if sha and version:
+        payload["url"] = f"OVERTIMETAB_{version}_{sha}.zip"
     out = ROOT / "version.json"
     out.write_text(
         __import__("json").dumps(payload, ensure_ascii=False, indent=2) + "\n",
@@ -108,7 +148,12 @@ def plant_version_in_collected_packages(version: str, build: int = 0):
                 try:
                     from app_update import scan_version as _scan_version
 
-                    planted = _scan_version(version, build)
+                    # машинная строка — из семвера (см. write_version_json)
+                    text2 = theme.read_text(encoding="utf-8")
+                    import re as _re2
+                    _sm = _re2.search(r'appSemver:\s*"([^"]+)"', text2)
+                    _sem = _sm.group(1) if _sm else version
+                    planted = _scan_version(_sem, build)
                 except Exception:
                     planted = version
                 lines = [f'appVersion: "{planted}"']
@@ -186,6 +231,28 @@ def main():
         print("ОШИБКА компиляции ресурсов")
         sys.exit(1)
     print(f"resources_rc.py: {out.stat().st_size / 1024:.0f} КБ — готово")
+
+    # Версия программы для установщика (Inno Setup). Версия живёт в одном
+    # месте — appVersion в components/AppTheme.qml — и до установщика её
+    # доводит этот файл: build/product_version.iss подключается скриптом
+    # tools/overtimetab.iss ПОСЛЕ аргументов командной строки и перекрывает
+    # их (CI передаёт устаревший /D, но он не имеет силы).
+    import re as _re
+    theme = (ROOT / "components" / "AppTheme.qml").read_text(encoding="utf-8")
+    m = _re.search(r'appVersion:\s*"([^"]+)"', theme)
+    if not m:
+        print("ERROR: appVersion не найден в AppTheme.qml")
+        sys.exit(1)
+    ver_dir = ROOT / "build"
+    ver_dir.mkdir(exist_ok=True)
+    (ver_dir / "product_version.iss").write_text(
+        "; Сгенерировано tools/make_resources.py из components/AppTheme.qml — "
+        "не править руками.\n"
+        "; Перекрывает версию, переданную установщику с командной строки.\n"
+        '#undef ProductVersion\n'
+        '#define ProductVersion "%s"\n' % m.group(1),
+        encoding="utf-8")
+    print(f"product_version.iss: {m.group(1)}")
 
     # На GitHub: подменить вызов `pyinstaller --collect-all` на spec.
     # YAML на этой ветке трогать нельзя — токен без права workflows.

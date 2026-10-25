@@ -14,7 +14,7 @@ AppDialog {
     property alias middleName: empMiddleName.text
     property alias rank: empRank.text
     property alias position: empPosition.text
-    property alias startMonth: empStartMonth.selectedMonth
+    property alias hireDate: empStartDate.selectedDate
     property alias openHours: empOpenHours.text
     property alias openOvertime: empOpenOvertime.text
     property alias openDays: empOpenDays.text
@@ -25,6 +25,8 @@ AppDialog {
     title: root.editId === 0 ? "Новый сотрудник" : "Редактирование"
     acceptText: "Сохранить"
 
+    onAboutToShow: empErrorMsg.visible = false
+
     Column {
         width: parent.width
         spacing: AppTheme.spaceM
@@ -34,7 +36,7 @@ AppDialog {
         AppTextField { id: empMiddleName; width: parent.width; label: "Отчество" }
         AppTextField { id: empRank; width: parent.width; label: "Звание" }
         AppTextField { id: empPosition; width: parent.width; label: "Должность" }
-        AppMonthField { id: empStartMonth; width: parent.width; label: "Месяц приема"; isRequired: true }
+        AppDateField { id: empStartDate; width: parent.width; label: "Дата приема"; isRequired: true }
 
         // ==========================================
         // ЗАГОЛОВОК + ПЕРЕКЛЮЧАТЕЛЬ
@@ -44,7 +46,7 @@ AppDialog {
             spacing: AppTheme.spaceM
 
             Text {
-                text: "Балансы:"
+                text: "Компенсации:"
                 color: AppTheme.textSecondary
                 font.family: AppTheme.fontFamily
                 font.pixelSize: AppTheme.sizeSmall
@@ -72,6 +74,7 @@ AppDialog {
                         font.weight: root.balanceYear === 0 ? AppTheme.weightBold : AppTheme.weightMedium
                     }
 
+                    HoverHandler { cursorShape: Qt.PointingHandCursor }
                     MouseArea {
                         id: yearHover1
                         anchors.fill: parent
@@ -97,6 +100,7 @@ AppDialog {
                         font.weight: root.balanceYear === 1 ? AppTheme.weightBold : AppTheme.weightMedium
                     }
 
+                    HoverHandler { cursorShape: Qt.PointingHandCursor }
                     MouseArea {
                         id: yearHover2
                         anchors.fill: parent
@@ -119,7 +123,7 @@ AppDialog {
                 id: empOpenHours
                 numericOnly: true
                 width: (parent.width - AppTheme.spaceS * 2) / 3
-                label: "Ночные (ч)"
+                label: "В ночное время (ч)"
                 text: "0"
                 visible: root.balanceYear === 0
             }
@@ -127,7 +131,7 @@ AppDialog {
                 id: empPrevOpenHours
                 numericOnly: true
                 width: (parent.width - AppTheme.spaceS * 2) / 3
-                label: "Ночные (ч)"
+                label: "В ночное время (ч)"
                 text: "0"
                 visible: root.balanceYear === 1
             }
@@ -136,7 +140,7 @@ AppDialog {
                 id: empOpenOvertime
                 numericOnly: true
                 width: (parent.width - AppTheme.spaceS * 2) / 3
-                label: "Сверх нормы (ч)"
+                label: "Сверхурочно (ч)"
                 text: "0"
                 visible: root.balanceYear === 0
             }
@@ -144,7 +148,7 @@ AppDialog {
                 id: empPrevOpenOvertime
                 numericOnly: true
                 width: (parent.width - AppTheme.spaceS * 2) / 3
-                label: "Сверх нормы (ч)"
+                label: "Сверхурочно (ч)"
                 text: "0"
                 visible: root.balanceYear === 1
             }
@@ -153,7 +157,7 @@ AppDialog {
                 id: empOpenDays
                 numericOnly: true
                 width: (parent.width - AppTheme.spaceS * 2) / 3
-                label: "Дни"
+                label: "Дни отдыха"
                 text: "0"
                 visible: root.balanceYear === 0
             }
@@ -161,19 +165,34 @@ AppDialog {
                 id: empPrevOpenDays
                 numericOnly: true
                 width: (parent.width - AppTheme.spaceS * 2) / 3
-                label: "Дни"
+                label: "Дни отдыха"
                 text: "0"
                 visible: root.balanceYear === 1
             }
+        }
+
+        // Ошибка в окне (а не тост): обязательные поля
+        Text {
+            id: empErrorMsg
+            visible: false
+            width: parent.width
+            color: AppTheme.textDanger
+            font.family: AppTheme.fontFamily
+            font.pixelSize: AppTheme.sizeSmall
+            wrapMode: Text.WordWrap
         }
     }
 
     onAccepted: {
         if (empLastName.text.trim() === "" || empFirstName.text.trim() === "") {
+            empErrorMsg.text = "Ошибка: Заполните обязательные поля (фамилия и имя)"
+            empErrorMsg.visible = true
+            if (empLastName.text.trim() === "") empLastName.flashError()
+            if (empFirstName.text.trim() === "") empFirstName.flashError()
             root.shake()
-            backend.showToast("Ошибка: Заполните обязательные поля!", "error")
             return
         }
+        empErrorMsg.visible = false
 
         let cur_mins = parseInt(empOpenHours.text || "0") * 60
         let cur_over = parseInt(empOpenOvertime.text || "0") * 60
@@ -186,14 +205,14 @@ AppDialog {
         if (root.editId === 0) {
             backend.saveEmployee(
                 empLastName.text, empFirstName.text, empMiddleName.text, 
-                empRank.text, empPosition.text, empStartMonth.selectedMonth,
+                empRank.text, empPosition.text, empStartDate.selectedDate,
                 cur_mins, cur_over, cur_days,
                 prev_mins, prev_over, prev_days
             )
         } else {
             backend.updateEmployee(
                 root.editId, empLastName.text, empFirstName.text, 
-                empMiddleName.text, empRank.text, empPosition.text, empStartMonth.selectedMonth,
+                empMiddleName.text, empRank.text, empPosition.text, empStartDate.selectedDate,
                 cur_mins, cur_over, cur_days,
                 prev_mins, prev_over, prev_days
             )

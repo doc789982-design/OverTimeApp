@@ -21,12 +21,13 @@ Rectangle {
         anchors.right: parent.right
         color: "transparent"
 
-        // Горизонтальный разделитель
+        // Горизонтальный разделитель (полупрозрачный, как у групп/сотрудников)
         Rectangle { 
             anchors.bottom: parent.bottom
             width: parent.width
             height: 1
-            color: AppTheme.borderDivider 
+            color: AppTheme.borderDivider
+            opacity: 0.4
         }
 
         // Кнопка "+"
@@ -48,12 +49,16 @@ Rectangle {
                 font.pixelSize: AppTheme.sizeH2 
             }
             
+            HoverHandler { cursorShape: Qt.PointingHandCursor }
             MouseArea { 
                 id: addGrpMouse
                 anchors.fill: parent
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
-                onClicked: function(mouse) { addGroupDialog.showAt(parent, mouse.x, mouse.y) }
+                onClicked: function(mouse) {
+                    addGroupDialog.editGroupId = 0
+                    addGroupDialog.showAt(parent, mouse.x, mouse.y)
+                }
             }
         }
     }
@@ -68,7 +73,7 @@ Rectangle {
         anchors.right: parent.right
         anchors.topMargin: AppTheme.spaceM
         
-        bottomMargin: 140 + backend.updateChromeExtra 
+        bottomMargin: 140
         clip: true
         model: backend.groupList
         
@@ -162,9 +167,11 @@ Rectangle {
                         id: groupMenu
                         AppMenuItem {
                             visible: modelData.id !== 0
-                            text: modelData.shifted_weekends ? "Обычные выходные" : "Смещённые выходные"
-                            iconSource: "../icons/calendar.svg"
-                            onClicked: backend.setGroupShiftedWeekends(modelData.id, !modelData.shifted_weekends)
+                            text: "Редактировать группу"
+                            iconSource: "../icons/edit.svg"
+                            onClicked: addGroupDialog.editGroup(
+                                modelData.id, modelData.name,
+                                modelData.is_shift, modelData.shifted_weekends)
                         }
                         AppMenuSeparator { visible: modelData.id !== 0 }
                         AppMenuItem {
@@ -188,6 +195,7 @@ Rectangle {
                     }
 
                     // Зона управления мышью
+                    HoverHandler { cursorShape: btnMouseArea.drag.active ? Qt.ClosedHandCursor : Qt.PointingHandCursor }
                     MouseArea { 
                         id: btnMouseArea
                         anchors.fill: parent
@@ -223,7 +231,9 @@ Rectangle {
                         anchors.left: parent.right
                         anchors.leftMargin: AppTheme.spaceXS
                         anchors.verticalCenter: parent.verticalCenter
-                        text: modelData.name + (modelData.shifted_weekends ? " · смещённые выходные" : "")
+                        text: modelData.name
+                              + (modelData.shifted_weekends ? " · смещённые выходные" : "")
+                              + (modelData.is_shift ? " · сменный график" : "")
                         isVisible: btnMouseArea.containsMouse && !btnMouseArea.drag.active
                     }
 

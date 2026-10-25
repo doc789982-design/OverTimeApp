@@ -7,11 +7,14 @@ CheckBox {
 
     // Цвета по умолчанию из темы
     property color activeColor: AppTheme.accentBrand
-    property color inactiveColor: AppTheme.borderInput
+    // невыбранная обводка — как onSurfaceVariant в MD3 (контрастнее бледной рамки полей)
+    property color inactiveColor: AppTheme.textSecondary
     property color checkColor: AppTheme.textOnAccent
     
     implicitHeight: 36 
     focusPolicy: Qt.StrongFocus
+    // Курсор «рука» над кнопкой — как в обычных программах
+    HoverHandler { cursorShape: control.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor }
 
     // Физика (Прозрачность и Вжатие)
     opacity: control.enabled ? 1.0 : AppTheme.alphaDisabled
@@ -27,26 +30,51 @@ CheckBox {
         anchors.verticalCenter: parent.verticalCenter
 
         // ==========================================
-        // 1. КВАДРАТ (Основа)
+        // 0. ЗОНА ОТКЛИКА 40×40 (touch target из MD3):
+        // ховер, нажатие и волна работают по всей зоне,
+        // а не только по квадратику 18px
+        // ==========================================
+        Item {
+            id: touchZone
+            anchors.centerIn: box
+            width: 40
+            height: 40
+
+            Rectangle {
+                anchors.fill: parent
+                radius: AppTheme.radiusPill
+                color: control.pressed ? AppTheme.statePress
+                       : (control.hovered ? AppTheme.stateHover : "transparent")
+                Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
+            }
+
+            AppRipple {
+                // круг из центра зоны, расходится по всей зоне отклика;
+                // драйвер — состояние pressed самого чекбокса
+                pressed: control.pressed
+                maskRadius: width / 2
+                rippleColor: AppTheme.isDark ? Qt.rgba(77/255, 154/255, 238/255, 0.20)
+                                             : Qt.rgba(3/255, 116/255, 181/255, 0.16)
+            }
+        }
+
+        // ==========================================
+        // 1. КВАДРАТ (Основа) — 18px, скругление 2, обводка 2px по MD3
         // ==========================================
         Rectangle {
-            anchors.fill: parent
-            radius: AppTheme.radiusSmall // 4px (строгий квадрат с легким скруглением)
-            
+            id: box
+            anchors.centerIn: parent
+            width: 18
+            height: 18
+            radius: 2
+
             // Если выбран - заливаем брендом, если нет - прозрачный
             color: control.checked ? control.activeColor : "transparent"
             border.color: control.checked ? control.activeColor : control.inactiveColor
-            border.width: 1
-            
+            border.width: 2
+
             Behavior on color { ColorAnimation { duration: AppTheme.durFast } }
             Behavior on border.color { ColorAnimation { duration: AppTheme.durFast } }
-
-            // Слой ховера (Слегка затемняет/высветляет квадратик при наведении)
-            Rectangle {
-                anchors.fill: parent
-                radius: parent.radius
-                color: control.hovered ? AppTheme.stateHover : "transparent"
-            }
         }
 
         // ==========================================
@@ -69,11 +97,11 @@ CheckBox {
                 joinStyle: ShapePath.RoundJoin
                 fillColor: "transparent"
 
-                // Идеальные пропорции галочки внутри квадрата 20x20
-                startX: 5
-                startY: 10
-                PathLine { x: 9; y: 14 }
-                PathLine { x: 15; y: 6 }
+                // Идеальные пропорции галочки внутри квадрата 18x18
+                startX: 4.5
+                startY: 9
+                PathLine { x: 8; y: 12.5 }
+                PathLine { x: 13.5; y: 5.5 }
             }
         }
 
@@ -83,7 +111,7 @@ CheckBox {
         Rectangle {
             anchors.fill: parent
             anchors.margins: -AppTheme.focusOffset - AppTheme.focusWidth
-            radius: AppTheme.radiusSmall + AppTheme.focusOffset
+            radius: 2 + AppTheme.focusOffset
             
             color: "transparent"
             border.color: AppTheme.borderFocus

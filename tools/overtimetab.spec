@@ -27,6 +27,7 @@ from pathlib import Path
 ROOT = Path(SPECPATH).resolve().parent
 sys.path.insert(0, str(ROOT / "tools"))
 
+from release_url import from_ci_env  # noqa: E402
 from slim_pyside import (  # noqa: E402
     UNUSED_PYSIDE_MODULES,
     UNUSED_STDLIB,
@@ -53,13 +54,17 @@ HIDDENIMPORTS = [
     "PySide6.QtNetwork",       # «не запускай программу дважды»
     "PySide6.QtSvg",           # иконки в папке icons/*.svg
     "PySide6.QtOpenGL",        # рисует современный интерфейс
+    "PySide6.QtPrintSupport",  # собственная печать бланка без Excel
     "openpyxl",                # выгрузка табеля в Excel
+    "print_engine",           # собственная печать бланка (ленивый импорт)
     "win32print",              # список принтеров
     "win32com",
     "win32com.client",         # печать через установленный Excel
     "pythoncom",
     "pywintypes",
     "app_update",
+    "recovery",               # аварийный восстановитель (первый import Main.py)
+    "methodical_data",        # методички и производственные календари (окно справки)
 ]
 
 EXCLUDES = list(UNUSED_STDLIB) + list(UNUSED_PYSIDE_MODULES)
@@ -68,13 +73,57 @@ EXCLUDES = list(UNUSED_STDLIB) + list(UNUSED_PYSIDE_MODULES)
 # выше хватает, чтобы подтянуть QML и плагины окон. Лишнее режем ниже.
 
 
-_version_json = ROOT / "version.json"
 _changelog = ROOT / "CHANGELOG.md"
 _datas = []
-if _version_json.exists():
-    _datas.append((str(_version_json), "."))
 if _changelog.exists():
     _datas.append((str(_changelog), "."))
+# Карта сборок (память проекта о том, что въехало в какую сборку) —
+# в каждой сборке рядом с журналом изменений.
+_history = ROOT / "BUILD_HISTORY.md"
+if _history.exists():
+    _datas.append((str(_history), "."))
+
+# version.json внутрь сборки. В AppTheme лежат имя для человека
+# (appVersion, «BETA.1») и семвер (appSemver, «1.0.0-beta.1» — теги
+# и сравнение версий; релиз будет 1.0.0). Обновлятор самых старых сборок
+# сравнивает строки в историческом ядре «2.0.0-…», не зная номера
+# сборки, — поэтому в пакет кладётся машинная строка-мост
+# (scan_version: 2.0.0-<канал>.<сборка>, релизы — голое «2.0.0»;
+# счётчик = сборка, мост монотонен), плюс поле display с именем
+# для человека — его показывают окна и тосты.
+_theme_src = (ROOT / "components" / "AppTheme.qml").read_text(encoding="utf-8")
+import json as _json
+import re as _re
+sys.path.insert(0, str(ROOT))
+from app_update import scan_version  # noqa: E402
+_m_ver = _re.search(r'appVersion:\s*"([^"]+)"', _theme_src)
+_m_sem = _re.search(r'appSemver:\s*"([^"]+)"', _theme_src)
+_m_bld = _re.search(r"appBuild:\s*(\d+)", _theme_src)
+_app_name = _m_ver.group(1) if _m_ver else ""
+_app_semver = _m_sem.group(1) if _m_sem else _app_name
+_app_build = int(_m_bld.group(1)) if _m_bld else 0
+_meta_dir = ROOT / "build"
+_meta_dir.mkdir(exist_ok=True)
+_meta_file = _meta_dir / "version.json"
+# Имя архива релиза внутрь version.json: файл читают разные хранилища
+# (GitHub, запасной сервер post.mvd.ru), поэтому в url лежит только имя
+# архива (OVERTIMETAB_<версия>_<sha7>.zip), а полный адрес склеивается с тем
+# хранилищем, где файл лежит. В сборке по ветке имени ещё нет — поле не пишется.
+_meta = {
+    "name": "OVERTIMETAB",
+    "version": scan_version(_app_semver, _app_build),
+    "build": _app_build,
+    "display": _app_name,
+}
+_asset_url = from_ci_env(_app_name)
+if _asset_url:
+    _meta["url"] = _asset_url
+_meta_file.write_text(_json.dumps(_meta, ensure_ascii=False, indent=2) + "\n",
+                      encoding="utf-8")
+_datas.append((str(_meta_file), "."))
+print("[версия] имя=%s семвер=%s сборка=%d машинная=%s"
+      % (_app_name, _app_semver, _app_build,
+         scan_version(_app_semver, _app_build)))
 
 a = Analysis(
     [str(ROOT / "Main.py")],
@@ -148,3 +197,22 @@ coll = COLLECT(
 
 # На случай, если хуки PyInstaller всё-таки положили WebEngine в dist.
 slim_dist_tree(ROOT / "dist" / "OVERTIMETAB")
+
+# version.json В КОРНЕ папки программы (не только в _internal через datas):
+# его читают ВСЕ поколения обновлятора — и из корня релизного zip
+# (Compress-Archive пакует dist/*), и установленной программой.
+# Баг сборок 297–298 показал, чем заканчивается единственная копия.
+import shutil as _shutil
+_shutil.copy2(_meta_file, ROOT / "dist" / "OVERTIMETAB" / "version.json")
+print("[version.json] докладываем в корень dist для zip и установщика")
+
+# Манифест файлов сборки: при старте программа сверяет с ним свою папку
+# и убирает файлы прошлых версий (установка «поверх» старой — с заменой).
+_dist_root = ROOT / "dist" / "OVERTIMETAB"
+_manifest = _dist_root / "app_files.txt"
+_lines = ["# OVERTIMETAB build %d" % _app_build]
+for _p in sorted(_dist_root.rglob("*")):
+    if _p.is_file() and _p != _manifest:
+        _lines.append(_p.relative_to(_dist_root).as_posix())
+_manifest.write_text("\n".join(_lines) + "\n", encoding="utf-8")
+print("[манифест] %d файлов сборки %d" % (len(_lines) - 1, _app_build))

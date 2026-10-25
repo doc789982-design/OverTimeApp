@@ -28,6 +28,19 @@ ApplicationWindow {
     // Колбэк для диалога подтверждения (хранится, пока пользователь думает)
     property var confirmCallback: null
 
+    // Идёт ли анимация заставки при выборе базы (клики по списку запрещены)
+    property bool startTransition: false
+
+    // Запуск анимации выбора базы: панель-заставка растёт на весь экран,
+    // затем (если база открылась) улетает вправо с инерцией, открывая
+    // интерфейс программы; при неудаче — возвращается на место
+    function runStartCover(path) {
+        startCover.reset()
+        startCover.path = path
+        startCover.visible = true
+        coverGrow.restart()
+    }
+
     // ЕДИНАЯ ТОЧКА ВХОДА ДЛЯ ВСЕХ ПОДТВЕРЖДЕНИЙ В ПРОГРАММЕ.
     // Пример: mainWindow.askConfirm("Удалить?", "Точно?", "Удалить", function() { ... })
     function askConfirm(titleText, messageText, confirmText, callback, isDanger) {
@@ -62,7 +75,20 @@ ApplicationWindow {
     Connections {
         target: backend
         function onDatabaseOpened() { 
-            stackView.replace(mainWorkspacePage) 
+            // Immediate: страница меняется мгновенно — улетающая панель
+            // открывает уже готовый интерфейс базы, без растворения
+            stackView.replace(mainWorkspacePage, StackView.Immediate) 
+            // Бросок — не сразу: рабочий экран тяжёлый, его построение
+            // замораживает поток на десятки миллисекунд и бросок замирает
+            // на полпути. Даём интерфейсу построиться и отрисоваться за
+            // неподвижной шторкой (глазу это — короткая пауза-бит),
+            // затем шторка летит над уже готовой сценой
+            flightDelay.restart()
+        }
+        function onDatabaseOpenFailed(message) {
+            // База не открылась (файла нет, повреждена) — панель возвращается
+            // на место и экран выбора снова доступен, программа не висит
+            if (startCover.visible && !coverFly.running) coverBack.restart()
         }
         function onItemDeleted(dateStr, colorHex) {
             let workspace = stackView.currentItem
@@ -133,11 +159,14 @@ ApplicationWindow {
                     anchors.top: parent.top
                     anchors.bottom: parent.bottom
 
+                    AppUI.UpdateDownloadButton { }
+
                     Rectangle {
                         width: 46
                         height: parent.height
                         color: helpHov.pressed ? AppUI.AppTheme.statePress : (helpHov.containsMouse ? AppUI.AppTheme.stateHover : "transparent")
                         
+                        HoverHandler { cursorShape: Qt.PointingHandCursor }
                         MouseArea {
                             id: helpHov
                             anchors.fill: parent
@@ -161,6 +190,65 @@ ApplicationWindow {
                             dropDown: true             
                             isVisible: helpHov.containsMouse
                             text: "Справка и горячие клавиши (F1)"
+
+                            // Список горячих клавиш из настроек
+                            Rectangle {
+                                visible: backend.hotkeysList.length > 0
+                                width: 260
+                                height: 1
+                                color: AppUI.AppTheme.borderDivider
+                            }
+
+                            Column {
+                                width: 260
+                                spacing: AppUI.AppTheme.spaceXS
+                                visible: backend.hotkeysList.length > 0
+
+                                Text {
+                                    text: "Горячие клавиши:"
+                                    color: AppUI.AppTheme.textPrimary
+                                    font.family: AppUI.AppTheme.fontFamily
+                                    font.pixelSize: AppUI.AppTheme.sizeSmall
+                                    font.weight: AppUI.AppTheme.weightBold
+                                }
+
+                                Repeater {
+                                    model: backend.hotkeysList
+                                    RowLayout {
+                                        width: parent.width
+                                        spacing: AppUI.AppTheme.spaceS
+
+                                        Rectangle {
+                                            Layout.preferredWidth: Math.max(44, hkKey.implicitWidth + 16)
+                                            Layout.preferredHeight: 26
+                                            radius: AppUI.AppTheme.radiusSmall
+                                            color: AppUI.AppTheme.bgBase
+                                            border.color: AppUI.AppTheme.borderInput
+                                            border.width: 1
+                                            Text {
+                                                id: hkKey
+                                                anchors.centerIn: parent
+                                                text: modelData.key
+                                                color: AppUI.AppTheme.accentBrand
+                                                font.family: AppUI.AppTheme.fontFamily
+                                                font.pixelSize: AppUI.AppTheme.sizeSmall
+                                                font.weight: AppUI.AppTheme.weightBold
+                                            }
+                                        }
+
+                                        Text {
+                                            Layout.fillWidth: true
+                                            text: helpDialog.describeHotkey(modelData)
+                                            color: AppUI.AppTheme.textSecondary
+                                            font.family: AppUI.AppTheme.fontFamily
+                                            font.pixelSize: AppUI.AppTheme.sizeSmall
+                                            wrapMode: Text.WordWrap
+                                            elide: Text.ElideRight
+                                            maximumLineCount: 2
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
 
@@ -173,8 +261,10 @@ ApplicationWindow {
                             width: 10; height: 1
                             color: AppUI.AppTheme.textSecondary
                         }
+                        HoverHandler { cursorShape: Qt.PointingHandCursor }
                         MouseArea {
                             id: minHov
+                            cursorShape: Qt.PointingHandCursor
                             anchors.fill: parent
                             hoverEnabled: true
                             onClicked: mainWindow.showMinimized()
@@ -192,8 +282,10 @@ ApplicationWindow {
                             border.color: AppUI.AppTheme.textSecondary
                             border.width: 1
                         }
+                        HoverHandler { cursorShape: Qt.PointingHandCursor }
                         MouseArea {
                             id: maxHov
+                            cursorShape: Qt.PointingHandCursor
                             anchors.fill: parent
                             hoverEnabled: true
                             onClicked: {
@@ -217,8 +309,10 @@ ApplicationWindow {
                             font.pixelSize: AppUI.AppTheme.sizeSmall
                             font.weight: AppUI.AppTheme.weightBold
                         }
+                        HoverHandler { cursorShape: Qt.PointingHandCursor }
                         MouseArea {
                             id: closeHov
+                            cursorShape: Qt.PointingHandCursor
                             anchors.fill: parent
                             hoverEnabled: true
                             onClicked: minimizeToTray()
@@ -227,6 +321,7 @@ ApplicationWindow {
                 }
             }
 
+            HoverHandler { cursorShape: Qt.SizeHorCursor }
             MouseArea {
                 z: 200; width: 8
                 anchors.left: parent.left
@@ -236,6 +331,7 @@ ApplicationWindow {
                 visible: mainWindow.visibility !== Window.Maximized
                 onPressed: mainWindow.startSystemResize(Qt.LeftEdge)
             }
+            HoverHandler { cursorShape: Qt.SizeHorCursor }
             MouseArea {
                 z: 200; width: 8
                 anchors.right: parent.right
@@ -245,6 +341,7 @@ ApplicationWindow {
                 visible: mainWindow.visibility !== Window.Maximized
                 onPressed: mainWindow.startSystemResize(Qt.RightEdge)
             }
+            HoverHandler { cursorShape: Qt.SizeVerCursor }
             MouseArea {
                 z: 200; height: 8
                 anchors.top: parent.top
@@ -254,6 +351,7 @@ ApplicationWindow {
                 visible: mainWindow.visibility !== Window.Maximized
                 onPressed: mainWindow.startSystemResize(Qt.TopEdge)
             }
+            HoverHandler { cursorShape: Qt.SizeVerCursor }
             MouseArea {
                 z: 200; height: 8
                 anchors.bottom: parent.bottom
@@ -265,6 +363,7 @@ ApplicationWindow {
             }
 
             // УГЛЫ: тянуть окно можно и за углы, как в обычных программах
+            HoverHandler { cursorShape: Qt.SizeFDiagCursor }
             MouseArea {
                 z: 201; width: 16; height: 16
                 anchors.top: parent.top; anchors.left: parent.left
@@ -272,6 +371,7 @@ ApplicationWindow {
                 visible: mainWindow.visibility !== Window.Maximized
                 onPressed: mainWindow.startSystemResize(Qt.TopEdge | Qt.LeftEdge)
             }
+            HoverHandler { cursorShape: Qt.SizeBDiagCursor }
             MouseArea {
                 z: 201; width: 16; height: 16
                 anchors.top: parent.top; anchors.right: parent.right
@@ -279,6 +379,7 @@ ApplicationWindow {
                 visible: mainWindow.visibility !== Window.Maximized
                 onPressed: mainWindow.startSystemResize(Qt.TopEdge | Qt.RightEdge)
             }
+            HoverHandler { cursorShape: Qt.SizeBDiagCursor }
             MouseArea {
                 z: 201; width: 16; height: 16
                 anchors.bottom: parent.bottom; anchors.left: parent.left
@@ -286,6 +387,7 @@ ApplicationWindow {
                 visible: mainWindow.visibility !== Window.Maximized
                 onPressed: mainWindow.startSystemResize(Qt.BottomEdge | Qt.LeftEdge)
             }
+            HoverHandler { cursorShape: Qt.SizeFDiagCursor }
             MouseArea {
                 z: 201; width: 16; height: 16
                 anchors.bottom: parent.bottom; anchors.right: parent.right
@@ -319,6 +421,131 @@ ApplicationWindow {
                     }
                 }
             }
+        // ==========================================
+        // ПАНЕЛЬ-ЗАСТАВКА: закрывает экран при выборе базы.
+        // Растёт на весь экран (маскот по центру), при успехе улетает вправо
+        // с инерцией — под ней уже виден интерфейс открытой базы.
+        // При неудаче возвращается на место — экран выбора снова доступен.
+        // ==========================================
+        Rectangle {
+            id: startCover
+            z: 50
+            anchors.top: customTitleBar.bottom
+            anchors.bottom: parent.bottom
+            x: 0
+            width: 300
+            visible: false
+            color: AppUI.AppTheme.bgPanel
+            property string path: ""
+            // содержимое гаснет при улёте — летит «пустая» шторка
+            property real contentOpacity: 1
+            onXChanged: {
+                // шторка полностью ушла за край — анимацию завершаем досрочно
+                if (visible && x >= mainWindow.width) coverFly.stop()
+            }
+
+            // На время анимации держит клики при себе — под панелью ничего не нажимается
+            MouseArea { anchors.fill: parent; onClicked: {} }
+
+            Rectangle {
+                anchors.right: parent.right
+                width: 1; height: parent.height
+                color: AppUI.AppTheme.borderDivider
+            }
+            Column {
+                anchors.centerIn: parent
+                width: 260
+                spacing: AppUI.AppTheme.spaceL
+                opacity: startCover.contentOpacity
+                AppUI.AppEmptyMascot {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    width: 180; height: 180
+                }
+                Column {
+                    width: parent.width
+                    spacing: AppUI.AppTheme.spaceXXS
+                    Text {
+                        width: parent.width
+                        text: "OVERTIMETAB"
+                        color: AppUI.AppTheme.accentBrand
+                        font.family: AppUI.AppTheme.fontFamily
+                        font.pixelSize: AppUI.AppTheme.sizeH4
+                        font.weight: AppUI.AppTheme.weightBold
+                        font.letterSpacing: 1
+                        horizontalAlignment: Text.AlignHCenter
+                    }
+                    Text {
+                        width: parent.width
+                        text: AppUI.AppTheme.appVersionFull
+                        color: AppUI.AppTheme.textTertiary
+                        font.family: AppUI.AppTheme.fontFamily
+                        font.pixelSize: AppUI.AppTheme.sizeSmall
+                        font.weight: AppUI.AppTheme.weightMedium
+                        horizontalAlignment: Text.AlignHCenter
+                    }
+                }
+            }
+
+            function reset() {
+                x = 0
+                width = 300
+                contentOpacity = 1
+                visible = false
+            }
+        }
+
+        SequentialAnimation {
+            id: coverGrow
+            PauseAnimation { duration: 150 }
+            NumberAnimation {
+                target: startCover; property: "width"
+                to: mainWindow.width; duration: 600
+                easing.type: Easing.InOutExpo
+            }
+            ScriptAction { script: backend.openDatabase(startCover.path) }
+        }
+        Timer {
+            id: flightDelay
+            interval: 120
+            onTriggered: {
+                if (startCover.visible && !coverFly.running) coverFly.restart()
+            }
+        }
+        SequentialAnimation {
+            id: coverFly
+            onStopped: { startCover.reset(); mainWindow.startTransition = false }
+            ParallelAnimation {
+                NumberAnimation {
+                    // УХОД = кривая разгона (Material 3: exit — accelerate,
+                    // InCubic): без рывка — плавно набирает скорость и
+                    // уходит за край на полном ходу. Кривые торможения
+                    // (OutQuint/OutExpo) для выхода — ошибка: мгновенный
+                    // рывок в начале и долгий почти-равномерный хвост.
+                    // Easing.Bezier* в этой сборке Qt молча линейны — не использовать.
+                    target: startCover; property: "x"
+                    to: mainWindow.width + 130; duration: 400
+                    easing.type: Easing.InCubic
+                }
+                NumberAnimation {
+                    target: startCover; property: "contentOpacity"
+                    to: 0; duration: 180; easing.type: Easing.OutQuad
+                }
+            }
+        }
+        SequentialAnimation {
+            id: coverBack
+            NumberAnimation {
+                target: startCover; property: "width"
+                to: 300; duration: 450
+                easing.type: Easing.InOutExpo
+            }
+            ScriptAction { script: {
+                startCover.reset()
+                mainWindow.startTransition = false
+                let page = stackView.currentItem
+                if (page && page.restoreSelection) page.restoreSelection()
+            } }
+        }
         }
     }
 
@@ -332,23 +559,26 @@ ApplicationWindow {
             property string targetDbPath: ""
             Component.onCompleted: { 
                 if (backend.dbList.length === 1) { 
-                    targetDbPath = backend.dbList[0].path
                     autoStartTimer.start() 
                 } 
             }
             Timer { 
                 id: autoStartTimer
                 interval: 100
-                onTriggered: { 
-                    rightContentArea.opacity = 0
-                    expandAnim.start() 
-                } 
+                onTriggered: dbPageRoot.openDbAnimated(backend.dbList[0].path)
             }
             function openDbAnimated(path) { 
-                if (expandAnim.running) return
+                if (mainWindow.startTransition) return
+                mainWindow.startTransition = true
                 targetDbPath = path
                 rightContentArea.opacity = 0
-                expandAnim.start() 
+                leftPanel.visible = false
+                mainWindow.runStartCover(path)
+            }
+            // Панель-заставка вернулась (база не открылась) — показываем выбор снова
+            function restoreSelection() {
+                leftPanel.visible = true
+                rightContentArea.opacity = 1
             }
             
             Item {
@@ -452,13 +682,16 @@ ApplicationWindow {
                                 height: AppUI.AppTheme.iconMedium
                                 color: AppUI.AppTheme.textSecondary
                             }
+                            HoverHandler { cursorShape: Qt.PointingHandCursor }
                             MouseArea {
                                 id: folderHov
+                                cursorShape: Qt.PointingHandCursor
                                 anchors.fill: parent
                                 hoverEnabled: true
                                 onClicked: backend.openDbFolder(modelData.path)
                             }
                         }
+                        HoverHandler { cursorShape: Qt.PointingHandCursor }
                         MouseArea {
                             id: mouseArea
                             anchors.fill: parent
@@ -574,20 +807,9 @@ ApplicationWindow {
                     anchors.bottom: parent.bottom
                     anchors.bottomMargin: AppUI.AppTheme.spaceS
                     AppUI.ToastHost { width: parent.width }
-                    AppUI.UpdateBanner { width: parent.width }
                 }
             }
 
-            SequentialAnimation {
-                id: expandAnim
-                PauseAnimation { duration: 150 }
-                NumberAnimation {
-                    target: leftPanel; property: "width"
-                    to: dbPageRoot.width; duration: 600
-                    easing.type: Easing.InOutExpo
-                }
-                ScriptAction { script: backend.openDatabase(dbPageRoot.targetDbPath) }
-            }
         }
     }
 
@@ -599,6 +821,23 @@ ApplicationWindow {
         Item {
             id: workspaceRoot
             property alias calendarPanel: calendarPanelId
+
+            // Мягкий подъезд интерфейса: после улёта шторки база
+            // проявляется и чуть поднимается снизу — глаз следит за
+            // шторкой, потом находит готовый интерфейс
+            opacity: 0
+            Component.onCompleted: wsEnter.start()
+            SequentialAnimation {
+                id: wsEnter
+                PauseAnimation { duration: 80 }
+                ParallelAnimation {
+                    NumberAnimation { target: workspaceRoot; property: "opacity"; to: 1; duration: 380; easing.type: Easing.OutCubic }
+                    NumberAnimation { target: workspaceRoot; property: "y"; from: 14; to: 0; duration: 440; easing.type: Easing.OutCubic }
+                }
+            }
+            // страховка: даже если анимация не запустилась — экран виден
+            Timer { interval: 900; running: true; onTriggered: { workspaceRoot.opacity = 1; workspaceRoot.y = 0 } }
+
             MouseArea {
                 anchors.fill: parent
                 z: 1
@@ -612,11 +851,19 @@ ApplicationWindow {
                 anchors.fill: parent
                 z: 0
                 orientation: Qt.Horizontal
-                handle: Rectangle { 
-                    implicitWidth: 1
-                    color: SplitHandle.hovered || SplitHandle.pressed
-                           ? AppUI.AppTheme.accentBrand
-                           : AppUI.AppTheme.borderDivider
+                handle: Rectangle {
+                    // Невидим по умолчанию; при наведении проявляется полусерая
+                    // линия-«ручка», за которую можно потянуть и менять ширину.
+                    implicitWidth: 8
+                    color: "transparent"
+                    opacity: (SplitHandle.hovered || SplitHandle.pressed) ? 1.0 : 0.0
+                    Behavior on opacity { NumberAnimation { duration: 150 } }
+                    Rectangle {
+                        anchors.centerIn: parent
+                        width: 3
+                        height: parent.height
+                        color: AppUI.AppTheme.borderInput
+                    }
                 }
                 Item {
                     SplitView.preferredWidth: 350
@@ -628,6 +875,7 @@ ApplicationWindow {
                         handle: Rectangle {
                             implicitWidth: 1
                             color: AppUI.AppTheme.borderDivider
+                            opacity: 0.4
                         }
                         AppUI.GroupSidebar {
                             SplitView.preferredWidth: 72
@@ -647,7 +895,6 @@ ApplicationWindow {
                         anchors.bottom: parent.bottom
                         z: AppUI.AppTheme.zSticky
                         AppUI.ToastHost { width: parent.width }
-                        AppUI.UpdateBanner { width: parent.width }
                         AppUI.LeftControlPanel { width: parent.width }
                     }
                 }
@@ -659,16 +906,43 @@ ApplicationWindow {
         }
     }
 
+    // Повтор приказа о денежной компенсации: ведомость заполняется
+    // как в прошлый раз (получатели и суммы), дата — сегодняшний день
+    function editMoneyOrder(order) {
+        moneyOrderDialog.editFromOrder(order)
+    }
+
     // ==========================================
     // ОВЕРЕИ И ЭФФЕКТЫ
     // ==========================================
+    // Размытие фона за окном убрали: окно просто открывается.
+    // (Оверлей оставлен, но выключен, чтобы не трогать остальную механику.)
     AppUI.SpotlightOverlay {
         id: spotlightOverlay
         backgroundSource: visualRoot
         targetItem: mainWindow.activeSpotlightCell
-        isActive: dayEventDialog.opened
+        isActive: false
     }
     AppUI.ThemeTransition { id: themeTransition; targetItem: visualRoot }
+
+    // Меню дня: открывается ЛКМ и ПКМ по ячейке календаря (как контекстное меню)
+    AppUI.AppDayMenu {
+        id: dayMenu
+        // Волна меток: статус применили к нескольким выделенным дням —
+        // их метки соберутся по порядку выделения. Сигнал прилетает
+        // ДО обновления данных, карта задержек готова вовремя
+        onBulkApplyRequested: (dates) => {
+            let ws = stackView.currentItem
+            if (ws && ws.calendarPanel && ws.calendarPanel.prepareBadgeWave)
+                ws.calendarPanel.prepareBadgeWave(dates)
+        }
+        // Закрыли меню — снять выделение дней (протяжка ЛКМ)
+        onClosed: {
+            let ws = stackView.currentItem
+            if (ws && ws.calendarPanel && ws.calendarPanel.clearDaySelection)
+                ws.calendarPanel.clearDaySelection()
+        }
+    }
 
     property var pendingBackendCall: null
 
@@ -757,17 +1031,25 @@ ApplicationWindow {
     // ДИАЛОГИ
     // ==========================================
     AppUI.WhatsNewDialog    { id: whatsNewDialog }
-    AppUI.HelpDialog        { id: helpDialog }
+    AppUI.RecoDialog         { id: recoDialog }
+    AppUI.ProdCalendarDialog { id: prodCalendarDialog }
+    AppUI.HelpDialog        {
+        id: helpDialog
+        onRequestReco: function() { recoDialog.openReco() }
+        onRequestCalendar: function(year) { prodCalendarDialog.openYear(year) }
+        onRequestWhatsNew: whatsNewDialog.showChangelog()
+    }
     AppUI.DayInspector      { id: dayInspector }
     AppUI.MoneyInspector    { 
         id: moneyInspector
-        onRequestAddMoneyDialog: moneyDialog.openNew(moneyInspector.contentItem, 20, 20) 
+        onRequestNewOrder: moneyOrderDialog.openNew()
     }
-    AppUI.DayEventDialog    { id: dayEventDialog }
+    AppUI.DayDutyDialog     { id: dayDutyDialog }
+    AppUI.DayCompDialog     { id: dayCompDialog }
     AppUI.EmpDialog         { id: empDialog }
     AppUI.EndStatusDialog   { id: endStatusDialog }
     AppUI.TransferDialog    { id: transferDialog }
-    AppUI.MoneyDialog       { id: moneyDialog }
+    AppUI.MoneyOrderDialog  { id: moneyOrderDialog }
 
     AppUI.AppConfirmDialog  {
         id: confirmDialog
@@ -778,7 +1060,7 @@ ApplicationWindow {
         }
         onRejected: mainWindow.confirmCallback = null
     }
-    AppUI.SettingsDialog    { id: settingsDialog; onRequestFileAttach: fileDialog.open() }
+    AppUI.SettingsDialog    { id: settingsDialog }
     AppUI.AddGroupDialog    { id: addGroupDialog }
     AppUI.HistoryDialog     { id: historyDialog }
     AppUI.CreateDbDialog    { id: createDbDialog }
@@ -812,6 +1094,10 @@ FileDialog {
     AppUI.AppPrintDialog { 
         id: customPrintDialog
         onPrintRequested: function(printerName, copies, pageFrom, pageTo, orientation, paperSize, collate) { 
+            if (printerName === "Экспортировать в Excel") { 
+                exportDialog.open() 
+                return 
+            } 
             backend.quickPrint(printerName, copies, pageFrom, pageTo, orientation, paperSize, collate) 
         } 
     }
@@ -834,7 +1120,9 @@ FileDialog {
     }
     Timer {
         id: updateScanTimer
-        interval: 5000; running: true; repeat: true
+        // Редкая фоновая проверка. Частый опрос (5 сек) был незаметен-мигал
+        // полоской и дёргал сеть; теперь — раз в 30 минут, и только при старте.
+        interval: 1800000; running: true; repeat: true
         onTriggered: backend.scanForUpdates()
     }
     Timer {

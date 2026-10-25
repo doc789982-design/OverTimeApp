@@ -21,6 +21,7 @@ Item {
     readonly property bool animsAlive: root.visible && root.opacity > 0
                                        && root.Window.window !== null
                                        && root.Window.window.visible
+                                       && !AppTheme.reducedMotion
 
     // ── Дыхание ───────────────────────────────────────
     SequentialAnimation on breathY {
@@ -316,7 +317,7 @@ Item {
         Text {
             id: codeLabel
             text: "OverTimeTab"
-            font.pixelSize: 9
+            font.pixelSize: AppTheme.sizeMicro
             font.letterSpacing: 3
             color: AppTheme.accentBrand
             opacity: 0.48

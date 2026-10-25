@@ -5,7 +5,7 @@ import QtQuick.Controls.impl
 
 AppDialog {
     id: root
-    title: "Что нового"
+    title: "Что нового в версии " + AppTheme.appVersionFull
     acceptText: "Понятно"
     rejectText: "Закрыть"
     acceptVariant: "primary"
@@ -16,13 +16,32 @@ AppDialog {
     onClosed: backend.ackWhatsNew()
 
     function showIfNeeded() {
-        if (backend.whatsNew && backend.whatsNew.length > 0)
+        // само окно открывается только когда обновление НЕ прочитано;
+        // из справки (showChangelog) — в любой момент
+        if (backend.whatsNewFresh &&
+                backend.whatsNew && backend.whatsNew.length > 0)
             root.showCentered()
     }
 
+    // Из справки: то же окно, что после обновления, — только
+    // изменения с прошлого просмотра (не весь чейнджлог версии)
+    function showChangelog() { root.showCentered() }
+
+    // Живая виньетка сверху: маленькие сцены о «показывающих» новинках
+    // выпуска — по одной на каждую, листаются сами. Показывается, только
+    // когда рассказывать есть о чём: «всё уже видели» — сцены нет
+    WhatsNewVignette {
+        active: root.opened && backend.whatsNew && backend.whatsNew.length > 0
+        scenes: backend.whatsNewScenes !== undefined ? backend.whatsNewScenes
+                                                     : ["neutral"]
+    }
+
+    // Всё уже видели — честно говорим об этом, а не пустое окно
     Text {
-        width: parent.width
-        text: "После обновления. Базы и настройки на месте."
+        width: root.width - AppTheme.spaceL * 2
+        x: AppTheme.spaceL
+        visible: !backend.whatsNew || backend.whatsNew.length === 0
+        text: "Новых изменений не было: всё из последнего обновления вы уже видели."
         color: AppTheme.textSecondary
         font.family: AppTheme.fontFamily
         font.pixelSize: AppTheme.sizeBody
@@ -35,15 +54,6 @@ AppDialog {
         Column {
             width: root.width - AppTheme.spaceL * 2
             spacing: AppTheme.spaceS
-
-            Text {
-                width: parent.width
-                text: "Версия " + modelData.version
-                color: AppTheme.textPrimary
-                font.family: AppTheme.fontFamily
-                font.pixelSize: AppTheme.sizeH5
-                font.weight: AppTheme.weightBold
-            }
 
             Column {
                 width: parent.width
@@ -63,6 +73,7 @@ AppDialog {
                     color: AppTheme.textPrimary
                     font.family: AppTheme.fontFamily
                     font.pixelSize: AppTheme.sizeBody
+                    textFormat: Text.RichText
                     wrapMode: Text.WordWrap
                     lineHeight: 1.25
                 }
@@ -86,6 +97,7 @@ AppDialog {
                     color: AppTheme.textPrimary
                     font.family: AppTheme.fontFamily
                     font.pixelSize: AppTheme.sizeBody
+                    textFormat: Text.RichText
                     wrapMode: Text.WordWrap
                     lineHeight: 1.25
                 }
@@ -109,6 +121,7 @@ AppDialog {
                     color: AppTheme.textPrimary
                     font.family: AppTheme.fontFamily
                     font.pixelSize: AppTheme.sizeBody
+                    textFormat: Text.RichText
                     wrapMode: Text.WordWrap
                     lineHeight: 1.25
                 }
@@ -121,7 +134,7 @@ AppDialog {
 
                 Text {
                     text: "Удалили"
-                    color: AppTheme.accentDanger
+                    color: AppTheme.textDanger
                     font.family: AppTheme.fontFamily
                     font.pixelSize: AppTheme.sizeBody
                     font.weight: AppTheme.weightBold
@@ -132,16 +145,10 @@ AppDialog {
                     color: AppTheme.textPrimary
                     font.family: AppTheme.fontFamily
                     font.pixelSize: AppTheme.sizeBody
+                    textFormat: Text.RichText
                     wrapMode: Text.WordWrap
                     lineHeight: 1.25
                 }
-            }
-
-            Rectangle {
-                visible: index < backend.whatsNew.length - 1
-                width: parent.width
-                height: 1
-                color: AppTheme.borderDivider
             }
         }
     }

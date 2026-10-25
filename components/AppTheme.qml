@@ -9,8 +9,21 @@ QtObject {
     // Меняем здесь: заголовок окна, шапка и логотип
     // подхватят автоматически.
     // ==========================================
-    readonly property string appVersion: "2.0.0-ALPHA.20"
-    readonly property int appBuild: 83
+    // Имя программы для человека: пока версии нет — просто «BETA.1»
+    // (потом будет «RC.1»). С релиза имя = версии: «1.0.0», «1.0.1», …
+    // Его показывают окна и тосты, его же берут имена файлов релиза
+    // (OVERTIMETAB_BETA.1_<sha>.zip) и установщик.
+    readonly property string appVersion: "BETA.1"
+    // Семвер — только механика: тег релиза (v + семвер), сравнение
+    // версий, машинная строка обновления. Сейчас бета — предрелиз 1.0.0
+    // (релиз будет 1.0.0, никакого 2.0.0): 1.0.0-beta.1 → 1.0.0-rc.1 →
+    // 1.0.0 → 1.0.1 → … → 1.6.0-alpha.1 → … 2.0.0 — осознанно, не скоро.
+    // Каналы: alpha < beta < rc < релиз (без канала); ступени можно
+    // пропускать (только альфа, или альфа и сразу rc).
+    readonly property string appSemver: "1.0.0-beta.1"
+    // Сборки непрерывные и никогда не сбрасываются: именно сборка говорит
+    // установленной программе «новее ли» обновление.
+    readonly property int appBuild: 309
     readonly property string appVersionFull: appVersion + " · сборка " + appBuild
 
     // ==========================================
@@ -51,7 +64,7 @@ QtObject {
     property color accentBrand:   isDark ? "#4B9AEE" : "#0374B5" 
     property color accentInfo:    isDark ? "#82B1FF" : "#0056B3" 
     property color accentSuccess: isDark ? "#5CB85C" : "#107C3F" 
-    property color accentWarning: isDark ? "#F4AC5B" : "#E67300" 
+    property color accentWarning: isDark ? "#F4AC5B" : "#B45A00" 
     property color accentDanger:  isDark ? "#E76C78" : "#DE2E43" 
     property color accentPurple:  isDark ? "#C05C9A" : "#7C1052" 
     property color accentTeal:    isDark ? "#50A7B5" : "#006A7C" 
@@ -76,13 +89,19 @@ QtObject {
     // 3. ТЕКСТ (Typography Colors)
     // ==========================================
     property color textPrimary:   isDark ? "#DEE4EA" : "#2D3B45"
-    property color textSecondary: isDark ? "#8B949E" : "#6B7780"
-    property color textTertiary:  isDark ? "#6B757D" : "#8B969E"
+    property color textSecondary: isDark ? "#9BA5AE" : "#5F6B74"
+    property color textTertiary:  isDark ? "#949EA8" : "#66707A"
     property color textDisabled:  isDark ? "#484F58" : "#9AA0A6" 
+    // Красный ЦВЕТА текста ошибок: темнее заливки accentDanger —
+    // на белых карточках и полях держит читаемость 4.5:1 (WCAG AA)
+    property color textDanger:    isDark ? "#EC7E8A" : "#C12536"
+    // Синий ЦВЕТА текста (сообщения, выбранные пункты): светлее заливки
+    // accentBrand — заливка на тёмном окне читаемость текста не держит
+    property color textBrand:     isDark ? "#55A3F1" : "#03629A"
     
     property color textInverse:   isDark ? "#202124" : "#FFFFFF" 
-    property color textOnAccent:  "#FFFFFF" 
-    property color textOnSoft:    accentBrand 
+    property color textOnAccent:  isDark ? "#0B1F33" : "#FFFFFF" 
+    property color textOnSoft:    isDark ? accentBrand : "#03629A" 
 
     // ==========================================
     // 4. ТИПОГРАФИКА (Strict Scale & Weights)
@@ -116,8 +135,9 @@ QtObject {
     property color borderDisabled: isDark ? "#353B42" : "#DDE2E5" 
     property color borderError:    accentDanger 
     
-    // Фокус с вшитой 50% прозрачностью (80 в начале HEX)
-    property color borderFocus:    isDark ? "#804B9AEE" : "#800875E1"
+    // Фокус — сплошной бренд (по MD3 у полей 2px primary):
+    // полупрозрачная рамка была бледной и не отличалась от покоя
+    property color borderFocus:    isDark ? "#4B9AEE" : "#0374B5"
     
     property int   focusWidth:     2 
     property int   focusOffset:    2 
@@ -125,7 +145,7 @@ QtObject {
     // ==========================================
     // 6. ИНТЕРАКТИВ И ПРОЗРАЧНОСТЬ (States & Opacity)
     // ==========================================
-    property color stateHover:    isDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.04)
+    property color stateHover:    isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.08)
     property color statePress:    isDark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.08)
     property color stateSelected: isDark ? "#264B9AEE" : "#1A0875E1" // 15% и 10% opacity
 
@@ -225,10 +245,17 @@ QtObject {
     property int durSlow:     400 
 
     // Оставляем идеальные экспоненциальные кривые
-    property int easeColor:    Easing.Linear     
-    property int easeEnter:    Easing.OutExpo   
-    property int easeExit:     Easing.InExpo    
-    property int easeStandard: Easing.InOutExpo 
+    property int easeColor:    Easing.Linear
+
+    // Кривые движения — ближайшие встроенные аналоги MD3 emphasized.
+    // ВАЖНО: Easing.Bezier в Qt 6.11 НЕ РАБОТАЕТ — easing.bezierCurve
+    // молча игнорируется, и анимация становится линейной (проверено
+    // измерениями). Поэтому emphasized-decelerate = OutExpo (быстрый
+    // старт, мягкая посадка), emphasized-accelerate = InExpo,
+    // emphasized = InOutExpo — характер совпадает с кривыми MD3.
+    property int easeEnter:    Easing.OutExpo
+    property int easeExit:     Easing.InExpo
+    property int easeStandard: Easing.InOutExpo
 
     property int slideOffset:  20 // Чуть уменьшили разбег, чтобы соответствовало новой скорости
 

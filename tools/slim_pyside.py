@@ -83,7 +83,6 @@ UNUSED_PYSIDE_MODULES = (
     "PySide6.QtHelp",
     "PySide6.QtTest",
     "PySide6.QtSql",           # база у нас через обычный sqlite3, не через Qt
-    "PySide6.QtPrintSupport",  # печать идёт через Excel, не через Qt
     "PySide6.QtUiTools",
     "PySide6.QtXml",
     "PySide6.QtDBus",
@@ -187,7 +186,6 @@ _DROP_PATH_PARTS = (
     "qt6test",
     "/qttest",
     "qt6sql",
-    "qt6printsupport",
     "qt6uitools",
     "qt6xml",
     "qt6dbus",

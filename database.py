@@ -13,7 +13,9 @@ class DB:
         self.path = path
         
         # МАГИЯ: Увеличиваем таймаут, чтобы SQLite не блокировал Питон
-        self.conn = sqlite3.connect(path, timeout=10.0) 
+        # check_same_thread=False: соединение используется из нескольких
+        # потоков (экспорт, сохранение); таймаут защищает от блокировок
+        self.conn = sqlite3.connect(path, timeout=10.0, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         
         # --- ТУРБО-РЕЖИМ (УБИРАЕТ ЛАГИ ЧТЕНИЯ/ЗАПИСИ) ---
@@ -38,6 +40,12 @@ class DB:
         self._max_history = 20
         
         self._init_or_migrate()
+        # Месяц приема стал датой приема: у существующих записей
+        # дата = 1-е число их месяца — поведение не меняется ни на копейку.
+        try: self.conn.execute("ALTER TABLE employee ADD COLUMN hire_date TEXT")
+        except Exception: pass
+        self.conn.execute("UPDATE employee SET hire_date = start_month || '-01' "
+                           "WHERE hire_date IS NULL OR hire_date = ''")
 
         # Подорожники для старых баз
         try: self.conn.execute("ALTER TABLE employee_group ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0")
@@ -83,7 +91,7 @@ class DB:
 
     def save_snapshot(self) -> None:
         # Делаем мгновенную бинарную копию базы в оперативную память для Ctrl+Z
-        mem_db = sqlite3.connect(":memory:")
+        mem_db = sqlite3.connect(":memory:", check_same_thread=False)
         mem_db.row_factory = sqlite3.Row
         self.conn.backup(mem_db)
         
@@ -119,7 +127,7 @@ class DB:
         """Шаг назад (Ctrl+Z)"""
         if not self._undo_stack: 
             return False
-        mem_db = sqlite3.connect(":memory:")
+        mem_db = sqlite3.connect(":memory:", check_same_thread=False)
         self.conn.backup(mem_db)
         self._redo_stack.append(mem_db)
         prev_db = self._undo_stack.pop()
@@ -131,7 +139,7 @@ class DB:
         """Шаг вперед (Ctrl+Y)"""
         if not self._redo_stack: 
             return False
-        mem_db = sqlite3.connect(":memory:")
+        mem_db = sqlite3.connect(":memory:", check_same_thread=False)
         self.conn.backup(mem_db)
         self._undo_stack.append(mem_db)
         next_db = self._redo_stack.pop()
@@ -221,6 +229,7 @@ class DB:
                     rank TEXT,
                     position TEXT,
                     start_month TEXT NOT NULL,
+                    hire_date TEXT,
                     end_date TEXT,
                     end_reason TEXT,
                     opening_minutes INTEGER NOT NULL DEFAULT 0,
@@ -550,8 +559,8 @@ class DB:
 
     def add_compensation_days_dayoff(self, employee_id: int, dates: list[date], comment: str) -> int:
         cur = self.conn.execute(
-            "INSERT INTO compensation(employee_id,unit,method,amount_days,comment) VALUES (?,?,?,?,?)",
-            (employee_id, "days", "day_off", len(dates), comment or None),
+            "INSERT INTO compensation(employee_id,unit,method,event_date,amount_days,comment) VALUES (?,?,?,?,?,?)",
+            (employee_id, "days", "day_off", d_iso(min(dates)), len(dates), comment or None),
         )
         comp_id = int(cur.lastrowid)
         for d0 in dates:
@@ -560,6 +569,48 @@ class DB:
                 (comp_id, employee_id, d_iso(d0)),
             )
         return comp_id
+
+    def find_day_conflicts(self, employee_id: int, dates, exclude_comp_id: int = 0) -> list:
+        """Какие из дат уже заняты днями ДРУГОЙ компенсации.
+
+        День сотрудника не может входить в две компенсации сразу
+        (UNIQUE в comp_day_off_date). Чтобы человек видел понятное
+        объяснение, а не сырую ошибку SQLite, сохранение заранее
+        спрашивает этот метод. Возвращает список словарей
+        {date, comp_id, start, end, days, prev_year} по порядку дат.
+        """
+        uniq = sorted({(d_iso(d) if isinstance(d, date) else str(d))
+                       for d in dates if d})
+        if not uniq:
+            return []
+        out = []
+        for i in range(0, len(uniq), 500):
+            chunk = uniq[i:i + 500]
+            marks = ",".join("?" * len(chunk))
+            rows = self.conn.execute(f"""
+                SELECT cd.day_off_date d, c.id cid, c.event_date ev,
+                       c.amount_days ad,
+                       (SELECT MIN(x.day_off_date) FROM comp_day_off_date x
+                         WHERE x.compensation_id = c.id) p_start,
+                       (SELECT MAX(x.day_off_date) FROM comp_day_off_date x
+                         WHERE x.compensation_id = c.id) p_end
+                FROM comp_day_off_date cd
+                JOIN compensation c ON c.id = cd.compensation_id
+                WHERE cd.employee_id=? AND cd.day_off_date IN ({marks})
+            """, (employee_id, *chunk)).fetchall()
+            for r in rows:
+                if exclude_comp_id and int(r["cid"]) == int(exclude_comp_id):
+                    continue
+                out.append({
+                    "date": r["d"],
+                    "comp_id": int(r["cid"]),
+                    "start": r["p_start"] or r["d"],
+                    "end": r["p_end"] or r["d"],
+                    "days": int(r["ad"] or 1),
+                    "prev_year": bool(r["ev"] and str(r["ev"]).startswith("1900")),
+                })
+        out.sort(key=lambda x: x["date"])
+        return out
 
     def delete_compensation(self, comp_id: int) -> None:
         self.conn.execute("DELETE FROM compensation WHERE id=?", (comp_id,))        
@@ -608,16 +659,26 @@ class DB:
         )
 
     def add_employee(self, last: str, first: str, middle: str, rank: str, position: str, start_month: str, opening_minutes: int, opening_days: int, opening_overtime: int, prev_opening_minutes: int, prev_opening_overtime: int, prev_opening_days: int, group_id: Optional[int] = None) -> int:
+        # Принимаем и дату (ГГГГ-ММ-ДД), и старый формат «месяц» ГГГГ-ММ
+        # (для старых вызовов и тестов): месяц всегда согласован с датой.
+        sm = (start_month or "").strip()
+        if len(sm) == 10:
+            hire_date = sm
+            sm = sm[:7]
+        elif len(sm) == 7:
+            hire_date = sm + "-01"
+        else:
+            raise ValueError("Дата приема: ГГГГ-ММ-ДД или ГГГГ-ММ")
         sort_order = self._next_employee_sort_order(group_id)
         cur = self.conn.execute(
             """
-            INSERT INTO employee(last_name,first_name,middle_name,rank,position,start_month,
+            INSERT INTO employee(last_name,first_name,middle_name,rank,position,start_month,hire_date,
                                  opening_minutes,opening_days,opening_overtime_minutes,
                                  prev_opening_minutes, prev_opening_overtime_minutes, prev_opening_days,
                                  group_id, sort_order)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
-            (last, first, middle or None, rank or None, position or None, start_month,
+            (last, first, middle or None, rank or None, position or None, sm, hire_date,
              opening_minutes, opening_days, opening_overtime,
              prev_opening_minutes, prev_opening_overtime, prev_opening_days,
              group_id, sort_order),
@@ -628,6 +689,20 @@ class DB:
         self.conn.execute("DELETE FROM employee WHERE id=?", (employee_id,))
 
     def update_employee(self, employee_id: int, **fields) -> None:
+        # Месяц приема и дата приема всегда согласованы:
+        # что бы ни передал вызывающий код — дату или месяц.
+        # Если передана дата — она главная (месяц от неё);
+        # иначе месяц дополняется 1-м числом.
+        hd = str(fields.get("hire_date") or "").strip()
+        sm = str(fields.get("start_month") or "").strip()
+        v = hd or sm
+        if len(v) == 10:      # дата приема целиком
+            fields["hire_date"] = v
+            fields["start_month"] = v[:7]
+        elif len(v) == 7:     # старый формат «месяц»
+            fields["start_month"] = v
+            fields["hire_date"] = v + "-01"
+
         if not fields:
             return
         cols = ", ".join([f"{k}=?" for k in fields.keys()])
@@ -760,3 +835,38 @@ class DB:
         except Exception as e:
             print(f"Ошибка get_pre_holidays_month: {e}")
             return set()
+
+
+def _ru_date(iso) -> str:
+    """«2027-01-05» → «05.01.2027» (для сообщений человеку)."""
+    p = str(iso).split("-")
+    return ".".join((p[2], p[1], p[0])) if len(p) == 3 else str(iso)
+
+
+def format_day_conflicts(conflicts: list) -> str:
+    """Понятное сообщение о пересечении дней с существующими компенсациями."""
+    if not conflicts:
+        return ""
+    groups = {}
+    for c in conflicts:
+        groups.setdefault(c["comp_id"], []).append(c)
+    parts = []
+    for cid in sorted(groups):
+        g = groups[cid]
+        dates = [_ru_date(x["date"]) for x in g]
+        if len(dates) == 1:
+            head, verb = "День " + dates[0], "входит"
+        else:
+            shown = ", ".join(dates[:3])
+            if len(dates) > 3:
+                shown += " и ещё " + str(len(dates) - 3)
+            head, verb = "Дни " + shown, "входят"
+        if g[0]["start"] != g[0]["end"]:
+            tail = "в компенсацию за период %s – %s (%d дн.%s)" % (
+                _ru_date(g[0]["start"]), _ru_date(g[0]["end"]), g[0]["days"],
+                ", за пред. год" if g[0]["prev_year"] else "")
+        else:
+            tail = "в компенсацию" + (" за пред. год" if g[0]["prev_year"] else "")
+        parts.append("%s уже %s %s" % (head, verb, tail))
+    return ";\n".join(parts) + "."
+

@@ -1,0 +1,8 @@
+# Концы строк — единые LF у всех текстовых файлов
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.otf binary
+*.ttf binary
+*.ico binary
+*.xlsx binary

@@ -6,7 +6,7 @@ MenuItem {
     id: control
 
     property bool isDanger: false
-    property string customColor: ""
+    property color customColor: "transparent"
     property string iconSource: ""
     property bool showDelete: false
 
@@ -25,9 +25,9 @@ MenuItem {
     indicator: Item { implicitWidth: 0; implicitHeight: 0 }
     arrow: Item { implicitWidth: 0; implicitHeight: 0 }
 
-    readonly property color _ink: customColor !== "" ? customColor
+    readonly property color _ink: customColor.a !== 0 ? customColor
                                 : (isDanger ? AppTheme.accentDanger : AppTheme.textPrimary)
-    readonly property color _iconInk: customColor !== "" ? customColor
+    readonly property color _iconInk: customColor.a !== 0 ? customColor
                                     : (isDanger ? AppTheme.accentDanger : AppTheme.textSecondary)
 
     contentItem: Item {
@@ -85,9 +85,10 @@ MenuItem {
                 source: "../icons/trash.svg"
                 width: AppTheme.iconMedium
                 height: AppTheme.iconMedium
-                color: deleteMouse.containsMouse ? AppTheme.accentDanger : AppTheme.textTertiary
+                color: deleteMouse.containsMouse ? AppTheme.textDanger : AppTheme.textTertiary
             }
 
+            HoverHandler { cursorShape: Qt.PointingHandCursor }
             MouseArea {
                 id: deleteMouse
                 anchors.fill: parent
@@ -113,5 +114,10 @@ MenuItem {
         anchors.rightMargin: AppTheme.spaceXXS
         anchors.topMargin: 1
         anchors.bottomMargin: 1
+
+        // Плавное выделение пункта при наведении — как в меню дня (ЛКМ по ячейке)
+        Behavior on color {
+            ColorAnimation { duration: AppTheme.durMicro; easing.type: AppTheme.easeStandard }
+        }
     }
 }

@@ -1,0 +1,358 @@
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Controls.impl
+import Qt5Compat.GraphicalEffects
+
+// ============================================================
+// МЕНЮ ДНЯ (открывается ЛКМ и ПКМ по ячейке календаря)
+//
+// Настоящее контекстное меню на той же базе, что и меню по ПКМ
+// (Qt Quick Menu): та же рамка, тень, плавное появление
+// (прозрачность + масштаб), закрытие по клику вне меню.
+// Внутри — шапка с датой, круглые статусы К/Б/О и пункты действий.
+// ============================================================
+AppMenu {
+    id: root
+    // Фиксированная ширина меню (как у старых меню дня): пункты и шапка
+    // выравниваются по ней, а не по авто-размеру содержимого.
+    width: 240
+
+    // Параметры для открывающего дня
+    property string targetDate: ""
+    // Все дни, к которым применится действие (выделение протяжкой);
+    // для одиночного клика — один день
+    property var targetDates: []
+    // Выделено несколько дней: меню показывает только статусы (К/Б/О и сброс)
+    readonly property bool multiMode: targetDates.length > 1
+    property bool menuIsWeekend: false
+    property bool menuIsHoliday: false
+    property bool menuHasDuties: false
+    property bool menuHasComps: false
+
+    // при открытии меню переносим тултип в overlay главного окна
+    // (в момент построения попапа overlay ещё не доступен),
+    // при закрытии — гасим тултип, ведь MouseArea могла не успеть
+    // отправить onExited
+    onOpened: menuTip.attachToOverlay()
+    onAboutToHide: menuTip.hideTip()
+
+    // Действие вот-вот применится к нескольким выделенным дням.
+    // Сигнал летит ДО вызова базы: календарь успевает подготовить
+    // волну меток (сборку по порядку выделения) к обновлению данных
+    signal bulkApplyRequested(var dates)
+
+    background: Rectangle {
+        implicitWidth: 240
+        color: AppTheme.bgElevated
+        radius: AppTheme.radiusMedium
+        border.color: AppTheme.borderDivider
+        border.width: 1
+        AppShadow { level: 2 }   // уровень как у всех меню
+
+        // ЕДИНЫЙ тултип кнопок меню. Живёт в overlay главного окна:
+        // содержимое меню клипуется его ListView (clip: true в стиле
+        // Basic), поэтому карточка внутри меню резалась бы его краями.
+        // В overlay она выше меню и ничего ее не обрезает.
+        // ВАЖНО: объявлять в теле Menu нельзя — Qt считает таких
+        // детей пунктами меню (пустая строка сверху, меню растёт).
+        AppInlineTip {
+            id: menuTip
+        }
+    }
+
+    // ============================================================
+    // ШАПКА: дата + закрыть
+    // ============================================================
+    MenuItem {
+        id: headerItem
+        implicitWidth: 232
+        implicitHeight: 44
+        background: Rectangle { color: "transparent" }
+
+        contentItem: Item {
+            implicitWidth: 232
+            implicitHeight: 44
+
+            Text {
+                id: dateLabel
+                anchors.left: parent.left
+                anchors.leftMargin: AppTheme.spaceS
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.right: parent.right
+                anchors.rightMargin: 44
+                elide: Text.ElideRight
+                text: root.targetDates.length > 1
+                      ? root.fmtRange(root.targetDates)
+                      : root.fmtDate(root.targetDate)
+                color: AppTheme.textPrimary
+                font.family: AppTheme.fontCondensed
+                font.pixelSize: AppTheme.sizeH4
+                font.weight: AppTheme.weightBold
+                verticalAlignment: Text.AlignVCenter
+            }
+
+            Rectangle {
+                width: 28; height: 28; radius: AppTheme.radiusPill
+                anchors.right: parent.right
+                anchors.rightMargin: AppTheme.spaceXS
+                anchors.verticalCenter: parent.verticalCenter
+                color: closeHov.pressed ? AppTheme.statePress
+                      : (closeHov.containsMouse ? AppTheme.stateHover : "transparent")
+                IconImage {
+                    anchors.centerIn: parent
+                    source: "../icons/close.svg"
+                    width: AppTheme.iconMedium
+                    height: AppTheme.iconMedium
+                    color: AppTheme.textSecondary
+                }
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
+                MouseArea {
+                    id: closeHov
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.close()
+                }
+            }
+        }
+    }
+
+    // ============================================================
+    // БЫСТРЫЕ СТАТУСЫ: К / Б / О / сброс (круглые)
+    // ============================================================
+    MenuItem {
+        id: statusItem
+        implicitWidth: 232
+        implicitHeight: 46
+        background: Rectangle { color: "transparent" }
+
+        contentItem: Item {
+            implicitWidth: 232
+            implicitHeight: 46
+
+            Row {
+                anchors.left: parent.left
+                anchors.leftMargin: AppTheme.spaceS
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: AppTheme.spaceS
+
+                Repeater {
+                    model: [
+                        { "t": "К", "tool": "Командировка", "c": AppTheme.accentPurple, "st": "К" },
+                        { "t": "Б", "tool": "Больничный",     "c": AppTheme.accentDanger, "st": "Б" },
+                        { "t": "О", "tool": "Отпуск",         "c": AppTheme.accentWarning, "st": "О" }
+                    ]
+                    Rectangle {
+                        width: 34; height: 34; radius: AppTheme.radiusPill
+                        color: st.pressed ? AppTheme.statePress
+                              : (st.containsMouse ? AppTheme.stateHover : AppTheme.bgSurface)
+                        border.color: AppTheme.borderDivider
+                        border.width: 1
+                        Text {
+                            anchors.centerIn: parent
+                            text: modelData.t
+                            color: modelData.c
+                            font.weight: AppTheme.weightBold
+                            font.pixelSize: AppTheme.sizeBodyLarge
+                        }
+                        HoverHandler { cursorShape: Qt.PointingHandCursor }
+                        MouseArea {
+                            id: st
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onEntered: menuTip.showAt(st, modelData.tool)
+                            onExited: menuTip.hideTip()
+                            onClicked: {
+                                if (root.targetDates.length > 1) {
+                                    root.bulkApplyRequested(root.targetDates)
+                                    backend.setDayStatusBulk(root.targetDates, modelData.st)
+                                } else
+                                    backend.setDayStatus(root.targetDate, modelData.st)
+                                root.close()
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    width: 34; height: 34; radius: AppTheme.radiusPill
+                    color: clearBtn.pressed ? AppTheme.statePress
+                          : (clearBtn.containsMouse ? AppTheme.stateHover : AppTheme.bgSurface)
+                    border.color: AppTheme.borderDivider
+                    border.width: 1
+                    IconImage {
+                        anchors.centerIn: parent
+                        source: "../icons/trash.svg"
+                        width: AppTheme.iconMedium
+                        height: AppTheme.iconMedium
+                        color: clearBtn.containsMouse ? AppTheme.textDanger : AppTheme.textSecondary
+                    }
+                    HoverHandler { cursorShape: Qt.PointingHandCursor }
+                    MouseArea {
+                        id: clearBtn
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onEntered: menuTip.showAt(clearBtn, "Удалить статус")
+                        onExited: menuTip.hideTip()
+                        onClicked: {
+                            if (root.multiMode) {
+                                root.bulkApplyRequested(root.targetDates)
+                                backend.setDayStatusBulk(root.targetDates, "")
+                            }
+                            else
+                                mainWindow.explodeAndDelete(root.targetDate, "status", null,
+                                    function() { backend.setDayStatus(root.targetDate, "") })
+                            root.close()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    AppMenuSeparator { visible: !root.multiMode }
+
+    // ============================================================
+    // ПУНКТЫ ДЕЙСТВИЙ
+    // ============================================================
+    AppMenuItem {
+        visible: !root.multiMode
+        iconSource: "../icons/edit.svg"
+        text: "Открыть день"
+        onClicked: {
+            backend.loadDayDetails(root.targetDate)
+            dayInspector.targetDate = root.targetDate
+            root.close()
+            dayInspector.showCentered()
+        }
+    }
+
+    AppMenuItem {
+        visible: !root.multiMode
+        iconSource: "../icons/clock.svg"
+        text: "Добавить дежурство"
+        showDelete: root.menuHasDuties
+        onClicked: {
+            root.close()
+            dayDutyDialog.prepareForDuty(root.targetDate)
+            dayDutyDialog.showCentered()
+        }
+        onDeleteClicked: {
+            mainWindow.askConfirm(
+                "Удалить все дежурства?",
+                "Будут удалены все дежурства за " + root.fmtDate(root.targetDate) + ".\nЕсли передумаете — нажмите Ctrl+Z.",
+                "Удалить",
+                function() {
+                    mainWindow.explodeAndDelete(root.targetDate, "duty", null,
+                        function() { backend.clearDayDuties(root.targetDate) })
+                }
+            )
+            root.close()
+        }
+    }
+
+    AppMenuItem {
+        visible: !root.multiMode
+        iconSource: "../icons/rest.svg"
+        text: "Добавить компенсацию"
+        showDelete: root.menuHasComps
+        onClicked: {
+            root.close()
+            dayCompDialog.prepareForComp(root.targetDate)
+            dayCompDialog.showCentered()
+        }
+        onDeleteClicked: {
+            mainWindow.askConfirm(
+                "Удалить все компенсации?",
+                "Будут удалены все компенсации за " + root.fmtDate(root.targetDate) + ".\nЕсли передумаете — нажмите Ctrl+Z.",
+                "Удалить",
+                function() {
+                    mainWindow.explodeAndDelete(root.targetDate, "comp", null,
+                        function() { backend.clearDayCompensations(root.targetDate) })
+                }
+            )
+            root.close()
+        }
+    }
+
+    AppMenuSeparator { visible: !root.multiMode }
+
+    AppMenuItem {
+        visible: !root.multiMode && (root.menuIsWeekend || root.menuIsHoliday)
+        iconSource: "../icons/calendar.svg"
+        text: "Сделать рабочим"
+        customColor: AppTheme.accentTeal
+        onClicked: {
+            backend.setDayType(root.targetDate, "work")
+            root.close()
+        }
+    }
+    AppMenuItem {
+        visible: !root.multiMode && !root.menuIsWeekend
+        iconSource: "../icons/rest.svg"
+        text: "Сделать выходным"
+        customColor: AppTheme.accentDanger
+        onClicked: {
+            backend.setDayType(root.targetDate, "weekend")
+            root.close()
+        }
+    }
+    AppMenuItem {
+        visible: !root.multiMode && !root.menuIsHoliday
+        iconSource: "../icons/sparkle.svg"
+        text: "Сделать нерабочим праздничным"
+        customColor: AppTheme.accentPurple
+        onClicked: {
+            backend.setDayType(root.targetDate, "holiday")
+            root.close()
+        }
+    }
+
+    // ============================================================
+    // ОТКРЫТИЕ ИЗ ЯЧЕЙКИ ДНЯ
+    // ============================================================
+    function openFromCell(cellItem, dateStr, isWeekend, isHoliday, hasDuties, hasComps, multiDates) {
+        if (dayDutyDialog.opened) dayDutyDialog.close()
+        if (dayCompDialog.opened) dayCompDialog.close()
+        if (dayInspector.opened) dayInspector.close()
+
+        root.targetDate = dateStr
+        root.targetDates = (multiDates !== undefined && multiDates !== null
+                            && multiDates.length > 1) ? multiDates : [dateStr]
+        root.menuIsWeekend = isWeekend
+        root.menuIsHoliday = isHoliday
+        root.menuHasDuties = hasDuties
+        root.menuHasComps = hasComps
+
+        let pt = cellItem.mapToItem(null, 0, 0)
+        root.popup(Math.round(pt.x), Math.round(pt.y))
+    }
+
+    // Красивый диапазон: «12–15 марта 2026 г.» или
+    // «28 февраля — 2 марта 2026 г.»
+    function fmtRange(dates) {
+        if (!dates || dates.length < 2) return fmtDate(root.targetDate)
+        let a = dates[0].split("-")
+        let b = dates[dates.length - 1].split("-")
+        let months = ["января", "февраля", "марта", "апреля", "мая", "июня",
+                      "июля", "августа", "сентября", "октября", "ноября", "декабря"]
+        if (a[1] === b[1] && a[0] === b[0])
+            return parseInt(a[2], 10) + "–" + parseInt(b[2], 10) + " "
+                   + months[parseInt(a[1], 10) - 1] + " " + a[0] + " г."
+        return fmtDate(dates[0]) + " — " + fmtDate(dates[dates.length - 1])
+    }
+
+    // ============================================================
+    // ФОРМАТ ДАТЫ
+    // ============================================================
+    function fmtDate(dateString) {
+        if (!dateString) return ""
+        let parts = dateString.split("-")
+        if (parts.length !== 3) return dateString
+        let months = ["января", "февраля", "марта", "апреля", "мая", "июня",
+                      "июля", "августа", "сентября", "октября", "ноября", "декабря"]
+        return parseInt(parts[2], 10) + " " + months[parseInt(parts[1], 10) - 1] + " " + parts[0] + " г."
+    }
+}

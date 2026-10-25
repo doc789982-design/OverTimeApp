@@ -2,6 +2,12 @@ import QtQuick
 import QtQuick.Controls
 import Qt5Compat.GraphicalEffects
 
+// ============================================================
+// МЕНЮ — база всех меню программы (меню дня, меню баз, контекстные
+// меню панелей): одна рамка, тень, тайминги появления. Пункты —
+// AppMenuItem (делегат ловит созданные по модели; объявленные
+// явно используются как есть).
+// ============================================================
 Menu {
     id: control
 
@@ -12,6 +18,9 @@ Menu {
     bottomPadding: AppTheme.spaceXS
     leftPadding: AppTheme.spaceXXS
     rightPadding: AppTheme.spaceXXS
+    // Меню — Item-попап в overlay главного окна, а не нативное окно
+    popupType: Popup.Item
+    delegate: AppMenuItem {}
 
     enter: Transition {
         ParallelAnimation {

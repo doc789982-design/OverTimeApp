@@ -67,7 +67,7 @@ Item {
                     width: 16; height: 16; radius: 8
                     
                     // Цвет крестика: прижато -> ярко-красный, наведено -> мягкий красный фон
-                    color: removeMouse.pressed ? AppTheme.accentDanger : 
+                    color: removeMouse.pressed ? AppTheme.textDanger : 
                            (removeMouse.containsMouse ? AppTheme.bgDangerSoft : AppTheme.stateHover)
                     Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
 
@@ -75,22 +75,25 @@ Item {
                         anchors.centerIn: parent
                         text: "✕"
                         // Если навели на кружок - крестик становится красным, иначе он просто серый
-                        color: removeMouse.containsMouse ? AppTheme.accentDanger : AppTheme.textSecondary
-                        font.pixelSize: 9
+                        color: removeMouse.containsMouse ? AppTheme.textDanger : AppTheme.textSecondary
+                        font.pixelSize: AppTheme.sizeMicro
                         font.weight: AppTheme.weightBold
                     }
                 }
 
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
                 MouseArea {
                     id: removeMouse
                     anchors.fill: parent
                     anchors.margins: -4 
                     hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
                     onClicked: root.removeClicked()
                 }
             }
         }
 
+        HoverHandler { cursorShape: Qt.PointingHandCursor }
         MouseArea {
             id: mainMouse
             anchors.left: parent.left
@@ -99,6 +102,7 @@ Item {
             anchors.right: root.removable ? layoutRow.right : parent.right
             anchors.rightMargin: root.removable ? 24 : 0
             hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
             onClicked: root.clicked()
         }
     }

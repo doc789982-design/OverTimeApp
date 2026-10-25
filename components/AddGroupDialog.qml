@@ -5,14 +5,33 @@ AppDialog {
     id: root
     width: 360
 
-    title: "Новая группа"
-    acceptText: "Создать"
+    // 0 — создание новой группы, id — редактирование существующей
+    property int editGroupId: 0
+
+    title: root.editGroupId > 0 ? "Редактирование группы" : "Новая группа"
+    acceptText: root.editGroupId > 0 ? "Сохранить" : "Создать"
+
+    // Открыть окно на существующей группе: поля — как у неё
+    function editGroup(gid, name, isShift, shiftedWeekends) {
+        root.editGroupId = gid
+        grpNameInput.text = name
+        grpShiftCheck.checked = isShift
+        grpShiftedCheck.checked = shiftedWeekends
+        grpErrorMsg.visible = false
+        root.showCentered()
+    }
 
     onAboutToShow: {
+        // сброс — только для НОВОЙ группы (редактирование
+        // заполняется до открытия и стирать его нельзя)
+        if (root.editGroupId > 0) return
         grpNameInput.text = ""
         grpShiftCheck.checked = false
         grpShiftedCheck.checked = false
+        grpErrorMsg.visible = false
     }
+
+    onClosed: root.editGroupId = 0
 
     AppTextField {
         id: grpNameInput
@@ -24,7 +43,7 @@ AppDialog {
 
     AppSwitch {
         id: grpShiftCheck
-        text: "Сменный график"
+        text: "График сменности"
     }
 
     Column {
@@ -45,14 +64,32 @@ AppDialog {
         }
     }
 
+    // Ошибка в окне (а не тост)
+    Text {
+        id: grpErrorMsg
+        visible: false
+        width: parent.width
+        color: AppTheme.textDanger
+        font.family: AppTheme.fontFamily
+        font.pixelSize: AppTheme.sizeSmall
+        wrapMode: Text.WordWrap
+    }
+
     onAccepted: {
         if (grpNameInput.text.trim() === "") {
+            grpErrorMsg.text = "Ошибка: Введите название группы"
+            grpErrorMsg.visible = true
+            grpNameInput.flashError()
             root.shake()
-            backend.showToast("Ошибка: Введите название группы", "error")
             return
         }
+        grpErrorMsg.visible = false
 
-        backend.createGroup(grpNameInput.text, grpShiftCheck.checked, grpShiftedCheck.checked)
+        if (root.editGroupId > 0)
+            backend.updateGroup(root.editGroupId, grpNameInput.text,
+                                grpShiftCheck.checked, grpShiftedCheck.checked)
+        else
+            backend.createGroup(grpNameInput.text, grpShiftCheck.checked, grpShiftedCheck.checked)
         grpNameInput.text = ""
         root.close()
     }

@@ -1,0 +1,862 @@
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
+
+// ============================================================
+// ОКНО ДОБАВЛЕНИЯ КОМПЕНСАЦИИ
+//
+// Отдельное окно (не вкладка): собственный компонент поверх общей
+// базы AppDialog. Окно дежурства — это уже другой элемент,
+// у каждого своя геометрия и свой подбор высоты, поэтому при
+// морфинге из меню дня не «перескакивает» с размера другого окна.
+// ============================================================
+AppDialog {
+    id: root
+    width: 380
+    heightFraction: 2/3
+
+    property string targetDate: ""
+    property int editCompId: 0
+
+    // Дата живёт в заголовке окна (слева от крестика закрытия),
+    // чтобы в содержимом осталось только само редактирование.
+    title: formatBeautifulDate(targetDate)
+    acceptText: "Сохранить"
+    acceptVariant: "primary"
+
+    onClosed: {
+        mainWindow.activeSpotlightCell = null
+    }
+
+    function formatBeautifulDate(dateString) {
+        if (!dateString) return ""
+        let parts = dateString.split("-")
+        if (parts.length !== 3) return dateString
+        let year = parts[0]
+        let month = parseInt(parts[1], 10)
+        let day = parseInt(parts[2], 10)
+        let months = ["января", "февраля", "марта", "апреля", "мая", "июня",
+                      "июля", "августа", "сентября", "октября", "ноября", "декабря"]
+        return day + " " + months[month - 1] + " " + year + " г."
+    }
+
+    // ==========================================
+    // СОДЕРЖИМОЕ: КОМПЕНСАЦИЯ
+    // ==========================================
+    Column {
+        id: compCol
+        width: parent.width
+        spacing: AppTheme.spaceM
+
+        property int compMode: 0
+        // Год списания: 0 — за текущий, 1 — за предыдущий, 2 — за оба.
+        // Раньше была галка «В счет прошлого года»; теперь три
+        // исключающих переключателя, состояние живёт здесь.
+        property int sourceMode: 0
+        property bool isUpdating: false
+        property real patternConfidence: -1
+        property int patternCycle: 0
+        property int patternWorkDays: 0
+        property var shiftDates: []
+
+        // ── Переключатель режима ──────────────────
+        // Переключатель «Этот день / Период» — всегда доступен
+        Row {
+            width: parent.width
+            spacing: AppTheme.spaceM
+            visible: true
+
+            Rectangle {
+                width: 120; height: 36
+                radius: AppTheme.radiusMedium
+                color: compCol.compMode === 0
+                    ? AppTheme.stateSelected
+                    : (m1Hover.containsMouse ? AppTheme.stateHover : "transparent")
+                Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "Этот день"
+                    color: compCol.compMode === 0 ? AppTheme.textOnSoft : AppTheme.textSecondary
+                    font.family: AppTheme.fontFamily
+                    font.pixelSize: AppTheme.sizeBody
+                    font.weight: compCol.compMode === 0 ? AppTheme.weightBold : AppTheme.weightMedium
+                }
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
+                MouseArea {
+                    id: m1Hover
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: compCol.compMode = 0
+                }
+            }
+
+            Rectangle {
+                width: 120; height: 36
+                radius: AppTheme.radiusMedium
+                color: compCol.compMode === 1
+                    ? AppTheme.stateSelected
+                    : (m2Hover.containsMouse ? AppTheme.stateHover : "transparent")
+                Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "Период"
+                    color: compCol.compMode === 1 ? AppTheme.textOnSoft : AppTheme.textSecondary
+                    font.family: AppTheme.fontFamily
+                    font.pixelSize: AppTheme.sizeBody
+                    font.weight: compCol.compMode === 1 ? AppTheme.weightBold : AppTheme.weightMedium
+                }
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
+                MouseArea {
+                    id: m2Hover
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        compCol.compMode = 1
+                        compCol.recalcEndFromDays()
+                    }
+                }
+            }
+        }
+
+        Rectangle { width: parent.width; height: 1; color: AppTheme.borderDivider }
+
+        // ── Режим 0: ЭТОТ ДЕНЬ ───────────────────
+        Column {
+            width: parent.width
+            spacing: AppTheme.spaceM
+            visible: compCol.compMode === 0
+
+            // Список типов зависит от того сменщик или нет
+            // Сменщик:     Ночные / Сверх нормы / Дни
+            // Пятидневка:  Ночные / Дни
+            AppComboBox {
+                id: singleCompType
+                width: parent.width
+                label: "Что предоставляем?"
+                model: backend.isSelectedEmployeeShift
+                    ? ["В ночное время", "Сверхурочно", "Дни отдыха"]
+                    : ["В ночное время", "Дни отдыха"]
+                onCurrentIndexChanged: {
+                    singleErrorMsg.visible = false
+                    compCol.validateSingleBalance()
+                }
+            }
+
+            // Барабан с временем — для Ночных и Сверх нормы
+            Column {
+                width: parent.width
+                spacing: AppTheme.spaceXS
+                visible: {
+                    if (backend.isSelectedEmployeeShift) {
+                        // У сменщика: индекс 0 = Ночные, 1 = Сверх нормы, 2 = Дни
+                        return singleCompType.currentIndex === 0 || singleCompType.currentIndex === 1
+                    } else {
+                        // У пятидневщика: индекс 0 = Ночные, 1 = Дни
+                        return singleCompType.currentIndex === 0
+                    }
+                }
+
+                Text {
+                    text: "Количество:"
+                    color: AppTheme.textSecondary
+                    font.family: AppTheme.fontFamily
+                    font.pixelSize: AppTheme.sizeSmall
+                }
+
+                AppTumblerTime {
+                    id: compTumbler
+                    hours: 8
+                    minutes: 0
+                    onHoursChanged: {
+                        singleErrorMsg.visible = false
+                        compCol.validateSingleBalance()
+                    }
+                    onMinutesChanged: {
+                        singleErrorMsg.visible = false
+                        compCol.validateSingleBalance()
+                    }
+                }
+
+                // Ошибка проверки остатков для режима «Этот день»
+                Text {
+                    id: singleErrorMsg
+                    visible: false
+                    width: parent.width
+                    color: AppTheme.textDanger
+                    font.family: AppTheme.fontFamily
+                    font.pixelSize: AppTheme.sizeSmall
+                    wrapMode: Text.WordWrap
+                }
+            }
+        }
+
+        // ── Режим 1: ПЕРИОД ──────────────────────
+        Item {
+            width: parent.width
+            implicitHeight: periodFields.implicitHeight
+            visible: compCol.compMode === 1
+
+            Item {
+                x: 0; y: 0
+                width: 14
+                height: parent.height
+                clip: true
+
+                property real c1: periodStartInput.y + periodStartInput.height / 2
+                property real c2: periodDaysInput.y + periodDaysInput.height / 2
+                property real c3: periodEndInput.y + periodEndInput.height / 2
+
+                Rectangle {
+                    x: 4; y: parent.c1 - 1
+                    width: 20
+                    height: parent.c2 - parent.c1 + 2
+                    color: "transparent"
+                    border.color: AppTheme.borderDivider
+                    border.width: 2
+                    radius: AppTheme.radiusMedium
+                }
+                Rectangle {
+                    x: 4; y: parent.c2 - 1
+                    width: 20
+                    height: parent.c3 - parent.c2 + 2
+                    color: "transparent"
+                    border.color: AppTheme.borderDivider
+                    border.width: 2
+                    radius: AppTheme.radiusMedium
+                }
+            }
+
+            Column {
+                id: periodFields
+                x: 24
+                width: parent.width - 24
+                spacing: AppTheme.spaceM
+
+                AppDateField {
+                    id: periodStartInput
+                    width: parent.width
+                    label: "Начало периода:"
+                    onSelectedDateChanged: {
+                        hasError = false
+                        if (periodUseShiftPattern.checked)
+                            compCol.recalcShiftPattern()
+                        else
+                            compCol.recalcEndFromDays()
+                    }
+                }
+
+                AppTextField {
+                    id: periodDaysInput
+                    width: parent.width
+                    label: "Количество дней:"
+                    text: "1"
+                    validator: RegularExpressionValidator {
+                        regularExpression: /^[1-9][0-9]*$/
+                    }
+                    onTextChanged: {
+                        if (activeFocus && !periodUseShiftPattern.checked)
+                            compCol.recalcEndFromDays()
+                    }
+                }
+
+                AppDateField {
+                    id: periodEndInput
+                    width: parent.width
+                    label: "Конец периода:"
+                    onSelectedDateChanged: {
+                        hasError = false
+                        if (!compCol.isUpdating && !periodUseShiftPattern.checked)
+                            compCol.recalcDaysFromEnd()
+                    }
+                }
+
+                AppSwitch {
+                    id: periodSkipWeekends
+                    text: "Пропускать нерабочие дни"
+                    checked: true
+                    visible: !periodUseShiftPattern.checked
+                    onCheckedChanged: compCol.recalcEndFromDays()
+                }
+
+                AppSwitch {
+                    id: periodUseShiftPattern
+                    text: "По графику сменности"
+                    checked: false
+                    visible: backend.isSelectedEmployeeShift
+                    onCheckedChanged: {
+                        if (checked) {
+                            periodSkipWeekends.checked = false
+                            compCol.recalcShiftPattern()
+                        } else {
+                            compCol.patternConfidence = -1
+                            compCol.recalcEndFromDays()
+                        }
+                    }
+                }
+
+                Rectangle {
+                    id: patternHintBox
+                    visible: periodUseShiftPattern.checked && compCol.patternConfidence >= 0
+                    width: parent.width
+                    height: visible ? patternHintText.implicitHeight + AppTheme.spaceS * 2 : 0
+                    radius: AppTheme.radiusMedium
+                    color: compCol.patternConfidence > 0.7
+                        ? AppTheme.bgSuccessSoft
+                        : (compCol.patternConfidence > 0.4
+                            ? AppTheme.bgWarningSoft
+                            : AppTheme.bgDangerSoft)
+
+                    Text {
+                        id: patternHintText
+                        anchors.fill: parent
+                        anchors.margins: AppTheme.spaceS
+                        text: {
+                            let c = compCol.patternConfidence
+                            if (c < 0) return ""
+                            let pct = Math.round(c * 100)
+                            let cycle = compCol.patternCycle
+                            let work = compCol.patternWorkDays
+                            if (c > 0.7)
+                                return "✓ Паттерн надёжен (" + pct + "%): цикл " + cycle + " дн., рабочих " + work + " дн."
+                            if (c > 0.4)
+                                return "⚠ Паттерн определён с оговорками (" + pct + "%): цикл " + cycle + " дн."
+                            return "✗ Паттерн ненадёжен (" + pct + "%). Проверьте даты вручную."
+                        }
+                        color: AppTheme.textPrimary
+                        font.family: AppTheme.fontFamily
+                        font.pixelSize: AppTheme.sizeSmall
+                        wrapMode: Text.WordWrap
+                    }
+                }
+
+                Text {
+                    id: periodErrorMsg
+                    visible: false
+                    width: parent.width
+                    color: AppTheme.textDanger
+                    font.family: AppTheme.fontFamily
+                    font.pixelSize: AppTheme.sizeSmall
+                    wrapMode: Text.WordWrap
+                }
+            }
+        }
+
+        Rectangle { width: parent.width; height: 1; color: AppTheme.borderDivider }
+
+        // Год списания: галка «В счет прошлого года» выросла в три
+        // исключающих варианта — текущий год, заначка прошлого или
+        // всё сразу (период из всех доступных дней обоих годов).
+        Text {
+            text: "Год списания:"
+            color: AppTheme.textSecondary
+            font.family: AppTheme.fontFamily
+            font.pixelSize: AppTheme.sizeSmall
+        }
+
+        Column {
+            width: parent.width
+            spacing: AppTheme.spaceXS
+
+            AppRadioButton {
+                width: parent.width
+                text: "За текущий год"
+                checked: compCol.sourceMode === 0
+                onToggled: compCol.setSourceMode(0)
+            }
+
+            AppRadioButton {
+                width: parent.width
+                text: "За предыдущий год"
+                checked: compCol.sourceMode === 1
+                onToggled: compCol.setSourceMode(1)
+            }
+
+            AppRadioButton {
+                width: parent.width
+                text: "За оба года"
+                checked: compCol.sourceMode === 2
+                // «Оба года» — это два периода сразу; при правке
+                // существующей записи такого не бывает.
+                enabled: root.editCompId === 0
+                onToggled: compCol.setSourceMode(2)
+            }
+        }
+
+        AppTextField {
+            id: compCommentInput
+            width: parent.width
+            label: "Комментарий:"
+            placeholderText: "Например: За работу в праздник"
+        }
+
+        // Общая ошибка в окне (а не тост): пустой период, сбой сохранения и т.п.
+        Text {
+            id: compErrorMsg
+            visible: false
+            width: parent.width
+            color: AppTheme.textDanger
+            font.family: AppTheme.fontFamily
+            font.pixelSize: AppTheme.sizeSmall
+            wrapMode: Text.WordWrap
+        }
+
+        // ==========================================
+        // ФУНКЦИИ КАЛЬКУЛЯТОРА
+        // ==========================================
+
+        function setSourceMode(m) {
+            if (sourceMode === m) return
+            sourceMode = m
+            periodErrorMsg.visible = false
+            singleErrorMsg.visible = false
+            validateBalances()
+            validateSingleBalance()
+        }
+
+        function isoOf(dt) {
+            let m = ("0" + (dt.getMonth() + 1)).slice(-2)
+            let d = ("0" + dt.getDate()).slice(-2)
+            return dt.getFullYear() + "-" + m + "-" + d
+        }
+
+        // Рабочие дни периода по фактическому календарю: праздники и
+        // ручные правки дней («этот вторник — праздничный», «эта
+        // суббота — рабочая») учитываются — те же клетки, что в
+        // календаре не красные.
+        function workingDaysBetween(startIso, endIso) {
+            try {
+                return backend.getWorkingDaysForPeriod(startIso, endIso) || []
+            } catch (e) {
+                return []
+            }
+        }
+
+        function recalcEndFromDays() {
+            if (isUpdating || !periodStartInput.selectedDate) return
+            let d = parseInt(periodDaysInput.text)
+            if (isNaN(d) || d < 1) return
+
+            let parts = periodStartInput.selectedDate.split("-")
+            let start = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]))
+            let end = new Date(start)
+
+            if (periodSkipWeekends.checked) {
+                // Конец периода — d-й РАБОЧИЙ день от начала по
+                // фактическому календарю (праздники и правки — в деле).
+                let horizon = new Date(start)
+                horizon.setDate(horizon.getDate() + 400)
+                let working = workingDaysBetween(periodStartInput.selectedDate, isoOf(horizon))
+                let target = (working.length >= d) ? working[d - 1]
+                            : (working.length > 0 ? working[working.length - 1] : null)
+                if (target) {
+                    let wp = target.split("-")
+                    end = new Date(parseInt(wp[0]), parseInt(wp[1]) - 1, parseInt(wp[2]))
+                }
+            } else {
+                let added = 1
+                let safety = 0
+                while (added < d && safety < 730) {
+                    end.setDate(end.getDate() + 1)
+                    added++
+                    safety++
+                }
+            }
+
+            isUpdating = true
+            periodEndInput.selectedDate = isoOf(end)
+            isUpdating = false
+
+            validateBalances()
+        }
+
+        function recalcDaysFromEnd() {
+            if (isUpdating || !periodStartInput.selectedDate || !periodEndInput.selectedDate) return
+
+            let sp = periodStartInput.selectedDate.split("-")
+            let ep = periodEndInput.selectedDate.split("-")
+            let start = new Date(parseInt(sp[0]), parseInt(sp[1]) - 1, parseInt(sp[2]))
+            let end   = new Date(parseInt(ep[0]), parseInt(ep[1]) - 1, parseInt(ep[2]))
+
+            if (end < start) {
+                isUpdating = true
+                periodDaysInput.text = "1"
+                isUpdating = false
+                recalcEndFromDays()
+                return
+            }
+
+            let count = 0
+            if (periodSkipWeekends.checked) {
+                count = workingDaysBetween(periodStartInput.selectedDate, periodEndInput.selectedDate).length
+            } else {
+                let cur = new Date(start)
+                let safety = 0
+                while (cur <= end && safety < 730) {
+                    count++
+                    cur.setDate(cur.getDate() + 1)
+                    safety++
+                }
+            }
+
+            if (count === 0) count = 1
+
+            isUpdating = true
+            periodDaysInput.text = count.toString()
+            isUpdating = false
+
+            validateBalances()
+        }
+
+        function recalcShiftPattern() {
+            if (!periodStartInput.selectedDate || !periodEndInput.selectedDate) return
+
+            compCol.patternConfidence = -1
+
+            let result = backend.getShiftDatesForPeriod(
+                periodStartInput.selectedDate,
+                periodEndInput.selectedDate
+            )
+
+            if (result.error) {
+                periodErrorMsg.text = "Не удалось определить паттерн: " + result.error
+                periodErrorMsg.visible = true
+                compCol.shiftDates = []
+                compCol.patternConfidence = 0
+                return
+            }
+
+            compCol.shiftDates = result.dates
+            compCol.patternConfidence = result.confidence
+            compCol.patternCycle = result.cycle_days || 0
+            compCol.patternWorkDays = result.work_days || 0
+
+            isUpdating = true
+            periodDaysInput.text = result.dates.length.toString()
+            isUpdating = false
+
+            periodErrorMsg.visible = false
+            validateBalances()
+        }
+
+        function validateBalances() {
+            if (compCol.compMode !== 1 || !periodStartInput.selectedDate) {
+                periodErrorMsg.visible = false
+                return
+            }
+
+            let requestedDays = parseInt(periodDaysInput.text)
+            if (isNaN(requestedDays) || requestedDays < 1) {
+                periodErrorMsg.visible = false
+                return
+            }
+
+            let selectedYear = parseInt(periodStartInput.selectedDate.split("-")[0]) || new Date().getFullYear()
+            let b1 = backend.getAvailableBalances(selectedYear)
+            let b2 = compCol.sourceMode >= 1 ? backend.getAvailableBalances(selectedYear - 1) : null
+
+            let availableDays, availableHours, maxAllowedDays, yearLabel
+            if (compCol.sourceMode === 1) {
+                availableDays = b2["days"] || 0
+                availableHours = b2["hours"] || 0
+                maxAllowedDays = availableDays + Math.floor(availableHours / 8)
+                yearLabel = "прошлого года"
+            } else if (compCol.sourceMode === 2) {
+                availableDays = (b1["days"] || 0) + (b2["days"] || 0)
+                availableHours = (b1["hours"] || 0) + (b2["hours"] || 0)
+                maxAllowedDays = (b1["days"] || 0) + Math.floor((b1["hours"] || 0) / 8)
+                             + (b2["days"] || 0) + Math.floor((b2["hours"] || 0) / 8)
+                yearLabel = "текущего и прошлого года"
+            } else {
+                availableDays = b1["days"] || 0
+                availableHours = b1["hours"] || 0
+                maxAllowedDays = availableDays + Math.floor(availableHours / 8)
+                yearLabel = "текущего года"
+            }
+
+            if (requestedDays > maxAllowedDays) {
+                periodErrorMsg.text = "Не хватает остатков " + yearLabel + "!\n" +
+                    "Доступно: " + availableDays + " дн. и " + availableHours +
+                    " ч. (Итого: " + maxAllowedDays + " дн.)"
+                periodErrorMsg.visible = true
+            } else {
+                periodErrorMsg.visible = false
+            }
+        }
+
+        // Проверка остатков для режима «Этот день»: ночные/сверх нормы часы и дни.
+        // Показывает ошибку прямо в окне (как в денежной выплате), а не тост.
+        function validateSingleBalance() {
+            if (compCol.compMode !== 0) {
+                singleErrorMsg.visible = false
+                return
+            }
+
+            let unit = compCol.resolveCompUnit()
+            let selectedYear = parseInt(root.targetDate.split('-')[0]) || new Date().getFullYear()
+            let b1 = backend.getAvailableBalances(selectedYear)
+            let b2 = compCol.sourceMode >= 1 ? backend.getAvailableBalances(selectedYear - 1) : null
+            let yearLabel = compCol.sourceMode === 1 ? "прошлого года"
+                          : (compCol.sourceMode === 2 ? "текущего и прошлого года" : "текущего года")
+
+            if (unit === "days") {
+                // Как у периода: дни + часы/8 — день при нехватке дней
+                // закрывается ночными часами (8 часов за день).
+                let maxAllowed
+                if (compCol.sourceMode === 1) {
+                    maxAllowed = (b2["days"] || 0) + Math.floor((b2["hours"] || 0) / 8)
+                } else if (compCol.sourceMode === 2) {
+                    maxAllowed = (b1["days"] || 0) + Math.floor((b1["hours"] || 0) / 8)
+                               + (b2["days"] || 0) + Math.floor((b2["hours"] || 0) / 8)
+                } else {
+                    maxAllowed = (b1["days"] || 0) + Math.floor((b1["hours"] || 0) / 8)
+                }
+                if (1 > maxAllowed) {
+                    let availableDays = (b1["days"] || 0) + ((b2 && b2["days"]) || 0)
+                    let availableHours = (b1["hours"] || 0) + ((b2 && b2["hours"]) || 0)
+                    singleErrorMsg.text = "Не хватает остатков " + yearLabel + "!\n" +
+                        "Доступно: " + availableDays + " дн. и " + availableHours +
+                        " ч. (Итого: " + maxAllowed + " дн.)"
+                    singleErrorMsg.visible = true
+                } else {
+                    singleErrorMsg.visible = false
+                }
+                return
+            }
+
+            // hours / overtime — сравниваем минуты
+            let requestedMin = compTumbler.hours * 60 + compTumbler.minutes
+            let availableMin
+            if (compCol.sourceMode === 1) {
+                availableMin = (b2[unit] || 0) * 60
+            } else if (compCol.sourceMode === 2) {
+                availableMin = ((b1[unit] || 0) + (b2[unit] || 0)) * 60
+            } else {
+                availableMin = (b1[unit] || 0) * 60
+            }
+            let label = unit === "overtime" ? "сверхурочных" : "в ночное время"
+            if (requestedMin > availableMin) {
+                let availH = Math.floor(availableMin / 60)
+                let availM = availableMin % 60
+                singleErrorMsg.text = "Не хватает остатков " + yearLabel + "! Доступно " + label +
+                    ": " + availH + " ч." + (availM > 0 ? " " + availM + " мин." : "") + "."
+                singleErrorMsg.visible = true
+            } else {
+                singleErrorMsg.visible = false
+            }
+        }
+
+        // Вспомогательная функция — определяет unit для сохранения
+        function resolveCompUnit() {
+            if (backend.isSelectedEmployeeShift) {
+                // 0 = Ночные, 1 = Сверх нормы, 2 = Дни
+                if (singleCompType.currentIndex === 0) return "hours"
+                if (singleCompType.currentIndex === 1) return "overtime"
+                return "days"
+            } else {
+                // 0 = Ночные, 1 = Дни
+                return singleCompType.currentIndex === 0 ? "hours" : "days"
+            }
+        }
+    }
+
+    // ==========================================
+    // ФУНКЦИИ ОТКРЫТИЯ
+    // ==========================================
+
+    function prepareForComp(dateStr) {
+        root.targetDate = dateStr
+        root.editCompId = 0
+        compCol.compMode = 0
+        singleErrorMsg.visible = false
+        compErrorMsg.visible = false
+        periodErrorMsg.visible = false
+        compCol.patternConfidence = -1
+        periodUseShiftPattern.checked = false
+        // Сбрасываем на первый пункт
+        singleCompType.currentIndex = 0
+        periodStartInput.selectedDate = dateStr
+        periodDaysInput.text = "1"
+        compCol.recalcEndFromDays()
+        compCommentInput.text = ""
+        compCol.sourceMode = 0
+    }
+
+    function openForComp(dateStr, callerItem, mouseX, mouseY) {
+        prepareForComp(dateStr)
+        mainWindow.activeSpotlightCell = callerItem
+        root.showAt(callerItem, mouseX, mouseY)
+    }
+
+    // Версия для «морфинга»: окно сразу встаёт в нужный прямоугольник,
+    // без анимации масштаба и без размытия фона.
+    function openForCompMorph(dateStr, x, y, w, h) {
+        prepareForComp(dateStr)
+        mainWindow.activeSpotlightCell = null
+        root.openMorph(x, y, w, h)
+    }
+
+    function openForCompEdit(compData, dateStr, callerItem, mouseX, mouseY) {
+        root.targetDate = dateStr
+        root.editCompId = compData.id
+
+        compCol.compMode = 0
+        singleErrorMsg.visible = false
+        compErrorMsg.visible = false
+        periodErrorMsg.visible = false
+        compCol.patternConfidence = -1
+        periodUseShiftPattern.checked = false
+        compCol.sourceMode = 0
+
+        // Восстанавливаем правильный индекс в зависимости от типа и графика
+        if (backend.isSelectedEmployeeShift) {
+            // 0 = Ночные, 1 = Сверх нормы, 2 = Дни
+            if (compData.unit === "hours")    singleCompType.currentIndex = 0
+            else if (compData.unit === "overtime") singleCompType.currentIndex = 1
+            else singleCompType.currentIndex = 2
+        } else {
+            // 0 = Ночные, 1 = Дни
+            singleCompType.currentIndex = compData.unit === "hours" ? 0 : 1
+        }
+
+        if (compData.unit === "hours" || compData.unit === "overtime") {
+            compTumbler.hours   = Math.floor(compData.raw_amount / 60)
+            compTumbler.minutes = compData.raw_amount % 60
+        }
+
+        compCommentInput.text = compData.comment
+        mainWindow.activeSpotlightCell = callerItem
+        root.showAt(callerItem, mouseX, mouseY)
+    }
+
+    // ==========================================
+    // СОХРАНЕНИЕ
+    // ==========================================
+    onAccepted: {
+        try {
+            if (!root.targetDate) return
+
+            if (compCol.compMode === 1 && periodErrorMsg.visible) {
+                periodStartInput.flashError()
+                periodEndInput.flashError()
+                root.scrollToItem(periodErrorMsg)
+                root.shake()
+                return
+            }
+
+            // Режим «Этот день»: проверяем остатки прямо в окне (а не тостом)
+            if (compCol.compMode === 0) {
+                compCol.validateSingleBalance()
+                if (singleErrorMsg.visible) {
+                    root.scrollToItem(singleErrorMsg)
+                    root.shake()
+                    return
+                }
+            }
+
+            let finalDates = []
+            let finalType  = compCol.resolveCompUnit()
+            let amount     = "0"
+
+            if (compCol.compMode === 0) {
+                // Этот день
+                finalDates.push(root.targetDate)
+
+                if (finalType === "days") {
+                    amount = "1"
+                } else {
+                    // hours или overtime — берём из барабана
+                    amount = (compTumbler.hours * 60 + compTumbler.minutes).toString()
+                }
+
+            } else {
+                // Период
+                finalType = "days"
+                amount = "1"
+
+                if (periodUseShiftPattern.checked && compCol.shiftDates.length > 0) {
+                    finalDates = compCol.shiftDates.slice()
+                } else if (periodSkipWeekends.checked) {
+                    // Только фактические рабочие дни — с праздниками
+                    // и ручными правками календаря.
+                    finalDates = compCol.workingDaysBetween(periodStartInput.selectedDate, periodEndInput.selectedDate)
+                } else {
+                    let sp  = periodStartInput.selectedDate.split("-")
+                    let ep  = periodEndInput.selectedDate.split("-")
+                    let cur = new Date(parseInt(sp[0]), parseInt(sp[1]) - 1, parseInt(sp[2]))
+                    let end = new Date(parseInt(ep[0]), parseInt(ep[1]) - 1, parseInt(ep[2]))
+
+                    let safety = 0
+                    while (cur <= end && safety < 730) {
+                        finalDates.push(compCol.isoOf(cur))
+                        cur.setDate(cur.getDate() + 1)
+                        safety++
+                    }
+                }
+            }
+
+            if (finalDates.length === 0) {
+                compErrorMsg.text = "Ошибка: Нет дней в периоде"
+                compErrorMsg.visible = true
+                periodStartInput.flashError()
+                periodEndInput.flashError()
+                root.scrollToItem(compErrorMsg)
+                root.shake()
+                return
+            }
+            compErrorMsg.visible = false
+
+            // День сотрудника не может входить в две компенсации сразу:
+            // пересечение с уже существующими записями показываем в окне
+            // (свои дни при редактировании не мешают). В режиме периода
+            // ошибка встаёт рядом с полями периода — в видимую часть
+            // окна; иначе тряска будет «непонятно из-за чего».
+            let conflict = backend.checkDayConflicts(finalDates.join(","), root.editCompId || 0)
+            if (conflict && conflict.has) {
+                if (compCol.compMode === 1) {
+                    periodErrorMsg.text = conflict.message
+                    periodErrorMsg.visible = true
+                    periodStartInput.flashError()
+                    periodEndInput.flashError()
+                    root.scrollToItem(periodErrorMsg)
+                } else {
+                    compErrorMsg.text = conflict.message
+                    compErrorMsg.visible = true
+                    root.scrollToItem(compErrorMsg)
+                }
+                root.shake()
+                return
+            }
+
+            let commentTxt = compCommentInput.text || ""
+
+            if (root.editCompId > 0) {
+                let amountForEdit = finalType === "days"
+                    ? "1"
+                    : (compTumbler.hours * 60 + compTumbler.minutes).toString()
+                backend.updateCompensation(root.editCompId, root.targetDate,
+                                           finalType, amountForEdit,
+                                           String(commentTxt), compCol.sourceMode === 1)
+            } else if (compCol.sourceMode === 2) {
+                // «За оба года»: одна кнопка — два периода, сначала
+                // текущий год, затем заначка прошлого.
+                backend.saveCompensationBoth(finalDates.join(","), finalType, amount,
+                                             String(commentTxt))
+            } else {
+                backend.saveCompensation(finalDates.join(","), finalType, amount,
+                                         String(commentTxt), compCol.sourceMode === 1)
+            }
+
+            root.close()
+
+        } catch(e) {
+            compErrorMsg.text = "Ошибка: " + e.message
+            compErrorMsg.visible = true
+            root.scrollToItem(compErrorMsg)
+            root.shake()
+        }
+    }
+}

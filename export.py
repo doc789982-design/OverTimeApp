@@ -9,10 +9,11 @@ from logic import compute_month_summary, is_employee_shift, default_is_working, 
 
 def ensure_openpyxl():
     try:
-        import openpyxl
-        return openpyxl
+        from utils import import_openpyxl
+        return import_openpyxl()
     except Exception as e:
-        raise Exception("Для экспорта нужен пакет openpyxl. Установите: pip install openpyxl") from e
+        raise Exception("Для экспорта нужен пакет openpyxl (%s). "
+                        "Установите или обновите: pip install -U openpyxl" % e) from e
 
 def fio_initials_last(last_name: str | None, first_name: str | None, middle_name: str | None) -> str:
     last = (last_name or "").strip()
@@ -243,7 +244,7 @@ class TemplateExporter:
         prev_str = TemplateExporter._fmt_minutes_ru(prev) if unit_type == "hours" else TemplateExporter._fmt_days_ru(prev)
         
         if real > 0 and prev > 0:
-            return f"{real_str} ({prev_str} за пред. год)"
+            return f"{real_str}\n({prev_str} за пред. год)"
         if real > 0:
             return real_str
         return f"{prev_str} за пред. год"
@@ -411,6 +412,17 @@ class TemplateExporter:
         # Желтая заливка для выходных / праздников — как красные клетки в табеле
         yellow_fill = PatternFill(start_color="FFFFFF00", end_color="FFFFFF00", fill_type="solid")
 
+        # Полосы статусов: длинная серия одинакового статуса (отпуск, больничный,
+        # командировка) сливается в одну ячейку со словом целиком — вместо
+        # тридцати одинаковых букв в строке. Оттенки — мягкие цвета табеля
+        # (bgWarningSoft/bgDangerSoft/bgPurpleSoft светлой темы поверх белого).
+        status_words = {"О": "ОТПУСК", "Б": "БОЛЬНИЧНЫЙ", "К": "КОМАНДИРОВКА"}
+        status_fills = {
+            "О": PatternFill(start_color="FFFCEFE1", end_color="FFFCEFE1", fill_type="solid"),
+            "Б": PatternFill(start_color="FFFBE6E9", end_color="FFFBE6E9", fill_type="solid"),
+            "К": PatternFill(start_color="FFF0E3EB", end_color="FFF0E3EB", fill_type="solid"),
+        }
+
         # Шапка листа: общий календарь (обычная пятидневка).
         # Строки сотрудников красим ниже, у каждого свой шаблон выходных.
         for d in range(1, 32):
@@ -461,7 +473,7 @@ class TemplateExporter:
                 main = (TemplateExporter._fmt_days_ru(val) if is_days else TemplateExporter._fmt_minutes_ru(val))
                 if prev_val == 0: return main
                 prev = (TemplateExporter._fmt_days_ru(prev_val) if is_days else TemplateExporter._fmt_minutes_ru(prev_val))
-                return f"{main} ({prev})"
+                return f"{main}\n({prev})"
 
             values = {
                 "{{EMP_NO}}": str(i + 1),
@@ -520,8 +532,40 @@ class TemplateExporter:
 
             shifted_on = build_shifted_weekend_checker(db, eid)
 
-            # Заполняем дни
+            # --- ПОЛОСЫ СТАТУСОВ -----------------------------------------
+            # Серия одинакового статуса длиной от 5 дней (без дежурств и
+            # отгулов внутри) сливается в одну широкую ячейку со словом.
+            # Серия рвётся на дежурстве, отгуле «В» или смене буквы; короткие
+            # серии остаются буквами, как и раньше.
+            plain_status_days = {}   # d -> буква статуса (день «чисто статусный»)
+            for d in range(1, last_day + 1):
+                dd = date(year, month, d)
+                st = statuses.get(dd, "")
+                if st and not intervals_by_day.get(dd) and not comp_by_day.get(dd):
+                    plain_status_days[d] = st
+
+            stripes = []             # (d1, d2, буква, col1, col2)
+            d = 1
+            while d <= last_day:
+                if d in plain_status_days:
+                    d2 = d
+                    while d2 + 1 <= last_day and plain_status_days.get(d2 + 1) == plain_status_days[d]:
+                        d2 += 1
+                    if d2 - d + 1 >= 5:
+                        cols_all = sorted({cc for dd in range(d, d2 + 1)
+                                           for cc in marker_cols.get(f"{{{{DAY_{dd:02d}}}}}", [])})
+                        # мержим только соседние колонки (шаблон с разрывом не мержим)
+                        if cols_all and cols_all == list(range(cols_all[0], cols_all[-1] + 1)):
+                            stripes.append((d, d2, plain_status_days[d], cols_all[0], cols_all[-1]))
+                    d = d2 + 1
+                else:
+                    d += 1
+            stripe_days = {dd for d1, d2, _l, _c1, _c2 in stripes for dd in range(d1, d2 + 1)}
+
+            # Заполняем дни (кроме вошедших в полосы)
             for d in range(1, 32):
+                if d in stripe_days:
+                    continue
                 marker = f"{{{{DAY_{d:02d}}}}}"
                 cols = marker_cols.get(marker, [])
                 if not cols: continue
@@ -558,6 +602,24 @@ class TemplateExporter:
                         if txt: c.alignment = c.alignment.copy(wrap_text=True)
                         if paint_rest:
                             c.fill = yellow_fill
+
+            # Полосы: чистим ячейки серии, слово по центру, мягкая заливка
+            for d1, d2, letter, c1, c2 in stripes:
+                sfill = status_fills.get(letter)
+                for col in range(c1, c2 + 1):
+                    cc = TemplateExporter._safe_cell(ws, row, col)
+                    if cc is not None:
+                        cc.value = None
+                        if sfill is not None:
+                            cc.fill = sfill
+                top = TemplateExporter._safe_cell(ws, row, c1)
+                if top is not None:
+                    top.value = status_words.get(letter, letter)
+                    top.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+                try:
+                    ws.merge_cells(start_row=row, start_column=c1, end_row=row, end_column=c2)
+                except Exception:
+                    pass
 
         # Подписи и область печати
         sign_rows = []

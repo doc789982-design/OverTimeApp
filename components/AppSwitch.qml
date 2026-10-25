@@ -1,8 +1,20 @@
 import QtQuick
 import QtQuick.Controls
 
+// ============================================================
+// ПЕРЕКЛЮЧАТЕЛЬ — геометрия Material Design 3, темп десктопный
+//
+// Трек 52×32. Бегунок живой: 16px в выключенном состоянии,
+// 24px во включённом, 28px под курсором. Переезд — на пружине
+// (резвый старт, лёгкий перелёт), рост — 120 мс. Цвета: выключенный
+// бегунок — цвет текста темы (onSurface в MD3), включённый — цвет
+// текста на бренде (в тёмной теме тёмный, в светлой белый, как у
+// кнопок). Контур выключенного трека — 2px (по MD3, было 1px).
+// ============================================================
 Switch {
     id: control
+    // Курсор «рука» над кнопкой — как в обычных программах
+    HoverHandler { cursorShape: control.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor }
 
     implicitHeight: 36
     padding: 0
@@ -12,8 +24,8 @@ Switch {
     Behavior on opacity { NumberAnimation { duration: AppTheme.durNormal } }
 
     indicator: Item {
-        implicitWidth: 44
-        implicitHeight: 24
+        implicitWidth: 52
+        implicitHeight: 32
         x: control.leftPadding
         anchors.verticalCenter: parent.verticalCenter
 
@@ -21,13 +33,12 @@ Switch {
             id: track
             anchors.fill: parent
             radius: AppTheme.radiusPill
-            color: control.checked
-                   ? AppTheme.accentBrand
-                   : (AppTheme.isDark ? "#3A3F46" : AppTheme.borderInput)
-            border.width: control.checked ? 0 : 1
-            border.color: AppTheme.isDark ? AppTheme.borderInput : AppTheme.borderDisabled
+            color: control.checked ? AppTheme.accentBrand
+                   : (AppTheme.isDark ? "#3A3F46" : AppTheme.bgCell)
+            border.width: control.checked ? 0 : 2
+            border.color: AppTheme.textSecondary
 
-            Behavior on color { ColorAnimation { duration: AppTheme.durNormal; easing.type: AppTheme.easeColor } }
+            Behavior on color { ColorAnimation { duration: 180; easing.type: AppTheme.easeColor } }
             Behavior on border.width { NumberAnimation { duration: AppTheme.durFast } }
         }
 
@@ -38,21 +49,41 @@ Switch {
                    : (control.hovered ? AppTheme.stateHover : "transparent")
         }
 
-        Rectangle {
-            id: thumb
-            width: 20
-            height: 20
-            radius: 10
-            anchors.verticalCenter: parent.verticalCenter
-            x: control.checked ? parent.width - width - 2 : 2
-            color: "#FFFFFF"
-            border.width: control.checked ? 0 : 1
-            border.color: AppTheme.isDark ? AppTheme.borderInput : AppTheme.borderDisabled
+        // Волна от нажатия — круг из центра, срезается формой трека;
+        // драйвер — состояние pressed самого переключателя
+        AppRipple {
+            pressed: control.pressed
+            maskRadius: height / 2
+            rippleColor: control.checked
+                          ? (AppTheme.isDark ? Qt.rgba(11/255, 31/255, 51/255, 0.16)
+                                             : Qt.rgba(1, 1, 1, 0.16))
+                          : (AppTheme.isDark ? Qt.rgba(77/255, 154/255, 238/255, 0.20)
+                                             : Qt.rgba(3/255, 116/255, 181/255, 0.16))
+        }
 
-            Behavior on x {
-                NumberAnimation { duration: AppTheme.durNormal; easing.type: AppTheme.easeStandard }
+        // Бегунок: позиция — отдельным позиционером по ЦЕНТРУ (14 выкл / 38 вкл),
+        // чтобы рост размера не дёргал цель пружины каждый кадр
+        Item {
+            id: thumbPos
+            x: control.checked ? parent.width - 14 : 14
+            y: parent.height / 2
+
+            // резвый старт и лёгкий перелёт — «инерция» механического
+            // переключателя (в MD3 переезд описан пружиной)
+            Behavior on x { SpringAnimation { spring: 5.0; damping: 0.35; mass: 1.3 } }
+
+            Rectangle {
+                id: thumb
+                anchors.centerIn: parent
+                // 16 (выкл) -> 24 (вкл), под курсором подрастает до 28
+                width: control.pressed ? 28 : (control.checked ? 24 : 16)
+                height: width
+                radius: width / 2
+                color: control.checked ? AppTheme.textOnAccent : AppTheme.textPrimary
+
+                Behavior on width { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+                Behavior on color { ColorAnimation { duration: 180; easing.type: AppTheme.easeColor } }
             }
-            Behavior on border.width { NumberAnimation { duration: AppTheme.durFast } }
         }
 
         Rectangle {

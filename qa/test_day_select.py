@@ -1,0 +1,339 @@
+#!/usr/bin/env python3
+"""Тест выделения дней протяжкой и массовых действий меню дня.
+
+Зажатая ЛКМ и движение по числам месяца выделяет диапазон дней; после
+отпускания открывается меню дня, и его действия применяются ко всем
+выделенным дням сразу.
+
+Проверяется:
+  A. Массовый слот Python (одна транзакция, все дни сразу):
+     статусы К/Б/О и сброс; пустой список — не падает;
+  B. Логика выделения в календаре (QML): начало на одном дне,
+     протяжка до другого — выделяется диапазон между ними; чужой
+     месяц в диапазон не попадает; Esc/закрытие меню снимает выделение;
+  C. Меню дня: диапазон в шапке, при выделении — только статусы;
+     выделение подсвечивается плёнкой наведения.
+
+Запуск:
+    python3 qa/test_day_select.py             # из корня репозитория
+"""
+import os
+import sys
+import types
+from datetime import date, datetime
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+os.environ.setdefault("QSG_RASTER_BACKEND", "1")
+os.environ.setdefault("OVERTIMETAB_SANDBOX_FONTS", "1")
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT)
+
+# Main.py импортирует win32print (только Windows) — в песочнице подменяем
+sys.modules.setdefault("win32print", types.ModuleType("win32print"))
+
+from database import DB
+from Main import Backend
+from PySide6.QtCore import QObject, Property
+from PySide6.QtGui import QGuiApplication
+from PySide6.QtQml import QQmlApplicationEngine
+
+
+def fresh_db():
+    path = os.path.join(os.environ.get("TMPDIR", "/tmp"),
+                        "day_select_test.sqlite")
+    if os.path.exists(path):
+        os.remove(path)
+    db = DB(path)
+    db.add_employee("Тестов", "Тест", "Тестович", "капитан", "инженер",
+                    "2020-01", 0, 0, 0, 0, 0, 0)
+    # прямые записи оставляют транзакцию открытой (в приложении её
+    # закрывает обёртка Backend) — закрываем сами, иначе снапшот для
+    # Ctrl+Z в begin() уходит в вечное ожидание
+    db.conn.commit()
+    return db
+
+
+def make_backend(db, eid=1):
+    """Живой Backend без тяжёлого __init__: только то, что нужно слотам."""
+    b = Backend.__new__(Backend)
+    QObject.__init__(b)
+    b.active_db = db
+    b._selected_employee_id = eid
+    b.refresh_calendar = lambda: None
+    b._defer_year_refresh = lambda: None
+    return b
+
+
+def part_a_bulk_slots() -> None:
+    db = fresh_db()
+    b = make_backend(db)
+
+    # ── статусы нескольким дням ──
+    b.setDayStatusBulk(["2026-03-02", "2026-03-03", "2026-03-04"], "Б")
+    st = db.get_statuses_for_period(1, "2026-03-01", "2026-03-31")
+    got = {d.isoformat(): v for d, v in st.items()}
+    assert got == {"2026-03-02": "Б", "2026-03-03": "Б", "2026-03-04": "Б"}, got
+
+    # ── сброс статусов тем же слотом ──
+    b.setDayStatusBulk(["2026-03-02", "2026-03-04"], "")
+    st = db.get_statuses_for_period(1, "2026-03-01", "2026-03-31")
+    got = {d.isoformat(): v for d, v in st.items() if v}
+    assert got == {"2026-03-03": "Б"}, got
+
+    # ── пустой список — не падает ──
+    b.setDayStatusBulk([], "О")
+    print("A: статусы К/Б/О и сброс — сразу всем выделенным дням ✓")
+
+
+# ────────────────────────────────────────────────────────────────
+# Часть B: логика выделения в календаре (настоящий CalendarWorkspace)
+# ────────────────────────────────────────────────────────────────
+
+import calendar as _cal
+
+
+def month_days(year, month):
+    """Сетка месяца ровно как строит refresh_calendar: недели с понедельника,
+    хвосты соседних месяцев помечены is_current_month=False.
+
+    Месяц может занять 5 недель (35 ячеек) или 6 (42) — от этого зависит,
+    есть ли в сетке пустые ячейки (dayInfo=null), на которых ломалось
+    выделение (октябрь 2026 — 5 недель, март 2026 — 6)."""
+    days = []
+    for week in _cal.Calendar(firstweekday=0).monthdatescalendar(year, month):
+        for d in week:
+            days.append({
+                "date_str": d.isoformat(), "day_number": d.day,
+                "is_current_month": d.month == month and d.year == year,
+                "is_before_hire": False, "is_after_end": False,
+                "is_weekend": d.weekday() >= 5, "is_holiday": False,
+                "is_pre_holiday": False, "status": "", "has_comp": False,
+                "duties": [],
+            })
+    return days
+
+
+DAYS = month_days(2026, 10)
+
+WRAPPER = """
+import QtQuick
+import QtQuick.Controls
+import "components" as AppUI
+
+ApplicationWindow {
+    id: w
+    width: 1200; height: 800; visible: true
+    AppUI.CalendarWorkspace {
+        id: workspace
+        anchors.fill: parent
+    }
+}
+"""
+
+
+class StubBackend(QObject):
+    """Стаб на уровне модуля (локальные классы QML видит ненадёжно)."""
+
+    @Property(list, constant=True)
+    def calendarDays(self):
+        return DAYS
+
+    @Property(int, constant=True)
+    def selectedEmployeeId(self):
+        return 1
+
+    @Property(bool, constant=True)
+    def isSelectedEmployeeShiftedWeekends(self):
+        return False
+
+    @Property(str, constant=True)
+    def currentPeriodText(self):
+        return "Октябрь 2026"
+
+    @Property(list, constant=True)
+    def dayDuties(self):
+        return []
+
+    @Property(list, constant=True)
+    def dayComps(self):
+        return []
+
+    @Property(list, constant=True)
+    def yearlyData(self):
+        return []
+
+    def loadDayDetails(self, date_str):
+        pass
+
+    def executeHotkey(self, seq, date_str):
+        pass
+
+    def handleClipboard(self, action, date_str):
+        pass
+
+    def jumpToMonth(self, m):
+        pass
+
+    def setYear(self, y):
+        pass
+
+
+def read_var(obj, name):
+    """QML property var приходит в Python как QJSValue — разворачиваем."""
+    v = obj.property(name)
+    try:
+        from PySide6.QtQml import QJSValue
+        if isinstance(v, QJSValue):
+            v = v.toVariant()
+    except Exception:
+        pass
+    return v
+
+
+def qml_selection_checks(app) -> None:
+    # обёртка кладётся в корень репозитория — относительный импорт
+    # «components» работает только оттуда (как у test_panel_view)
+    qml_path = os.path.join(ROOT, "_render_dayselect.qml")
+    with open(qml_path, "w", encoding="utf-8") as f:
+        f.write(WRAPPER)
+
+    engine = QQmlApplicationEngine()
+    # ссылки на контекст и стаб обязательны: без них PySide6 отдает
+    # контекст сборщику мусора и в QML backend становится null
+    ctx = engine.rootContext()
+    stub = StubBackend()
+    ctx.setContextProperty("backend", stub)
+    try:
+        engine.load(qml_path)
+        if not engine.rootObjects():
+            raise AssertionError("CalendarWorkspace не загрузился")
+        # дать сцене собраться: без этого наведение приходит
+        # в неполированное окно и курсор не обновляется
+        for _ in range(4):
+            app.processEvents()
+        win = engine.rootObjects()[0]
+        ws = None
+        for obj in win.findChildren(QObject):
+            if hasattr(obj, "extendDaySelection"):
+                ws = obj
+                break
+        assert ws is not None, "CalendarWorkspace не найден"
+
+        # ячейка по дате: берём через findChildren(QQuickItem) —
+        # вызов QML-функции возвращает нетипизированный QObject без
+        # mapToScene, а он нужен для проверки курсора
+        # ячейка по дате: центр ячейки в координатах сетки
+        def cell_center(date_str):
+            c = ws.findDayCell(date_str)
+            assert c is not None, "ячейка %s не нашлась" % date_str
+            return (c.property("x") + c.property("width") / 2,
+                    c.property("y") + c.property("height") / 2)
+
+        # ── протяжка с 5-го на 10-е марта = 6 дней ──
+        ws.beginDaySelection("2026-10-05")
+        assert list(read_var(ws, "multiSelectDates") or []) == ["2026-10-05"], \
+            list(read_var(ws, "multiSelectDates") or [])
+        assert not bool(read_var(ws, "multiSelectActive")), "один день — не выделение"
+        x, y = cell_center("2026-10-10")
+        ws.extendDaySelection(x, y)
+        want = ["2026-10-%02d" % d for d in range(5, 11)]
+        assert list(read_var(ws, "multiSelectDates") or []) == want, \
+            list(read_var(ws, "multiSelectDates") or [])
+        assert bool(read_var(ws, "multiSelectActive")), \
+            "диапазон должен считаться выделением"
+
+        # ── протяжка «назад» с 10-го на 3-е — те же правила ──
+        ws.beginDaySelection("2026-10-10")
+        x, y = cell_center("2026-10-03")
+        ws.extendDaySelection(x, y)
+        want = ["2026-10-%02d" % d for d in range(3, 11)]
+        assert list(read_var(ws, "multiSelectDates") or []) == want, \
+            list(read_var(ws, "multiSelectDates") or [])
+
+        # ── апрельская ячейка (не текущий месяц) — выделение не меняется ──
+        x, y = cell_center("2026-11-01")
+        before = list(read_var(ws, "multiSelectDates") or [])
+        ws.extendDaySelection(x, y)
+        assert list(read_var(ws, "multiSelectDates") or []) == before, \
+            list(read_var(ws, "multiSelectDates") or [])
+
+        # ── точка мимо ячеек — выделение не меняется ──
+        ws.extendDaySelection(-50, -50)
+        assert list(read_var(ws, "multiSelectDates") or []) == before, \
+            list(read_var(ws, "multiSelectDates") or [])
+
+        # ── снятие выделения ──
+        ws.clearDaySelection()
+        assert len(read_var(ws, "multiSelectDates") or []) == 0
+        assert not bool(read_var(ws, "multiSelectActive"))
+
+        # ── курсор-рука над днём: HoverHandler при реальном наведении ──
+        from PySide6.QtCore import QEvent, QPointF
+        from PySide6.QtGui import QHoverEvent
+        pt = ws.dayCellCenter("2026-10-15")
+        assert pt is not None and pt.x() > 0, "центр ячейки не получен"
+        ev = QHoverEvent(QEvent.HoverMove, pt, QPointF(pt.x() - 1, pt.y()))
+        from PySide6.QtCore import QCoreApplication
+        QCoreApplication.sendEvent(win, ev)
+        app.processEvents()
+        shape = win.cursor().shape()
+        assert int(getattr(shape, "value", shape)) == 13, \
+            "над днём нет курсора-руки: %s" % shape
+        print("B: протяжка 5→10 октября (35 ячеек, было сломано), задним ходом, "
+              "чужой месяц мимо, снятие, курсор-рука над днём ✓")
+    finally:
+        try:
+            os.remove(qml_path)
+        except OSError:
+            pass
+
+
+def part_c_menu_checks() -> None:
+    # fmtRange в меню: один месяц — «5–10 марта 2026 г.»,
+    # через месяц — полные даты через тире
+    qml = open(os.path.join(ROOT, "components", "AppDayMenu.qml"),
+               encoding="utf-8").read()
+    assert "targetDates" in qml, "меню не знает про массовые дни"
+    assert "setDayStatusBulk" in qml, "нет массовой установки статусов"
+    # при выделении меню показывает ТОЛЬКО статусы
+    assert "multiMode" in qml
+    assert qml.count("visible: !root.multiMode") >= 5, \
+        "пункты действий не скрываются при выделении"
+    assert "setDayTypeBulk" not in qml and "clearDayDutiesBulk" not in qml \
+        and "clearDayCompensationsBulk" not in qml, "мёртвые bulk-ветки"
+    assert "fmtRange" in qml, "нет диапазона в шапке"
+    cal = open(os.path.join(ROOT, "components", "CalendarWorkspace.qml"),
+               encoding="utf-8").read()
+    assert "beginDaySelection" in cal and "extendDaySelection" in cal
+    assert "multiSelectDates" in cal
+    # меню после протяжки открывается у последней ячейки, не у якоря
+    assert "lastCell !== null ? lastCell : dayCell" in cal
+    # выделение подсвечивается плёнкой наведения, без отдельной рамки
+    assert "isMultiSelected" in cal \
+        and "border.color: AppTheme.accentBrand\n                                border.width: 2" not in cal
+    # от «общей картины месяца» не осталось следов
+    assert "TeamDayCell" not in cal and "teamViewRoot" not in cal
+    panel = open(os.path.join(ROOT, "components", "EmployeeListPanel.qml"),
+                 encoding="utf-8").read()
+    assert "TeamDayCell" not in panel
+    main = open(os.path.join(ROOT, "main.qml"), encoding="utf-8").read()
+    assert "clearDaySelection" in main, "меню не снимает выделение при закрытии"
+    assert not os.path.exists(os.path.join(ROOT, "components", "TeamDayCell.qml"))
+    print("C: меню после выделения — только статусы; подсветка как при "
+          "наведении; следов общей картины нет ✓")
+
+
+def main() -> int:
+    part_a_bulk_slots()
+
+    app = QGuiApplication.instance() or QGuiApplication(sys.argv)
+    qml_selection_checks(app)
+    part_c_menu_checks()
+
+    print("═══ ВЫДЕЛЕНИЕ ДНЕЙ ПРОТЯЖКОЙ И МАССОВЫЕ ДЕЙСТВИЯ РАБОТАЮТ ═══")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -11,13 +11,15 @@ Button {
     property string iconSource: "" 
     
     // Строгая высота по дизайн-системе
-    implicitHeight: 36 
+    implicitHeight: 40 // высота кнопки по Material Design 3
     
     // Ширина = ширина контента + системные отступы (минимум 100px)
     implicitWidth: Math.max(100, contentRow.implicitWidth + (AppTheme.spaceM * 2))
 
     // Отключаем системный фокус Qt, рисуем свой
     focusPolicy: Qt.StrongFocus
+    // Курсор «рука» над кнопкой — как в обычных программах
+    HoverHandler { cursorShape: control.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor }
 
     // ==========================================
     // 1. АНИМАЦИЯ ВЖАТИЯ (Scale Physics)
@@ -69,7 +71,7 @@ Button {
             id: bgRect
             anchors.fill: parent
             color: control.getVariantBgColor()
-            radius: AppTheme.radiusMedium 
+            radius: AppTheme.radiusPill // «стадион» по Material Design 3
             
             border.color: control.getVariantBorderColor()
             border.width: 1
@@ -77,8 +79,28 @@ Button {
             Behavior on color { ColorAnimation { duration: AppTheme.durFast } }
             Behavior on border.color { ColorAnimation { duration: AppTheme.durFast } }
 
-            // МАГИЯ 2: Тень-картинка; для Ghost и Secondary кнопок отключена!
-            AppShadow { level: 1; visible: control.variant !== "ghost" && control.variant !== "secondary" }
+            // МАГИЯ 2: мягкая тень по форме «стадиона». PNG-тень из AppShadow
+            // нарисована для прямоугольных карточек и не совпадает с полностью
+            // круглой кнопкой, поэтому собираем тень из полупрозрачных пилюль
+            // (стоимость — как у обычных Rectangle). Ghost и Secondary — без тени.
+            Repeater {
+                model: 4
+                Rectangle {
+                    z: -1
+                    radius: AppTheme.radiusPill
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.verticalCenterOffset: index + 1
+                    width: parent.width + index * 2
+                    height: parent.height + index * 2
+                    color: "#000000"
+                    objectName: "btnShadowPill"
+                    // в тёмной теме тени не используются (Workday Canvas):
+                    // глубину даёт более светлая заливка, а не чёрный ореол
+                    opacity: (AppTheme.isDark ? 0.0 : 0.05) * (1.0 - index * 0.22)
+                    visible: !AppTheme.isDark && control.variant !== "ghost" && control.variant !== "secondary"
+                }
+            }
 
             // МАГИЯ: Слой состояния (Hover / Press)
             // Он ложится поверх базового цвета, делая синий - темно-синим, а зеленый - темно-зеленым!
@@ -96,7 +118,7 @@ Button {
         Rectangle {
             anchors.fill: parent
             anchors.margins: -AppTheme.focusOffset - AppTheme.focusWidth
-            radius: AppTheme.radiusMedium + AppTheme.focusOffset
+            radius: AppTheme.radiusPill
             
             color: "transparent"
             border.color: AppTheme.borderFocus
@@ -104,6 +126,22 @@ Button {
             
             opacity: control.visualFocus ? 1.0 : 0.0
             Behavior on opacity { NumberAnimation { duration: AppTheme.durMicro; easing.type: AppTheme.easeColor } }
+        }
+
+        // Волна от нажатия (ripple по MD3) — верхний слой фона, контент
+        // кнопки рисуется выше — волна под текстом, как в MD3. Круг из
+        // центра расходится по всей кнопке и срезается её формой.
+        // Драйвер — состояние pressed самой кнопки (паттерн
+        // Material-стиля Qt), клику ничего не мешает. На залитых кнопках —
+        // цвет текста кнопки, на контурных и ghost — бренд.
+        AppRipple {
+            pressed: control.pressed
+            maskRadius: height / 2   // стадион кнопки
+            rippleColor: (control.variant === "primary" || control.variant === "success" || control.variant === "danger")
+                          ? (AppTheme.isDark ? Qt.rgba(11/255, 31/255, 51/255, 0.16)
+                                             : Qt.rgba(1, 1, 1, 0.16))
+                          : (AppTheme.isDark ? Qt.rgba(77/255, 154/255, 238/255, 0.20)
+                                             : Qt.rgba(3/255, 116/255, 181/255, 0.16))
         }
     }
 

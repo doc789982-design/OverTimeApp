@@ -35,14 +35,6 @@ Rectangle {
         onActivated: root.blurSearch()
     }
     
-    Rectangle { 
-        width: 1
-        color: AppTheme.borderDivider
-        anchors.right: parent.right
-        anchors.top: parent.top
-        anchors.bottom: parent.bottom 
-        z: AppTheme.zContent
-    }
 
     // ==========================================
     // 1. ШАПКА
@@ -53,7 +45,7 @@ Rectangle {
         anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right
         color: "transparent"
 
-        Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: AppTheme.borderDivider }
+        Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: AppTheme.borderDivider; opacity: 0.4 }
 
         RowLayout {
             anchors.fill: parent; anchors.margins: AppTheme.spaceS; spacing: AppTheme.spaceM
@@ -68,6 +60,8 @@ Rectangle {
                 Behavior on color { ColorAnimation { duration: AppTheme.durNormal; easing.type: AppTheme.easeColor } }
                 Behavior on border.color { ColorAnimation { duration: AppTheme.durNormal; easing.type: AppTheme.easeColor } }
                 Behavior on border.width { NumberAnimation { duration: AppTheme.durFast; easing.type: AppTheme.easeStandard } }
+                // Курсор текста — над всем полем поиска, а не только над строкой
+                HoverHandler { cursorShape: Qt.IBeamCursor }
 
                 Rectangle {
                     anchors.fill: parent
@@ -131,6 +125,7 @@ Rectangle {
                                 height: AppTheme.iconSmall
                                 color: clearSearchMouse.containsMouse ? AppTheme.textPrimary : AppTheme.textTertiary
                             }
+                            HoverHandler { cursorShape: Qt.PointingHandCursor }
                             MouseArea {
                                 id: clearSearchMouse
                                 anchors.fill: parent
@@ -161,7 +156,36 @@ Rectangle {
         anchors.bottom: parent.bottom
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.bottomMargin: 140 + backend.updateChromeExtra
+        anchors.bottomMargin: 140
+
+        // ── Пустой результат поиска: сказать об этом и предложить сброс ──
+        Column {
+            z: 10   // над списком: пустой ListView (Flickable) иначе съедает клики
+            anchors.centerIn: parent
+            visible: empList.count === 0 && searchInput.text.length > 0
+            spacing: AppTheme.spaceXXS
+
+            Text {
+                text: "Никого не нашли по «" + searchInput.text + "»"
+                color: AppTheme.textSecondary
+                font.family: AppTheme.fontFamily
+                font.pixelSize: AppTheme.sizeBody
+                font.weight: AppTheme.weightMedium
+            }
+            Text {
+                text: "Проверьте запрос или сбросьте поиск"
+                color: AppTheme.textTertiary
+                font.family: AppTheme.fontFamily
+                font.pixelSize: AppTheme.sizeSmall
+            }
+            AppButton {
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: "Сбросить поиск"
+                variant: "secondary"
+                width: 150
+                onClicked: searchInput.text = ""
+            }
+        }
 
     ListView {
         id: empList
@@ -169,13 +193,121 @@ Rectangle {
         clip: true
         model: backend.employeeList
 
+        // ──────────────────────────────────────────────────────────
+        // ВЫДЕЛЕНИЕ «ВЫТЕКАЮЩЕЕ» ИЗ РАБОЧЕЙ ОБЛАСТИ
+        // Одна плашка на весь список (отдельный слой, НЕ часть делегата):
+        // слева обнимает строку выбранного сотрудника, а к правому краю
+        // плавно РАСШИРЯЕТСЯ и закруглённо примыкает к границе соседней
+        // панели. Слой живёт вне делегатов, поэтому переживает перезалив
+        // списка: при смене сотрудника плашка плавно переезжает (Behavior),
+        // при прокрутке — мгновенно следует за своей строкой.
+        // ──────────────────────────────────────────────────────────
+        function updateSelectionPlate(animate) {
+            selectionPlate.animOn = animate
+            var found = null
+            var kids = empList.contentItem.children
+            for (var i = 0; i < kids.length; i++) {
+                var ch = kids[i]
+                if (ch && ch.empId !== undefined && ch.empId !== 0
+                        && ch.empId === backend.selectedEmployeeId) {
+                    found = ch
+                    break
+                }
+            }
+            if (!found) {
+                selectionPlate.visible = false
+                selectionPlate.animOn = true
+                return
+            }
+            var p = found.mapToItem(empList, 0, 0)
+            selectionPlate.y = p.y - selectionPlate.flareH
+            selectionPlate.height = found.height + 2 * selectionPlate.flareH
+            selectionPlate.visible = true
+            selectionPlate.animOn = true
+        }
+        Component.onCompleted: Qt.callLater(function() { empList.updateSelectionPlate(false) })
+
+        Canvas {
+            id: selectionPlate
+            z: -1                       // под делегатами, но над фоном списка
+            x: 0
+            width: parent.width
+            visible: false
+            property bool animOn: true
+
+            // При перетаскивании выбранной строки плашка тускнеет вместе
+            // с ней (строка становится полупрозрачной — плашка тоже)
+            opacity: (empList.draggingEmpId !== 0
+                      && empList.draggingEmpId === backend.selectedEmployeeId) ? 0.35 : 1.0
+            Behavior on opacity { NumberAnimation { duration: AppTheme.durFast } }
+
+            // Геометрия плашки
+            readonly property int leftInset: AppTheme.spaceXS
+            readonly property int vInset: 2
+            readonly property int r: AppTheme.radiusLarge
+            readonly property int flareH: 10     // насколько расширяется к панели
+            readonly property int flareLen: 44   // длина плавного расширения
+
+            onWidthChanged: requestPaint()
+            onHeightChanged: requestPaint()
+            Connections {
+                target: AppTheme
+                function onIsDarkChanged() { selectionPlate.requestPaint() }
+            }
+
+            Behavior on y {
+                enabled: selectionPlate.animOn
+                NumberAnimation { duration: 260; easing.type: Easing.OutCubic }
+            }
+            Behavior on height {
+                enabled: selectionPlate.animOn
+                NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
+            }
+
+            // Контур: скруглённый слева, к правому краю расходится вверх/вниз
+            // и вливается в соседнюю панель ОТКРЫТЫМ ртом: у самого края
+            // контур ещё расходится (вертикальная касательная), никакого
+            // замыкания капсулой — «пупырышка»
+            onPaint: {
+                var ctx = getContext("2d")
+                ctx.reset()
+                ctx.clearRect(0, 0, width, height)
+                var w = width, h = height
+                if (w < 60 || h < 20) return
+                var x0 = leftInset, rr = Math.min(r, h / 2 - 1)
+                var y0 = flareH + vInset
+                var y1 = h - flareH - vInset
+                var fl = Math.min(flareLen, (w - x0) * 0.5)
+                ctx.fillStyle = AppTheme.bgBase
+                ctx.beginPath()
+                ctx.moveTo(x0 + rr, y0)
+                ctx.lineTo(w - fl, y0)
+                // расширение вверх: полная ширина — ровно у панели, касательная
+                // у края вертикальная (рот «дышит» в сторону панели)
+                ctx.bezierCurveTo(w - fl * 0.45, y0, w, y0 - flareH * 0.35, w, y0 - flareH)
+                // прямой срез у границы: дальше начинается та же поверхность
+                ctx.lineTo(w, y1 + flareH)
+                // зеркальное расширение внизу
+                ctx.bezierCurveTo(w, y1 + flareH * 0.35, w - fl * 0.45, y1, w - fl, y1)
+                ctx.lineTo(x0 + rr, y1)
+                ctx.arcTo(x0, y1, x0, y0, rr)
+                ctx.lineTo(x0, y0 + rr)
+                ctx.arcTo(x0, y0, w, y0, rr)
+                ctx.closePath()
+                ctx.fill()
+            }
+        }
+
         property int draggingEmpId: 0
         property int draggingGroupId: -999
         property real dropLineY: -1
         property bool restoringScroll: false
         property real keepContentY: 0
 
-        onContentYChanged: if (!restoringScroll) keepContentY = contentY
+        onContentYChanged: {
+            if (!restoringScroll) keepContentY = contentY
+            updateSelectionPlate(false)   // плашка следует за строкой при прокрутке
+        }
 
         Connections {
             target: backend
@@ -186,12 +318,16 @@ Rectangle {
                     empList.contentY = Math.min(Math.max(0, empList.keepContentY), maxY)
                     empList.restoringScroll = false
                 })
+                Qt.callLater(function() { empList.updateSelectionPlate(true) })
             }
+            function onSelectedEmployeeIdChanged() { empList.updateSelectionPlate(true) }
         }
         
         delegate: Item {
             id: empDelegateItem
             width: ListView.view.width
+            // id сотрудника: по нему «вытекающая» плашка находит эту строку
+            readonly property int empId: modelData.id === undefined ? 0 : modelData.id
             readonly property int empCardHeight: Math.max(AppTheme.rowHeight, empTextCol.implicitHeight + AppTheme.spaceM)
             height: modelData.is_header ? 40 : empCardHeight
             readonly property int rowGroupId: modelData.group_id === undefined ? 0 : modelData.group_id
@@ -274,9 +410,11 @@ Rectangle {
                         
                         radius: AppTheme.radiusLarge // MD3 любит большие скругления (12-16px)
                         
-                        // Цвет: Активный -> Синий мягкий, Наведение -> Серый мягкий, Покой -> Прозрачный
-                        color: cardContainer.isSelected ? AppTheme.bgBrandSoft : 
-                               (empMouseArea.containsMouse ? AppTheme.stateHover : "transparent")
+                        // Выделение — НЕ фон карточки: под делегатом «вытекает»
+                        // плашка цвета рабочей области (см. highlight списка).
+                        // Здесь только наведение для невыбранных
+                        color: (empMouseArea.containsMouse && !cardContainer.isSelected)
+                               ? AppTheme.stateHover : "transparent"
 
                         Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
 
@@ -394,7 +532,7 @@ Rectangle {
 
                     AppMenu {
                         id: empContextMenu
-                        AppMenuItem { text: "Редактировать"; iconSource: "../icons/edit.svg"; onClicked: { empDialog.editId = modelData.id; empDialog.lastName = modelData.last_name; empDialog.firstName = modelData.first_name; empDialog.middleName = modelData.middle_name; empDialog.rank = modelData.rank; empDialog.position = modelData.position; empDialog.startMonth = modelData.start_month; empDialog.openHours = Math.floor(modelData.opening_minutes / 60).toString(); empDialog.openOvertime = Math.floor(modelData.opening_overtime / 60).toString(); empDialog.openDays = modelData.opening_days.toString(); empDialog.prevOpenHours = Math.floor(modelData.prev_opening_minutes / 60).toString(); empDialog.prevOpenOvertime = Math.floor(modelData.prev_opening_overtime / 60).toString(); empDialog.prevOpenDays = modelData.prev_opening_days.toString(); empDialog.showAt(cardContainer, cardContainer.width / 2, cardContainer.height / 2) } }
+                        AppMenuItem { text: "Редактировать"; iconSource: "../icons/edit.svg"; onClicked: { empDialog.editId = modelData.id; empDialog.lastName = modelData.last_name; empDialog.firstName = modelData.first_name; empDialog.middleName = modelData.middle_name; empDialog.rank = modelData.rank; empDialog.position = modelData.position; empDialog.hireDate = modelData.hire_date || (modelData.start_month + "-01"); empDialog.openHours = Math.floor(modelData.opening_minutes / 60).toString(); empDialog.openOvertime = Math.floor(modelData.opening_overtime / 60).toString(); empDialog.openDays = modelData.opening_days.toString(); empDialog.prevOpenHours = Math.floor(modelData.prev_opening_minutes / 60).toString(); empDialog.prevOpenOvertime = Math.floor(modelData.prev_opening_overtime / 60).toString(); empDialog.prevOpenDays = modelData.prev_opening_days.toString(); empDialog.showAt(cardContainer, cardContainer.width / 2, cardContainer.height / 2) } }
                         AppMenuItem { text: "История переводов"; iconSource: "../icons/clock.svg"; onClicked: { historyDialog.targetEmpId = modelData.id; historyDialog.targetEmpName = modelData.name; backend.loadTransferHistory(modelData.id); historyDialog.show() } }
                         AppMenuSeparator {}
                         AppMenuItem { text: "Переведен"; iconSource: "../icons/user_minus.svg"; onClicked: { endStatusDialog.targetEmpId = modelData.id; endStatusDialog.targetReason = "transfer"; endStatusDialog.showAt(cardContainer, cardContainer.width / 2, cardContainer.height / 2) } }
@@ -416,6 +554,7 @@ Rectangle {
                         }
                     }
 
+                    HoverHandler { cursorShape: empMouseArea.drag.active ? Qt.ClosedHandCursor : Qt.PointingHandCursor }
                     MouseArea { 
                         id: empMouseArea
                         anchors.fill: parent; hoverEnabled: true; acceptedButtons: Qt.LeftButton | Qt.RightButton

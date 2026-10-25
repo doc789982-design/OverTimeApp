@@ -19,6 +19,109 @@ Item {
     property bool needAnimation: true
 
     // ==========================================
+    // ВЫДЕЛЕНИЕ ДНЕЙ ПРОТЯЖКОЙ (зажатая ЛКМ)
+    // Зажали кнопку на одном дне, провели по числам — выделился
+    // диапазон; отпустили — открывается меню дня, и его действия
+    // применяются ко всем выделенным дням сразу.
+    // ==========================================
+    property var multiSelectDates: []
+    property string multiSelectAnchor: ""
+    property bool multiSelectActive: false
+
+    function clearDaySelection() {
+        multiSelectDates = []
+        multiSelectAnchor = ""
+        multiSelectActive = false
+    }
+
+    function beginDaySelection(dateStr) {
+        multiSelectAnchor = dateStr
+        multiSelectDates = [dateStr]
+        multiSelectActive = false
+    }
+
+    // ==========================================
+    // ВОЛНА МЕТОК ПО ВЫДЕЛЕННЫМ ДНЯМ
+    // Статус применили к нескольким дням сразу — их метки собираются
+    // по очереди, в порядке выделения: читается как мазок кисти
+    // по дням. Карта «день → задержка» живёт недолго: её подготавливает
+    // меню ДО применения действия, а после самого длинного обновления
+    // она стирается — случайные будущие карточки задержек не получают.
+    // ==========================================
+    property var badgeWaveDelays: ({})
+    // Шаг волны тот же, что у шахматного входа сетки (40 мс)
+    property int badgeWaveStep: 40
+
+    function prepareBadgeWave(dates) {
+        if (!dates || dates.length < 2) return
+        let map = {}
+        for (let i = 0; i < dates.length; i++)
+            map[dates[i]] = i * root.badgeWaveStep
+        root.badgeWaveDelays = map
+        badgeWaveSweep.restart()
+    }
+
+    // Задержка волны для конкретного дня (нет дня или нет карты — ноль)
+    function waveDelayFor(info) {
+        if (!info || info.date_str === undefined) return 0
+        let d = root.badgeWaveDelays ? root.badgeWaveDelays[info.date_str]
+                                     : undefined
+        return (d !== undefined && d > 0) ? d : 0
+    }
+
+    // Стираем карту, когда волна гарантированно отыграла (последняя
+    // задержка + сборка): 23 дня * 40 мс + 250 мс сборки = 1,2 с
+    Timer {
+        id: badgeWaveSweep
+        interval: 1500
+        onTriggered: root.badgeWaveDelays = ({})
+    }
+
+    function _dayCellSelectable(cell) {
+        return cell && cell.dayInfo && cell.isValid
+               && cell.dayInfo.is_current_month === true
+               && !cell.isLocked
+    }
+
+    // Какая ячейка дня под точкой (координаты — в системе сетки)
+    function dayCellAt(gridX, gridY) {
+        for (let i = 0; i < calendarGrid.children.length; i++) {
+            let cell = calendarGrid.children[i]
+            // в 5-недельных месяцах хвост сетки — пустые ячейки (dayInfo = null)
+            if (!cell || !cell.dayInfo || cell.dayInfo.date_str === undefined) continue
+            if (gridX >= cell.x && gridX < cell.x + cell.width
+                    && gridY >= cell.y && gridY < cell.y + cell.height)
+                return cell
+        }
+        return null
+    }
+
+    // Протянуть выделение до ячейки под курсором (диапазон от якоря)
+    function extendDaySelection(gridX, gridY) {
+        let cell = dayCellAt(gridX, gridY)
+        if (cell === null || !_dayCellSelectable(cell)) return
+        if (!multiSelectAnchor) return
+        let cells = []
+        for (let i = 0; i < calendarGrid.children.length; i++) {
+            let c = calendarGrid.children[i]
+            if (c && c.dayInfo && c.dayInfo.date_str !== undefined) cells.push(c)
+        }
+        let lo = -1, hi = -1
+        for (let i = 0; i < cells.length; i++) {
+            if (cells[i].dayInfo.date_str === multiSelectAnchor || cells[i] === cell) {
+                if (lo < 0) lo = i
+                hi = i
+            }
+        }
+        if (lo < 0) return
+        let dates = []
+        for (let i = lo; i <= hi; i++)
+            if (_dayCellSelectable(cells[i])) dates.push(cells[i].dayInfo.date_str)
+        multiSelectDates = dates
+        multiSelectActive = dates.length > 1
+    }
+
+    // ==========================================
     // ФУНКЦИИ ДЛЯ ЭФФЕКТА ТАНОСА
     // ==========================================
     // Красивая дата для сообщений: "2026-08-24" -> "24.08.2026"
@@ -36,6 +139,13 @@ Item {
             if (cell.dayInfo && cell.dayInfo.date_str === dateStr) return cell
         }
         return null
+    }
+
+    // Центр ячейки дня в координатах окна (для проверок курсора)
+    function dayCellCenter(dateStr) {
+        let c = findDayCell(dateStr)
+        if (!c) return null
+        return c.mapToItem(null, c.width / 2, c.height / 2)
     }
 
     function getDutyIdsInDay(dateStr) {
@@ -210,47 +320,6 @@ Item {
                 }
             }
 
-            // МАСКОТ
-            Item {
-                anchors.top: weekDaysRow.bottom
-                anchors.bottom: parent.bottom
-                anchors.left: parent.left
-                anchors.right: parent.right
-                visible: backend.selectedEmployeeId === 0
-                z: 50
-
-                Column {
-                    anchors.centerIn: parent
-                    spacing: AppTheme.spaceL
-
-                    AppEmptyMascot {
-                        anchors.horizontalCenter: parent.horizontalCenter
-                    }
-
-                    Column {
-                        spacing: AppTheme.spaceXS
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        
-                        Text { 
-                            text: "Сотрудник не выбран"
-                            color: AppTheme.textPrimary
-                            font.family: AppTheme.fontFamily
-                            font.pixelSize: AppTheme.sizeH1 
-                            font.weight: AppTheme.weightBold
-                            anchors.horizontalCenter: parent.horizontalCenter
-                        } 
-                        
-                        Text { 
-                            text: "Выберите карточку в панели слева, чтобы открыть табель"
-                            color: AppTheme.textSecondary
-                            font.family: AppTheme.fontFamily
-                            font.pixelSize: AppTheme.sizeBody 
-                            anchors.horizontalCenter: parent.horizontalCenter
-                        } 
-                    }
-                }
-            }
-
             // СЕТКА КАЛЕНДАРЯ
             GridLayout {
                 id: calendarGrid
@@ -279,13 +348,48 @@ Item {
                         property alias compBadgeItemRef: compBadgeItem
                         property alias dutyColItemRef: dutyColItem
                         property alias cellAnim: dayCellAnim
+
+                        // Какие дежурства в этом дне уже показаны (id).
+                        // Нужны, чтобы «собиралась» только НОВАЯ карточка,
+                        // а не весь столбик заново при любом обновлении данных
+                        property var knownDutyIds: ({})
+
+                        onDayInfoChanged: dutyIdSweep.restart()
+
+                        // Сверка после смены содержимого дня: исчезнувшие
+                        // id забываются — тогда дежурство, возвращённое
+                        // отменой действия, снова «соберётся»
+                        Timer {
+                            id: dutyIdSweep
+                            interval: 50
+                            onTriggered: {
+                                var fresh = ({})
+                                if (isValid && dayInfo && dayInfo.duties) {
+                                    for (var i = 0; i < dayInfo.duties.length; i++) {
+                                        var did = dayInfo.duties[i].id
+                                        if (did !== undefined) fresh[did] = true
+                                    }
+                                }
+                                dayCell.knownDutyIds = fresh
+                            }
+                        }
                         
                         property var dayInfo: backend.calendarDays.length > index
                                               ? backend.calendarDays[index]
                                               : null
                         property bool isValid: dayInfo !== null && dayInfo.date_str !== undefined
+                        // Запертые дни: до даты приема или после увольнения/перевода
+                        property bool isLocked: isValid && (dayInfo.is_before_hire === true || dayInfo.is_after_end === true)
+                        // Выделен протяжкой ЛКМ (вместе с соседними днями)
+                        property bool isMultiSelected: root.multiSelectActive
+                                                       && dayInfo !== null
+                                                       && root.multiSelectDates.indexOf(dayInfo.date_str) >= 0
                         
-                        opacity: (isValid && dayInfo.is_current_month) ? 1.0 : 0.0
+                        // Запертые дни (до приема / после увольнения) — серые
+                        // неактивные (как вкладки месяцев до приема).
+                        opacity: (isValid && dayInfo.is_current_month)
+                                 ? (isLocked ? 0.3 : 1.0)
+                                 : 0.0
                         
                         property bool isToday: {
                             if (!isValid) return false
@@ -330,7 +434,8 @@ Item {
                                 radius: parent.radius
                                 color: dayMouseArea.pressed
                                        ? AppTheme.statePress
-                                       : (dayMouseArea.containsMouse ? AppTheme.stateHover : "transparent")
+                                       : ((dayMouseArea.containsMouse || dayCell.isMultiSelected)
+                                          ? AppTheme.stateHover : "transparent")
                                 Behavior on color {
                                     ColorAnimation { duration: AppTheme.durMicro }
                                 }
@@ -354,6 +459,87 @@ Item {
                                 sourceComponent: Component { PreHolidaySparkle {} }
                             }
 
+                            HoverHandler { cursorShape: Qt.PointingHandCursor }
+                            MouseArea { 
+                                id: dayMouseArea
+                                cursorShape: Qt.PointingHandCursor
+                                anchors.fill: parent
+                                enabled: isValid && dayInfo.is_current_month && !isLocked
+                                hoverEnabled: true
+                                acceptedButtons: Qt.LeftButton | Qt.RightButton
+                                
+                                onContainsMouseChanged: {
+                                    if (containsMouse) dayKeyCatcher.forceActiveFocus()
+                                }
+                                
+                                // Протяжка ЛКМ по дням: выделяем диапазон
+                                property bool dragSelecting: false
+                                property real pressX: 0
+                                property real pressY: 0
+                                
+                                onPressed: (mouse) => {
+                                    if (mouse.button === Qt.LeftButton) {
+                                        dragSelecting = false
+                                        pressX = mouse.x
+                                        pressY = mouse.y
+                                        root.beginDaySelection(dayInfo.date_str)
+                                    }
+                                }
+                                onPositionChanged: (mouse) => {
+                                    if ((pressedButtons & Qt.LeftButton) === 0) return
+                                    if (!dragSelecting
+                                            && Math.abs(mouse.x - pressX) + Math.abs(mouse.y - pressY) > 6)
+                                        dragSelecting = true
+                                    if (dragSelecting) {
+                                        let pt = mapToItem(calendarGrid, mouse.x, mouse.y)
+                                        root.extendDaySelection(pt.x, pt.y)
+                                    }
+                                }
+                                onReleased: (mouse) => {
+                                    if (mouse.button !== Qt.LeftButton) return
+                                    if (dragSelecting && root.multiSelectDates.length > 1) {
+                                        // Отпустили протяжку — меню на все выделенные дни,
+                                        // открываем у ПОСЛЕДНЕЙ ячейки (где отпустили кнопку)
+                                        let pt = mapToItem(calendarGrid, mouse.x, mouse.y)
+                                        let lastCell = root.dayCellAt(pt.x, pt.y)
+                                        dayMenu.openFromCell(
+                                            lastCell !== null ? lastCell : dayCell,
+                                            dayInfo.date_str,
+                                            dayInfo.is_weekend,
+                                            dayInfo.is_holiday,
+                                            dayInfo.duties.length > 0,
+                                            dayInfo.has_comp,
+                                            root.multiSelectDates
+                                        )
+                                    } else {
+                                        root.clearDaySelection()
+                                        dayMenu.openFromCell(
+                                            dayCell,
+                                            dayInfo.date_str,
+                                            dayInfo.is_weekend,
+                                            dayInfo.is_holiday,
+                                            dayInfo.duties.length > 0,
+                                            dayInfo.has_comp
+                                        )
+                                    }
+                                    dragSelecting = false
+                                }
+                                // ПКМ — меню одного дня (как контекстное меню)
+                                onClicked: (mouse) => { 
+                                    if (mouse.button !== Qt.RightButton) return
+                                    if (!isValid) return
+                                    root.clearDaySelection()
+                                    dayMenu.openFromCell(
+                                        dayCell,
+                                        dayInfo.date_str,
+                                        dayInfo.is_weekend,
+                                        dayInfo.is_holiday,
+                                        dayInfo.duties.length > 0,
+                                        dayInfo.has_comp
+                                    )
+                                }
+                            }
+
                             Column {
                                 id: rightPanel
                                 anchors.top: parent.top
@@ -375,49 +561,158 @@ Item {
                                               : AppTheme.textSecondary)
                                 }
                                 
-                                Rectangle { 
+                                Item {
                                     id: compBadgeItem
                                     visible: isValid && dayInfo.has_comp
                                     width: 18
                                     height: 18
-                                    radius: AppTheme.radiusPill
                                     anchors.horizontalCenter: parent.horizontalCenter
-                                    color: AppTheme.bgTealSoft 
-                                    Text {
-                                        anchors.centerIn: parent
-                                        text: "В"
-                                        font.pixelSize: AppTheme.sizeMicro
-                                        font.weight: AppTheme.weightBold
-                                        color: AppTheme.accentTeal
+
+                                    // Появление метки — «собирается» на месте:
+                                    // проявление и рост. При смене месяца вход
+                                    // уже показывает сетка — вторая анимация не нужна.
+                                    // Решение — отложенно (Qt.callLater): ячейки
+                                    // пересобираются раньше, чем обработчик сигнала
+                                    // выставит флаг сетки
+                                    onVisibleChanged: {
+                                        if (!visible) return
+                                        compBody.opacity = 0
+                                        compBody.scale = 0.55
+                                        Qt.callLater(compBadgeItem.finishAssemble)
+                                    }
+
+                                    function finishAssemble() {
+                                        if (root.needAnimation) {
+                                            compBody.opacity = 1
+                                            compBody.scale = 1
+                                            return
+                                        }
+                                        // Волна по выделенным дням: метка этого дня
+                                        // ждёт своей очереди (задержка = позиция дня
+                                        // в выделении), потом собирается как обычно
+                                        let delay = root.waveDelayFor(dayInfo)
+                                        if (delay > 0) {
+                                            compWaveDelay.interval = delay
+                                            compWaveDelay.restart()
+                                        } else {
+                                            compAssemble.restart()
+                                        }
+                                    }
+
+                                    // Очередь волны: подождал — собрался
+                                    Timer {
+                                        id: compWaveDelay
+                                        onTriggered: compAssemble.restart()
+                                    }
+
+                                    Rectangle {
+                                        id: compBody
+                                        anchors.fill: parent
+                                        radius: AppTheme.radiusPill
+                                        color: AppTheme.bgTealSoft
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: "В"
+                                            font.pixelSize: AppTheme.sizeMicro
+                                            font.weight: AppTheme.weightBold
+                                            color: AppTheme.accentTeal
+                                        }
+                                        // Нажатие на метку — окно правок компенсации этого дня
+                                        HoverHandler { cursorShape: Qt.PointingHandCursor }
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: {
+                                                if (!isValid || isLocked || !dayInfo.is_current_month) return
+                                                backend.loadDayDetails(dayInfo.date_str)
+                                                if (backend.dayComps.length > 0)
+                                                    dayCompDialog.openForCompEdit(backend.dayComps[0], dayInfo.date_str, parent, parent.width / 2, parent.height)
+                                            }
+                                        }
+                                    }
+
+                                    ParallelAnimation {
+                                        id: compAssemble
+                                        NumberAnimation { target: compBody; property: "opacity"; to: 1; duration: AppTheme.durStandard; easing.type: AppTheme.easeEnter }
+                                        NumberAnimation { target: compBody; property: "scale"; to: 1; duration: AppTheme.durStandard; easing.type: AppTheme.easeEnter }
                                     }
                                 }
                                 
-                                Rectangle {
+                                Item {
                                     id: statusBarItem
                                     visible: isValid && dayInfo.status !== ""
                                     width: 18
                                     height: 18
-                                    radius: AppTheme.radiusPill
                                     anchors.horizontalCenter: parent.horizontalCenter
-                                    color: !isValid
-                                           ? "transparent"
-                                           : (dayInfo.status === "Б"
-                                              ? AppTheme.bgDangerSoft
-                                              : (dayInfo.status === "О"
-                                                 ? AppTheme.bgWarningSoft
-                                                 : AppTheme.bgPurpleSoft))
-                                    Text { 
-                                        anchors.centerIn: parent
-                                        text: isValid ? dayInfo.status : ""
-                                        font.pixelSize: AppTheme.sizeMicro
-                                        font.weight: AppTheme.weightBold
+
+                                    // Появление метки — «собирается» на месте:
+                                    // проявление и рост. При смене месяца вход
+                                    // уже показывает сетка — вторая анимация не нужна.
+                                    // Решение — отложенно (Qt.callLater): ячейки
+                                    // пересобираются раньше, чем обработчик сигнала
+                                    // выставит флаг сетки
+                                    onVisibleChanged: {
+                                        if (!visible) return
+                                        statusBody.opacity = 0
+                                        statusBody.scale = 0.55
+                                        Qt.callLater(statusBarItem.finishAssemble)
+                                    }
+
+                                    function finishAssemble() {
+                                        if (root.needAnimation) {
+                                            statusBody.opacity = 1
+                                            statusBody.scale = 1
+                                            return
+                                        }
+                                        // Волна по выделенным дням: метка этого дня
+                                        // ждёт своей очереди (задержка = позиция дня
+                                        // в выделении), потом собирается как обычно
+                                        let delay = root.waveDelayFor(dayInfo)
+                                        if (delay > 0) {
+                                            statusWaveDelay.interval = delay
+                                            statusWaveDelay.restart()
+                                        } else {
+                                            statusAssemble.restart()
+                                        }
+                                    }
+
+                                    // Очередь волны: подождал — собрался
+                                    Timer {
+                                        id: statusWaveDelay
+                                        onTriggered: statusAssemble.restart()
+                                    }
+
+                                    Rectangle {
+                                        id: statusBody
+                                        anchors.fill: parent
+                                        radius: AppTheme.radiusPill
                                         color: !isValid
                                                ? "transparent"
                                                : (dayInfo.status === "Б"
-                                                  ? AppTheme.accentDanger
+                                                  ? AppTheme.bgDangerSoft
                                                   : (dayInfo.status === "О"
-                                                     ? AppTheme.accentWarning
-                                                     : AppTheme.accentPurple))
+                                                     ? AppTheme.bgWarningSoft
+                                                     : AppTheme.bgPurpleSoft))
+                                        Text { 
+                                            anchors.centerIn: parent
+                                            text: isValid ? dayInfo.status : ""
+                                            font.pixelSize: AppTheme.sizeMicro
+                                            font.weight: AppTheme.weightBold
+                                            color: !isValid
+                                                   ? "transparent"
+                                                   : (dayInfo.status === "Б"
+                                                      ? AppTheme.accentDanger
+                                                      : (dayInfo.status === "О"
+                                                         ? AppTheme.accentWarning
+                                                         : AppTheme.accentPurple))
+                                        }
+                                    }
+
+                                    ParallelAnimation {
+                                        id: statusAssemble
+                                        NumberAnimation { target: statusBody; property: "opacity"; to: 1; duration: AppTheme.durStandard; easing.type: AppTheme.easeEnter }
+                                        NumberAnimation { target: statusBody; property: "scale"; to: 1; duration: AppTheme.durStandard; easing.type: AppTheme.easeEnter }
                                     }
                                 }
                             }
@@ -454,26 +749,103 @@ Item {
                                     
                                     Repeater {
                                         model: isValid ? dayInfo.duties : null
-                                        delegate: Rectangle {
-                                            required property var modelData 
+                                        delegate: Item {
+                                            id: dutyChip
+                                            required property var modelData
                                             property int dutyId: modelData.id !== undefined
                                                                  ? modelData.id
                                                                  : -1
                                             width: parent.width
                                             height: 18
-                                            radius: AppTheme.radiusSmall 
-                                            color: modelData.is_shift
-                                                   ? AppTheme.bgBrandSoft
-                                                   : AppTheme.statePress
-                                            Text {
-                                                anchors.centerIn: parent
-                                                text: modelData.text
-                                                font.family: AppTheme.fontFamily
-                                                font.pixelSize: AppTheme.sizeMicro
-                                                font.weight: AppTheme.weightBold
+
+                                            // Новая карточка «собирается» на месте:
+                                            // проявление и подъём — пара к растворению
+                                            // при удалении. Только для новых дежурств
+                                            // (id ещё не видели) и только вне смены
+                                            // месяца/сотрудника — там вход уже
+                                            // показывает шахматная анимация сетки.
+                                            // Решение — отложенно (Qt.callLater):
+                                            // ячейки пересобираются раньше, чем
+                                            // обработчик сигнала выставит флаг сетки
+                                            Component.onCompleted: {
+                                                if (dayInfo !== null
+                                                        && dayCell.knownDutyIds[dutyChip.dutyId] !== true) {
+                                                    chipBody.opacity = 0
+                                                    chipLift.y = 8
+                                                    Qt.callLater(dutyChip.finishAssemble)
+                                                }
+                                            }
+
+                                            function finishAssemble() {
+                                                if (root.needAnimation) {
+                                                    chipBody.opacity = 1
+                                                    chipLift.y = 0
+                                                    return
+                                                }
+                                                // Волна по выделенным дням: карточка
+                                                // этого дня ждёт своей очереди
+                                                // (задержка = позиция дня в выделении)
+                                                let delay = root.waveDelayFor(dayInfo)
+                                                if (delay > 0) {
+                                                    chipWaveDelay.interval = delay
+                                                    chipWaveDelay.restart()
+                                                } else {
+                                                    chipAssemble.restart()
+                                                }
+                                            }
+
+                                            // Очередь волны: подождал — собрался
+                                            Timer {
+                                                id: chipWaveDelay
+                                                onTriggered: chipAssemble.restart()
+                                            }
+
+                                            Rectangle {
+                                                id: chipBody
+                                                anchors.fill: parent
+                                                radius: AppTheme.radiusSmall
                                                 color: modelData.is_shift
-                                                       ? AppTheme.accentBrand
-                                                       : AppTheme.textPrimary
+                                                       ? AppTheme.bgBrandSoft
+                                                       : AppTheme.statePress
+                                                transform: Translate { id: chipLift; y: 0 }
+                                                Text {
+                                                    anchors.centerIn: parent
+                                                    text: modelData.text
+                                                    font.family: AppTheme.fontFamily
+                                                    font.pixelSize: AppTheme.sizeMicro
+                                                    font.weight: AppTheme.weightBold
+                                                    color: modelData.is_shift
+                                                           ? AppTheme.accentBrand
+                                                           : AppTheme.textPrimary
+                                                }
+
+                                                // Нажатие на карточку — окно правок именно
+                                                // этого дежурства (полные данные — из базы)
+                                                HoverHandler { cursorShape: Qt.PointingHandCursor }
+                                                MouseArea {
+                                                    anchors.fill: parent
+                                                    hoverEnabled: true
+                                                    cursorShape: Qt.PointingHandCursor
+                                                    onClicked: {
+                                                        if (!isValid || isLocked || !dayInfo.is_current_month) return
+                                                        backend.loadDayDetails(dayInfo.date_str)
+                                                        let full = null
+                                                        for (let i = 0; i < backend.dayDuties.length; ++i) {
+                                                            if (backend.dayDuties[i].id === modelData.id) {
+                                                                full = backend.dayDuties[i]
+                                                                break
+                                                            }
+                                                        }
+                                                        if (full !== null)
+                                                            dayDutyDialog.openForDutyEdit(full, dayInfo.date_str, parent, parent.width / 2, parent.height)
+                                                    }
+                                                }
+                                            }
+
+                                            ParallelAnimation {
+                                                id: chipAssemble
+                                                NumberAnimation { target: chipBody; property: "opacity"; to: 1; duration: AppTheme.durStandard; easing.type: AppTheme.easeEnter }
+                                                NumberAnimation { target: chipLift; property: "y"; to: 0; duration: AppTheme.durStandard; easing.type: AppTheme.easeEnter }
                                             }
                                         }
                                     }
@@ -485,7 +857,13 @@ Item {
                                 anchors.fill: parent
                                 
                                 Keys.onPressed: (event) => {
+                                    if (event.key === Qt.Key_Escape) {
+                                        root.clearDaySelection()
+                                        return
+                                    }
                                     if (!isValid) return
+                                    // Запертые дни: действий нет (ни мышкой, ни с клавиатуры)
+                                    if (isLocked) return
 
                                     if (event.key === Qt.Key_Control
                                         || event.key === Qt.Key_Shift
@@ -548,363 +926,113 @@ Item {
                                 }
                             }
 
-                            MouseArea { 
-                                id: dayMouseArea
-                                anchors.fill: parent
-                                enabled: isValid && dayInfo.is_current_month
-                                hoverEnabled: true
-                                acceptedButtons: Qt.LeftButton | Qt.RightButton
-                                
-                                onContainsMouseChanged: {
-                                    if (containsMouse) dayKeyCatcher.forceActiveFocus()
-                                }
-                                
-                                onClicked: (mouse) => { 
-                                    if (!isValid) return
-                                    if (mouse.button === Qt.RightButton) {
-                                        monthPage.menuDate      = dayInfo.date_str
-                                        monthPage.menuIsWeekend = dayInfo.is_weekend
-                                        monthPage.menuIsHoliday = dayInfo.is_holiday
-                                        monthPage.menuHasDuties = dayInfo.duties.length > 0
-                                        monthPage.menuHasComps  = dayInfo.has_comp
-                                        monthPage.menuDayCell   = dayCell 
-                                        globalContextMenu.popup() 
-                                    }
-                                }
-                                
-                                onDoubleClicked: (mouse) => {
-                                    if (mouse.button === Qt.LeftButton && isValid) {
-                                        dayEventDialog.openForDuty(
-                                            dayInfo.date_str, dayCell, mouse.x, mouse.y
-                                        )
-                                    }
-                                }
-                            }
                         }
                     }
                 }
             }
-
-            // ГЛОБАЛЬНОЕ МЕНЮ КАЛЕНДАРЯ
-            AppMenu {
-                id: globalContextMenu
-
-                MenuItem {
-                    hoverEnabled: false
-                    implicitHeight: 48
-                    implicitWidth: 184
-                    padding: 0
-                    background: Item {}
-
-                    contentItem: Item {
-                        implicitHeight: 48
-                        implicitWidth: 184
-
-                        Row {
-                            anchors.verticalCenter: parent.verticalCenter
-                            anchors.left: parent.left
-                            anchors.leftMargin: 12
-                            spacing: 8
-                            
-                            Rectangle { 
-                                width: 34; height: 34
-                                radius: AppTheme.radiusPill
-                                color: btnK.pressed
-                                       ? AppTheme.statePress
-                                       : (btnK.containsMouse ? AppTheme.stateHover : AppTheme.bgSurface)
-                                border.color: AppTheme.borderDivider
-                                border.width: 1
-                                scale: globalContextMenu.opened ? 1.0 : 0.0
-                                Behavior on scale {
-                                    NumberAnimation {
-                                        duration: AppTheme.durSlow
-                                        easing.type: Easing.OutBack
-                                    }
-                                }
-                                Text {
-                                    anchors.centerIn: parent
-                                    text: "К"
-                                    color: AppTheme.accentPurple
-                                    font.weight: AppTheme.weightBold
-                                    font.pixelSize: AppTheme.sizeBodyLarge
-                                } 
-                                MouseArea {
-                                    id: btnK
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    onClicked: {
-                                        backend.setDayStatus(monthPage.menuDate, "К")
-                                        globalContextMenu.close()
-                                    }
-                                }
-                                AppToolTip {
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                    anchors.bottom: parent.top
-                                    anchors.bottomMargin: AppTheme.spaceXS
-                                    text: "Командировка"
-                                    isVisible: btnK.containsMouse
-                                }
-                            }
-                            
-                            Rectangle { 
-                                width: 34; height: 34
-                                radius: AppTheme.radiusPill
-                                color: btnB.pressed
-                                       ? AppTheme.statePress
-                                       : (btnB.containsMouse ? AppTheme.stateHover : AppTheme.bgSurface)
-                                border.color: AppTheme.borderDivider
-                                border.width: 1
-                                scale: globalContextMenu.opened ? 1.0 : 0.0
-                                Behavior on scale {
-                                    SequentialAnimation {
-                                        PauseAnimation { duration: 40 }
-                                        NumberAnimation {
-                                            duration: AppTheme.durSlow
-                                            easing.type: Easing.OutBack
-                                        }
-                                    }
-                                }
-                                Text {
-                                    anchors.centerIn: parent
-                                    text: "Б"
-                                    color: AppTheme.accentDanger
-                                    font.weight: AppTheme.weightBold
-                                    font.pixelSize: AppTheme.sizeBodyLarge
-                                } 
-                                MouseArea {
-                                    id: btnB
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    onClicked: {
-                                        backend.setDayStatus(monthPage.menuDate, "Б")
-                                        globalContextMenu.close()
-                                    }
-                                }
-                                AppToolTip {
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                    anchors.bottom: parent.top
-                                    anchors.bottomMargin: AppTheme.spaceXS
-                                    text: "Больничный"
-                                    isVisible: btnB.containsMouse
-                                }
-                            }
-                            
-                            Rectangle { 
-                                width: 34; height: 34
-                                radius: AppTheme.radiusPill
-                                color: btnO.pressed
-                                       ? AppTheme.statePress
-                                       : (btnO.containsMouse ? AppTheme.stateHover : AppTheme.bgSurface)
-                                border.color: AppTheme.borderDivider
-                                border.width: 1
-                                scale: globalContextMenu.opened ? 1.0 : 0.0
-                                Behavior on scale {
-                                    SequentialAnimation {
-                                        PauseAnimation { duration: 80 }
-                                        NumberAnimation {
-                                            duration: AppTheme.durSlow
-                                            easing.type: Easing.OutBack
-                                        }
-                                    }
-                                }
-                                Text {
-                                    anchors.centerIn: parent
-                                    text: "О"
-                                    color: AppTheme.accentWarning
-                                    font.weight: AppTheme.weightBold
-                                    font.pixelSize: AppTheme.sizeBodyLarge
-                                } 
-                                MouseArea {
-                                    id: btnO
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    onClicked: {
-                                        backend.setDayStatus(monthPage.menuDate, "О")
-                                        globalContextMenu.close()
-                                    }
-                                }
-                                AppToolTip {
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                    anchors.bottom: parent.top
-                                    anchors.bottomMargin: AppTheme.spaceXS
-                                    text: "Отпуск"
-                                    isVisible: btnO.containsMouse
-                                }
-                            }
-                            
-                            Rectangle { 
-                                width: 34; height: 34
-                                radius: AppTheme.radiusPill
-                                color: btnClear.pressed
-                                       ? AppTheme.statePress
-                                       : (btnClear.containsMouse ? AppTheme.stateHover : AppTheme.bgSurface)
-                                border.color: AppTheme.borderDivider
-                                border.width: 1
-                                scale: globalContextMenu.opened ? 1.0 : 0.0
-                                Behavior on scale {
-                                    SequentialAnimation {
-                                        PauseAnimation { duration: 120 }
-                                        NumberAnimation {
-                                            duration: AppTheme.durSlow
-                                            easing.type: Easing.OutBack
-                                        }
-                                    }
-                                }
-                                IconImage {
-                                    anchors.centerIn: parent
-                                    source: "../icons/trash.svg"
-                                    width: AppTheme.iconMedium
-                                    height: AppTheme.iconMedium
-                                    color: btnClear.containsMouse
-                                           ? AppTheme.accentDanger
-                                           : AppTheme.textSecondary
-                                } 
-                                MouseArea {
-                                    id: btnClear
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    onClicked: {
-                                        mainWindow.explodeAndDelete(
-                                            monthPage.menuDate, "status", null,
-                                            function() {
-                                                backend.setDayStatus(monthPage.menuDate, "")
-                                            }
-                                        )
-                                        globalContextMenu.close()
-                                    }
-                                }
-                                AppToolTip {
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                    anchors.bottom: parent.top
-                                    anchors.bottomMargin: AppTheme.spaceXS
-                                    text: "Удалить статус"
-                                    isVisible: btnClear.containsMouse
-                                }
-                            }
-                        }
-                    }
-                }
-                
-                AppMenuItem {
-                    text: "Открыть день"
-                    iconSource: "../icons/edit.svg"
-                    onClicked: {
-                        backend.loadDayDetails(monthPage.menuDate)
-                        dayInspector.targetDate = monthPage.menuDate
-                        dayInspector.show()
-                        globalContextMenu.close()
-                    }
-                }
-
-                AppMenuSeparator {}
-                
-                AppMenuItem {
-                    text: "Добавить дежурство"
-                    iconSource: "../icons/clock.svg"
-                    showDelete: monthPage.menuHasDuties
-                    onClicked: {
-                        dayEventDialog.openForDuty(
-                            monthPage.menuDate, globalContextMenu.parent, 0, 0
-                        )
-                        globalContextMenu.close()
-                    }
-                    onDeleteClicked: {
-                        mainWindow.askConfirm(
-                            "Удалить все дежурства?",
-                            "Будут удалены все дежурства за " + root.fmtRuDate(monthPage.menuDate) + ".\nЕсли передумаете — нажмите Ctrl+Z.",
-                            "Удалить",
-                            function() {
-                                mainWindow.explodeAndDelete(
-                                    monthPage.menuDate, "duty", null,
-                                    function() { backend.clearDayDuties(monthPage.menuDate) }
-                                )
-                            }
-                        )
-                        globalContextMenu.close()
-                    }
-                }
-
-                AppMenuItem {
-                    text: "Добавить компенсацию"
-                    iconSource: "../icons/rest.svg"
-                    showDelete: monthPage.menuHasComps
-                    onClicked: {
-                        dayEventDialog.openForComp(
-                            monthPage.menuDate, globalContextMenu.parent, 0, 0
-                        )
-                        globalContextMenu.close()
-                    }
-                    onDeleteClicked: {
-                        mainWindow.askConfirm(
-                            "Удалить все компенсации?",
-                            "Будут удалены все компенсации за " + root.fmtRuDate(monthPage.menuDate) + ".\nЕсли передумаете — нажмите Ctrl+Z.",
-                            "Удалить",
-                            function() {
-                                mainWindow.explodeAndDelete(
-                                    monthPage.menuDate, "comp", null,
-                                    function() { backend.clearDayCompensations(monthPage.menuDate) }
-                                )
-                            }
-                        )
-                        globalContextMenu.close()
-                    }
-                }
-
-                AppMenuSeparator {}
-
-                AppMenuItem {
-                    visible: monthPage.menuIsWeekend || monthPage.menuIsHoliday
-                    text: "Сделать рабочим"
-                    iconSource: "../icons/calendar.svg"
-                    customColor: AppTheme.accentTeal
-                    onClicked: {
-                        backend.setDayType(monthPage.menuDate, "work")
-                        globalContextMenu.close()
-                    }
-                }
-                AppMenuItem {
-                    visible: !monthPage.menuIsWeekend
-                    text: "Сделать выходным"
-                    iconSource: "../icons/rest.svg"
-                    customColor: AppTheme.accentDanger
-                    onClicked: {
-                        backend.setDayType(monthPage.menuDate, "weekend")
-                        globalContextMenu.close()
-                    }
-                }
-                AppMenuItem {
-                    visible: !monthPage.menuIsHoliday
-                    text: "Сделать праздничным"
-                    iconSource: "../icons/sparkle.svg"
-                    customColor: AppTheme.accentPurple
-                    onClicked: {
-                        backend.setDayType(monthPage.menuDate, "holiday")
-                        globalContextMenu.close()
-                    }
-                }
-            }                
         }
 
         // ==========================================
         // СТРАНИЦА 1: ГОДОВАЯ ПАНОРАМА
         // ==========================================
         Item {
-            Rectangle {
-                anchors.top: parent.top
-                anchors.bottom: parent.bottom
+            id: yearPage
+
+            // ------------------------------------------
+            // ПОДПИСИ К МАТРИЦЕ (легенда)
+            // Тихая справочная строка между матрицей и панелью балансов:
+            // что означает каждая ячейка. Ничего не перекрывает и не
+            // отвлекает — просто мелкие плашки с названиями.
+            // ------------------------------------------
+            Flow {
+                id: yearLegend
+                visible: backend.yearlyData.length > 0
                 anchors.left: parent.left
                 anchors.right: parent.right
-                anchors.margins: AppTheme.spaceL
-                color: "transparent"
-                
-                Text { 
-                    visible: backend.yearlyData.length === 0
-                    anchors.centerIn: parent
-                    text: "Выберите сотрудника слева"
-                    color: AppTheme.textTertiary
+                anchors.bottom: parent.bottom
+                anchors.leftMargin: AppTheme.spaceL
+                anchors.rightMargin: AppTheme.spaceL
+                spacing: AppTheme.spaceS
+
+                Text {
+                    height: 14
+                    verticalAlignment: Text.AlignVCenter
+                    text: "Обозначения"
+                    color: AppTheme.textDisabled
                     font.family: AppTheme.fontFamily
-                    font.pixelSize: AppTheme.sizeH3 
+                    font.pixelSize: AppTheme.sizeMicro
+                    font.weight: AppTheme.weightBold
+                    font.letterSpacing: 0.4
                 }
+
+                Repeater {
+                    model: [
+                        { "kind": "fill",   "color": AppTheme.yearDutyExtra, "text": "суточное дежурство" },
+                        { "kind": "fill",   "color": AppTheme.yearDutyShift, "text": "дежурство по графику сменности" },
+                        { "kind": "fill",   "color": AppTheme.yearWeekend,   "text": "выходной день" },
+                        { "kind": "plain",  "color": AppTheme.bgCell,        "text": "рабочий день" },
+                        { "kind": "letter", "letter": "В", "soft": AppTheme.bgTealSoft,    "color": AppTheme.accentTeal,    "text": "компенсация" },
+                        { "kind": "letter", "letter": "Б", "soft": AppTheme.bgDangerSoft,  "color": AppTheme.accentDanger,  "text": "больничный" },
+                        { "kind": "letter", "letter": "О", "soft": AppTheme.bgWarningSoft, "color": AppTheme.accentWarning, "text": "отпуск" },
+                        { "kind": "letter", "letter": "К", "soft": AppTheme.bgPurpleSoft,  "color": AppTheme.accentPurple,  "text": "командировка" }
+                    ]
+
+                    delegate: Row {
+                        spacing: AppTheme.spaceXXS
+
+                        Item {
+                            width: modelData.kind === "letter" ? 14 : 10
+                            height: 14
+                            Rectangle {
+                                anchors.centerIn: parent
+                                width: modelData.kind === "letter" ? 14 : 10
+                                height: modelData.kind === "letter" ? 14 : 10
+                                radius: modelData.kind === "letter" ? AppTheme.radiusPill : 3
+                                color: modelData.kind === "letter" ? modelData.soft : modelData.color
+                                border.width: modelData.kind === "plain" ? 1 : 0
+                                border.color: AppTheme.borderDivider
+                                Text {
+                                    anchors.centerIn: parent
+                                    visible: modelData.kind === "letter"
+                                    text: modelData.letter || ""
+                                    color: modelData.color
+                                    font.family: AppTheme.fontFamily
+                                    font.pixelSize: AppTheme.sizeMicro
+                                    font.weight: AppTheme.weightBold
+                                }
+                            }
+                        }
+                        Text {
+                            height: 14
+                            verticalAlignment: Text.AlignVCenter
+                            text: modelData.text
+                            color: AppTheme.textTertiary
+                            font.family: AppTheme.fontFamily
+                            font.pixelSize: AppTheme.sizeMicro
+                        }
+                    }
+                }
+            }
+
+            Rectangle {
+                id: yearArea
+                anchors.top: parent.top
+                anchors.bottom: yearLegend.top
+                anchors.bottomMargin: AppTheme.spaceS
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.leftMargin: AppTheme.spaceL
+                anchors.rightMargin: AppTheme.spaceL
+                anchors.topMargin: AppTheme.spaceL
+                clip: true
+                color: "transparent"
+
+                // Ячейка матрицы квадратная, поэтому сторона ограничена и шириной,
+                // и высотой отведённого места: матрица всегда помещается целиком
+                // и не наползает на легенду и панель балансов.
+                readonly property real cellSide: Math.max(6, Math.min(
+                        (width - monthLabels.width) / 31,
+                        (height - daysScale.height - AppTheme.spaceS) / 12))
                 
                 Column {
                     id: monthLabels
@@ -933,7 +1061,7 @@ Item {
                     id: daysScale
                     visible: backend.yearlyData.length > 0
                     anchors.left: yearGrid.left
-                    anchors.right: yearGrid.right
+                    width: yearGrid.width
                     anchors.top: parent.top
                     height: 24
                     
@@ -963,8 +1091,8 @@ Item {
                     anchors.left: monthLabels.right
                     anchors.top: daysScale.bottom
                     anchors.topMargin: AppTheme.spaceS
-                    anchors.right: parent.right
-                    height: (width / 31) * 12
+                    width: yearArea.cellSide * 31
+                    height: yearArea.cellSide * 12
                     interactive: false
                     reuseItems: true 
                     model: backend.yearlyData
@@ -1025,8 +1153,10 @@ Item {
                                                      : "transparent"))
                                     }
                                     
+                                    HoverHandler { cursorShape: Qt.PointingHandCursor }
                                     MouseArea { 
                                         id: yearMouseArea
+                                        cursorShape: Qt.PointingHandCursor
                                         anchors.fill: parent
                                         hoverEnabled: true
                                         
@@ -1050,6 +1180,56 @@ Item {
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // ПУСТОЕ СОСТОЯНИЕ (СОТРУДНИК НЕ ВЫБРАН)
+    // Единая накладка поверх обеих вкладок (Месяц и Год). Живёт вне
+    // StackLayout, поэтому при переключении вкладок анимация маскота
+    // не перезапускается — она идёт непрерывно, пока нет сотрудника.
+    // Когда сотрудник выбран, накладка скрывается и открывается
+    // календарь или матрица года.
+    // ═══════════════════════════════════════════════════════════════
+    Item {
+        id: emptyStateOverlay
+        anchors.top: calendarHeader.bottom
+        anchors.bottom: unifiedSummaryPanel.top
+        anchors.bottomMargin: AppTheme.spaceM
+        anchors.left: parent.left
+        anchors.right: parent.right
+        visible: backend.selectedEmployeeId === 0
+        z: 50
+
+        Column {
+            anchors.centerIn: parent
+            spacing: AppTheme.spaceL
+
+            AppEmptyMascot {
+                anchors.horizontalCenter: parent.horizontalCenter
+            }
+
+            Column {
+                spacing: AppTheme.spaceXS
+                anchors.horizontalCenter: parent.horizontalCenter
+
+                Text {
+                    text: "Сотрудник не выбран"
+                    color: AppTheme.textPrimary
+                    font.family: AppTheme.fontFamily
+                    font.pixelSize: AppTheme.sizeH1
+                    font.weight: AppTheme.weightBold
+                    anchors.horizontalCenter: parent.horizontalCenter
+                }
+
+                Text {
+                    text: "Выберите карточку в панели слева, чтобы открыть табель"
+                    color: AppTheme.textSecondary
+                    font.family: AppTheme.fontFamily
+                    font.pixelSize: AppTheme.sizeBody
+                    anchors.horizontalCenter: parent.horizontalCenter
                 }
             }
         }

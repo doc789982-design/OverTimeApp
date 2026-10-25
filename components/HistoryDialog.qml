@@ -98,6 +98,7 @@ AppSidePanel {
                         Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
                         
                         IconImage { anchors.centerIn: parent; source: "../icons/edit.svg"; width: AppTheme.iconMedium; height: AppTheme.iconMedium; color: editHov.containsMouse ? AppTheme.textPrimary : AppTheme.textSecondary }
+                        HoverHandler { cursorShape: Qt.PointingHandCursor }
                         MouseArea { 
                             id: editHov; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
                             onClicked: {
@@ -114,6 +115,7 @@ AppSidePanel {
                         Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
                         
                         IconImage { anchors.centerIn: parent; source: "../icons/trash.svg"; width: AppTheme.iconMedium; height: AppTheme.iconMedium; color: delHov.containsMouse ? AppTheme.accentDanger : AppTheme.textTertiary }
+                        HoverHandler { cursorShape: Qt.PointingHandCursor }
                         MouseArea { id: delHov; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: backend.deleteTransferRecord(root.targetEmpId, modelData.id) }
                     }
                 }

@@ -10,6 +10,9 @@ Popup {
     property string title: "Панель"
     default property alias panelContent: contentArea.data
 
+    // Режим «морфинга»: панель открывается сразу в заданном месте без выезда сбоку.
+    property bool morphOpen: false
+
     width: 450 
     height: ApplicationWindow.window ? ApplicationWindow.window.height : 800
     
@@ -20,39 +23,37 @@ Popup {
     z: AppTheme.zModal // Правильный слой
 
     modal: true
-    dim: true 
 
     // ==========================================
-    // 1. ЗАТЕМНЕНИЕ ФОНА (Overlay)
+    // 1. ЗАТЕМНЕНИЕ ФОНА — убрали (окно просто открывается, без затемнения)
     // ==========================================
-    Overlay.modal: Rectangle {
-        color: AppTheme.bgOverlay 
-        opacity: root.opened ? 1.0 : 0.0
-        Behavior on opacity { 
-            NumberAnimation { 
-                duration: AppTheme.durStandard 
-                easing.type: root.opened ? AppTheme.easeEnter : AppTheme.easeExit
-            } 
-        }
-    }
 
     // ==========================================
     // 2. АНИМАЦИИ ВЫЕЗДА (Motion System)
     // ==========================================
     enter: Transition {
+        // При морфинге from == to — панель не выезжает сбоку, а остаётся на месте
+        // и проявляется прозрачностью во время роста рамки.
         NumberAnimation { 
             property: "x"
-            from: root.x + root.width
+            from: root.morphOpen ? root.x : root.x + root.width
             to: root.x
             duration: AppTheme.durStandard
             easing.type: AppTheme.easeEnter 
+        }
+        NumberAnimation {
+            property: "opacity"
+            from: root.morphOpen ? 0.0 : 1.0
+            to: 1.0
+            duration: AppTheme.durStandard
+            easing.type: AppTheme.easeEnter
         }
     }
     exit: Transition {
         NumberAnimation { 
             property: "x"
             from: root.x
-            to: root.x + root.width
+            to: root.morphOpen ? root.x : root.x + root.width
             duration: AppTheme.durFast // Уезжает быстрее, чем выезжает
             easing.type: AppTheme.easeExit 
         }
@@ -119,25 +120,33 @@ Popup {
                     color: AppTheme.textSecondary 
                 }
                 
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
                 MouseArea { 
                     id: closeHov
                     anchors.fill: parent
                     hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
                     onClicked: root.close() 
                 }
             }
         }
 
-        // КОНТЕНТ (Скроллируемый)
-        ScrollView {
+        // КОНТЕНТ (Скроллируемый) — плавно, с инерцией, как в браузере
+        SmoothFlickable {
+            id: panelScroll
+            objectName: "panelScroll"
             Layout.fillWidth: true
             Layout.fillHeight: true
             clip: true
-            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
-            
+            flickableDirection: Flickable.VerticalFlick
+            boundsBehavior: Flickable.StopAtBounds
+            contentWidth: width
+            contentHeight: contentArea.height + AppTheme.spaceS
+            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+
             Column {
                 id: contentArea
-                width: parent.width
+                                width: parent.width
                 spacing: AppTheme.spaceL
             }
         }
@@ -148,6 +157,16 @@ Popup {
             root.height = ApplicationWindow.window.height
             root.x = ApplicationWindow.window.width - root.width
         }
+        root.open()
+    }
+
+    // Открытие после «морфинга»: панель сразу встаёт в заданный прямоугольник.
+    function openMorph(x, y, w, h) {
+        root.morphOpen = true
+        root.x = x
+        root.y = y
+        root.width = w
+        root.height = h
         root.open()
     }
 }

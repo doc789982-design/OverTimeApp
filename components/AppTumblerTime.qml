@@ -14,6 +14,18 @@ Item {
         return num < 10 ? "0" + num : num.toString()
     }
 
+    // Программная установка времени: обновляет и значения, и оба поля
+    // ввода — даже если поле в фокусе. Привязка text рвётся после
+    // первого ручного ввода, поэтому синхронизируем явно.
+    function setTime(h, m) {
+        var hh = Math.max(0, Math.min(23, parseInt(h) || 0))
+        var mm = Math.max(0, Math.min(59, parseInt(m) || 0))
+        hours = hh
+        minutes = mm
+        hrInput.text = pad(hh)
+        minInput.text = pad(mm)
+    }
+
     Row {
         anchors.centerIn: parent
         spacing: AppTheme.spaceXXS

@@ -2,8 +2,13 @@
 """
 Публикует GitHub Release из версии в AppTheme.qml и текста CHANGELOG.md.
 
-Я запускаю это после заметной версии. Тег v… на GitHub поднимает
-workflow «Сборка Windows» — он сам приложит zip к этому же релизу.
+Релиз состоит из ДВУХ обязательных файлов (иначе публикация не проходит):
+    OVERTIMETAB_<версия>_<sha>.exe — установщик для человека;
+    OVERTIMETAB_<версия>_<sha>.zip — обновление для установленной
+        программы: автообновление ищет на релизе файл с .zip на конце.
+Скрипт сам дожидается сборки Windows, проверяет ОБА файла, снимает
+старые ассеты и проверяет, что сборка описана в BUILD_HISTORY.md.
+Полный процесс выпуска — RELEASING.md.
 
 Запуск из корня репозитория:
     python tools/publish_release.py
@@ -24,6 +29,7 @@ CHANGELOG = ROOT / "CHANGELOG.md"
 
 
 def read_identity() -> tuple[str, int]:
+    """(имя для человека, сборка) — имя показывают окна и заголовок релиза."""
     text = THEME.read_text(encoding="utf-8")
     m = re.search(r'appVersion:\s*"([^"]+)"', text)
     if not m:
@@ -32,38 +38,77 @@ def read_identity() -> tuple[str, int]:
     return m.group(1), int(bm.group(1)) if bm else 0
 
 
+def read_semver() -> str:
+    """Семвер из AppTheme (appSemver) — механика: тег v<семвер>,
+    машинная строка обновления. До введения поля семвером считалось
+    само имя — оставлен запасной вариант."""
+    text = THEME.read_text(encoding="utf-8")
+    m = re.search(r'appSemver:\s*"([^"]+)"', text)
+    if m:
+        return m.group(1)
+    return read_identity()[0]
+
+
 def read_version() -> str:
     return read_identity()[0]
 
 
-def changelog_section(version: str) -> str:
+def changelog_section(version: str = "") -> str:
+    """Текст журнала для заметок релиза.
+
+    Журнал плоский: четыре раздела (Добавили/Поменяли/Починили/Удалили)
+    без заголовков версий — в какой сборке появилась запись, говорит
+    невидимая пометка <!--b:N-->. В заметки идёт весь журнал целиком;
+    аргумент version оставлен для совместимости со старыми вызовами.
+    """
     if not CHANGELOG.exists():
         sys.exit("Нет CHANGELOG.md — сначала запишите, что изменилось")
     text = CHANGELOG.read_text(encoding="utf-8")
-    lines = text.splitlines()
-    start = None
-    heading_re = re.compile(rf"^##\s+{re.escape(version)}\b")
-    for i, line in enumerate(lines):
-        if heading_re.search(line):
-            start = i
-            break
-    if start is None:
-        sys.exit(f"В CHANGELOG.md нет раздела «{version}»")
-    end = len(lines)
-    for j in range(start + 1, len(lines)):
-        if lines[j].startswith("## "):
-            end = j
-            break
-    chunk = lines[start:end]
-    while chunk and chunk[-1].strip() in ("", "---"):
-        chunk.pop()
-    body = "\n".join(chunk).strip()
+    i = text.find("### Добавили")
+    if i < 0:
+        sys.exit("В CHANGELOG.md нет раздела «### Добавили»")
+    body = text[i:].strip()
+    # невидимые пометки сборок (<!--b:239-->) в текст релиза не идут
+    body = re.sub(r"<!--\s*b\s*:\s*\d+\s*-->", "", body)
     return body + "\n"
 
 
-def is_prerelease(version: str) -> bool:
-    u = version.upper()
-    return any(tag in u for tag in ("ALPHA", "BETA", "RC", "DEV"))
+def history_has_build(build: int) -> bool:
+    """Описана ли сборка в BUILD_HISTORY.md (карта сборок из истории git).
+
+    Карта — память проекта, независимая от ассистента: каждый, кто
+    сопровождает табель (в том числе ИИ), знает, что въехало в какую
+    сборку. Публикация без описания сборки запрещена.
+    """
+    hist = ROOT / "BUILD_HISTORY.md"
+    if not hist.exists():
+        return False
+    try:
+        return ("## Сборка %d" % int(build)) in hist.read_text(encoding="utf-8")
+    except Exception:
+        return False
+
+
+def changelog_style_ok() -> bool:
+    """Записи журнала — простым языком (правила: начало CHANGELOG.md).
+
+    Проверяет tools/changelog_style.py: без программистского жаргона,
+    одно–три предложения, не длиннее 420 знаков. Выпуск сборки с
+    кривой записью невозможен — правила действуют для любого, кто
+    ведёт журнал, независимо от памяти конкретного собеседника.
+    """
+    try:
+        from changelog_style import text_problems
+    except ImportError:
+        from tools.changelog_style import text_problems  # type: ignore
+    problems = text_problems(CHANGELOG.read_text(encoding="utf-8"))
+    if problems:
+        print("Записи журнала не проходят проверку стиля "
+              "(правила — в начале CHANGELOG.md):", file=sys.stderr)
+        for p in problems:
+            print("  - " + p, file=sys.stderr)
+        return False
+    return True
 
 
 def run_gh(args: list[str], check: bool = True) -> subprocess.CompletedProcess:
@@ -99,26 +144,76 @@ def current_short_sha() -> str:
     return out.strip()
 
 
-def cleanup_old_release_zips(tag: str, keep_sha: str) -> None:
-    """На одном теге должен висеть один zip. Actions именует архив с хешем
-    коммита, поэтому новый файл не затирает старый — снимаем хвосты сами."""
+def asset_errors(assets: list, keep_sha: str) -> list[str]:
+    """Проверка состава релиза: zip и exe-установщик, оба с текущим sha.
+
+    Релиз обязан содержать ДВА файла: установщик (*.exe) для человека и
+    архив (*.zip) для установленной программы (автообновление ищет файл
+    с .zip на конце — см. app_update.fetch_github_release_info).
+    """
+    keep = (keep_sha or "").lower()
+    errors = []
+    names = [str(a.get("name") or "") for a in (assets or [])]
+    zips = [n for n in names if n.lower().endswith(".zip")]
+    exes = [n for n in names if n.lower().endswith(".exe")]
+    if not any(keep in n.lower() for n in zips):
+        errors.append(
+            "на релизе нет архива OVERTIMETAB_*_%s.zip — установленным "
+            "программам нечем обновляться" % keep)
+    if not any(keep in n.lower() for n in exes):
+        errors.append(
+            "на релизе нет установщика OVERTIMETAB_*_%s.exe — человеку "
+            "нечего скачивать (см. RELEASING.md: релиз = zip + exe, "
+            "сборкой управляет .github/workflows/build-windows.yml)" % keep)
+    return errors
+
+
+def release_assets(tag: str) -> list:
     view = run_gh(["release", "view", tag, "--json", "assets"], check=False)
     if view.returncode != 0:
-        return
+        return []
     try:
-        assets = json.loads(view.stdout or "{}").get("assets") or []
+        return json.loads(view.stdout or "{}").get("assets") or []
     except Exception:
-        return
+        return []
+
+
+def wait_for_build(timeout_sec: int = 1200) -> bool:
+    """Ждёт завершения свежего запуска «Сборка Windows»."""
+    import time as _time
+    print("ждём сборку Windows на Actions…")
+    _time.sleep(20)
+    r = run_gh(["run", "list", "--workflow=build-windows.yml", "--limit", "1",
+                "--json", "databaseId,status,conclusion"], check=False)
+    try:
+        info = json.loads(r.stdout or "[]")
+        run_id = (info[0] or {}).get("databaseId")
+    except Exception:
+        run_id = None
+    if not run_id:
+        print("не удалось найти запуск сборки — проверьте вручную: "
+              "gh run watch --workflow=build-windows.yml")
+        return False
+    watch = subprocess.run(["gh", "run", "watch", str(run_id), "--exit-status",
+                            "--interval", "20"], cwd=str(ROOT))
+    return watch.returncode == 0
+
+
+def cleanup_old_release_assets(tag: str, keep_sha: str) -> None:
+    """На одном теге — по одному zip и одному exe текущего sha.
+    Actions именует файлы хешем коммита, новый не затирает старый —
+    снимаем хвосты сами (и зипы, и установщики)."""
     keep = (keep_sha or "").lower()
-    for asset in assets:
+    for asset in release_assets(tag):
         name = str(asset.get("name") or "")
-        if not name.lower().endswith(".zip"):
+        low = name.lower()
+        if not (low.endswith(".zip") or low.endswith(".exe")):
             continue
-        if keep and keep in name.lower():
+        if keep and keep in low:
             continue
         gone = run_gh(["release", "delete-asset", tag, name, "--yes"], check=False)
         if gone.returncode == 0:
-            print(f"сняли старый архив {name}")
+            print(f"сняли старый файл {name}")
         else:
             sys.stderr.write(gone.stderr or gone.stdout or f"не сняли {name}\n")
 
@@ -126,14 +221,57 @@ def cleanup_old_release_zips(tag: str, keep_sha: str) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Опубликовать GitHub Release")
     parser.add_argument("--dry-run", action="store_true", help="только показать текст, не публиковать")
+    parser.add_argument("--prerelease", action="store_true",
+                        help="пометить релиз как пререлиз (по умолчанию — обычный релиз)")
+    parser.add_argument("--no-wait", action="store_true",
+                        help="не ждать сборку и не проверять ассеты (экстренные случаи)")
+    parser.add_argument("--tag", default="",
+                        help="тег существующего релиза (например v2.0.0-ALPHA.20), "
+                             "если имя версии сменилось, а обновляться должны старые клиенты")
     args = parser.parse_args()
 
     version, build = read_identity()
-    tag = f"v{version}"
+
+    # Ссылка на архив в updates/version.json — ИМЯ файла (OVERTIMETAB_…_.zip),
+    # а не полный адрес: файл читают разные хранилища (GitHub и запасной сервер
+    # post.mvd.ru), и имя склеивается с адресом того, где файл лежит.
+    # Полный адрес здесь запрещён сознательно: он привязал бы запасной путь
+    # к GitHub, и при его недоступности качать было бы неоткуда.
+    vj = ROOT / "updates" / "version.json"
+    if vj.exists():
+        try:
+            vj_url = str(json.loads(vj.read_text(encoding="utf-8")).get("url", ""))
+        except Exception as e:
+            print(f"updates/version.json не читается: {e}", file=sys.stderr)
+            return 1
+        if not re.fullmatch(r"OVERTIMETAB_[^\s/]+\.zip", vj_url):
+            print("В updates/version.json поле \"url\" должно быть ИМЕНЕМ архива "
+                  "вида OVERTIMETAB_<версия>_<sha>.zip, а не адресом (сейчас: "
+                  + repr(vj_url) + ").",
+                  file=sys.stderr)
+            return 1
+
+    # Стиль журнала: записи обязаны быть простым языком (без жаргона,
+    # коротко). Правила — в начале CHANGELOG.md, проверяет changelog_style.
+    if not changelog_style_ok():
+        return 1
+
+    # Карта сборок: текущая сборка обязана быть описана в BUILD_HISTORY.md.
+    # Файл генерируется из истории git: python tools/build_history.py --write --tag.
+    if not history_has_build(build):
+        print(f"В BUILD_HISTORY.md нет раздела \"Сборка {build}\". Запустите "
+              "python tools/build_history.py --write --tag, закоммитьте файл "
+              "и повторите публикацию.",
+              file=sys.stderr)
+        return 1
+
+    # Тег — из семвера (механика), заголовок — из имени для человека
+    semver = read_semver()
+    tag = args.tag.strip() or f"v{semver}"
     title = f"OVERTIMETAB {version}" + (f" · сборка {build}" if build else "")
     notes = changelog_section(version)
     branch = current_branch()
-    pre = is_prerelease(version)
+    pre = args.prerelease
 
     print(f"версия:   {version}" + (f" · сборка {build}" if build else ""))
     print(f"тег:      {tag}")
@@ -179,6 +317,8 @@ def main() -> int:
             ]
             if pre:
                 cmd.append("--prerelease")
+            else:
+                cmd.append("--latest")
             r = run_gh(cmd, check=False)
             action = "создали"
         if r.returncode != 0:
@@ -189,7 +329,27 @@ def main() -> int:
         if notes_file.exists():
             notes_file.unlink()
 
-    print("Готово. Zip к релизу приложит Actions, когда дособерёт Windows.")
+    if args.no_wait:
+        print("Запущено без ожидания (--no-wait): проверьте ассеты сами — "
+              "на релизе обязаны быть zip и exe одной сборки.")
+        return 0
+
+    # ── Строгий контроль релиза ──────────────────────────────
+    # Релиз = zip (обновление для программ) + exe (установщик для
+    # человека). Ждём сборку и проверяем оба файла; старые снимаем.
+    if not wait_for_build():
+        print("Сборка Windows не завершилась успехом — релиз неполный.",
+              file=sys.stderr)
+        return 1
+    sha = current_short_sha()
+    assets = release_assets(tag)
+    problems = asset_errors(assets, sha)
+    if problems:
+        for p in problems:
+            print("ОШИБКА РЕЛИЗА: " + p, file=sys.stderr)
+        return 1
+    cleanup_old_release_assets(tag, sha)
+    print(f"Релиз в порядке: zip + exe сборки {build} ({sha}).")
     return 0
 
 

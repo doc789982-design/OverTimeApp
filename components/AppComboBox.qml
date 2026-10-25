@@ -6,6 +6,8 @@ import QtQuick.Controls.impl
 
 ComboBox {
     id: control
+    // Курсор «рука» над кнопкой — как в обычных программах
+    HoverHandler { cursorShape: control.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor }
     Layout.fillWidth: true
     implicitHeight: 44 
 
@@ -90,7 +92,7 @@ ComboBox {
         Text {
             visible: control.isRequired
             text: "*"
-            color: control.enabled ? AppTheme.accentDanger : AppTheme.textDisabled 
+            color: control.enabled ? AppTheme.textDanger : AppTheme.textDisabled 
             font.family: AppTheme.fontFamily
             font.pixelSize: AppTheme.sizeBody 
         }
@@ -155,6 +157,7 @@ ComboBox {
             delegate: ItemDelegate {
                 width: ListView.view.width
                 height: 36 
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
                 property bool isSelected: control.currentIndex === index
                 
                 contentItem: Text {
