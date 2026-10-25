@@ -323,8 +323,12 @@ class SheetModel:
 class SheetRenderer:
     """Рисует SheetModel на QPainter в листовых пикселях."""
 
-    PEN_HAIR = 0.33    # 0.25 pt в листовых px
-    PEN_THIN = 1.0     # 0.75 pt
+    # Единое перо ВСЕХ линий таблицы. Раньше «волосяные» границы шаблона
+    # рисовались тонко и серо (0.25 pt) и на части принтеров пропадали.
+    # Теперь любая линия — как самые жирные в шаблоне разделители блоков
+    # («Всего за месяц», «Компенсировано за месяц»): 0.75 pt, почти чёрная.
+    PEN_LINE = 1.0     # 0.75 pt в листовых px
+    COLOR_LINE = "#1a1a1a"
 
     def __init__(self, model: SheetModel, font_hook=None):
         self.m = model
@@ -573,7 +577,7 @@ class SheetRenderer:
         rect = self._trio_rect(row, trio)
         mid = (rect.top() + rect.bottom()) / 2
         dy = math.tan(math.radians(10.0)) * rect.width() / 2.0
-        painter.setPen(QPen(QColor("#808080"), 0.75))
+        painter.setPen(QPen(QColor(self.COLOR_LINE), self.PEN_LINE))
         painter.drawLine(QPointF(rect.left(), mid + dy), QPointF(rect.right(), mid - dy))
 
         cell = self.m.ws.cell(row, trio["ot"])
@@ -633,17 +637,12 @@ class SheetRenderer:
         rect = m.cell_rect(r, c)
 
         def pen(side):
+            # Стиль/цвет границы из шаблона не различаем: любая линия
+            # таблицы печатается единым пером (см. PEN_LINE/COLOR_LINE).
             b = getattr(cell.border, side, None)
             if not b or not b.style:
                 return None
-            color = "#808080" if b.style == "hair" else "#1a1a1a"
-            try:
-                if b.color and isinstance(b.color.rgb, str) and len(b.color.rgb) >= 6:
-                    color = "#" + b.color.rgb[-6:]
-            except Exception:
-                pass
-            width = self.PEN_HAIR if b.style == "hair" else self.PEN_THIN
-            return QPen(QColor(color), width)
+            return QPen(QColor(self.COLOR_LINE), self.PEN_LINE)
 
         def draw(side, x1, y1, x2, y2):
             p = pen(side)
