@@ -341,13 +341,6 @@ Item {
                     accText: root.summ.acc_hours || "—"
                     compText: root.summ.comp_hours || "—"
                 }
-                Rectangle {
-                    Layout.fillHeight: true
-                    Layout.preferredWidth: 1
-                    Layout.topMargin: AppTheme.spaceS
-                    Layout.bottomMargin: AppTheme.spaceS
-                    color: AppTheme.borderDivider
-                }
                 StatCard {
                     title: "Дополнительные дни отдыха"
                     caption: root.endCaption
@@ -356,13 +349,6 @@ Item {
                     startText: root.summ.start_days || "—"
                     accText: root.summ.acc_days || "—"
                     compText: root.summ.comp_days || "—"
-                }
-                Rectangle {
-                    Layout.fillHeight: true
-                    Layout.preferredWidth: 1
-                    Layout.topMargin: AppTheme.spaceS
-                    Layout.bottomMargin: AppTheme.spaceS
-                    color: AppTheme.borderDivider
                 }
                 StatCard {
                     title: "Сверхурочные часы"
