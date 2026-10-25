@@ -11,7 +11,7 @@ Item {
     // ════════════════════════════════════════════════════════════════
     // ОДНА ПАНЕЛЬ — ДВА НАПОЛНЕНИЯ
     // Месяц и год показываются одним и тем же элементом: шапка с
-    // заголовком, кнопкой «Деньги» и графой «Всего дней», три карточки
+    // заголовком, кнопкой «Деньги» и графой «Всего отдыха», три карточки
     // показателей и поясняющая строка снизу. Различается только
     // источник данных (summ) и подписи периода.
     // ════════════════════════════════════════════════════════════════
@@ -71,13 +71,13 @@ Item {
     }
 
     // ==========================================
-    // КАРТОЧКА ОДНОГО ПОКАЗАТЕЛЯ
+    // ГРАФА ОДНОГО ПОКАЗАТЕЛЯ
     // ==========================================
-    component StatCard: Rectangle {
+    component StatCard: Item {
         id: card
         property string title: ""
-        property string icon: ""
-        property color accent: AppTheme.accentBrand
+        property int padLeft: AppTheme.spaceM
+        property int padRight: AppTheme.spaceM
         property string endText: "—"
         property bool endNeg: false
         property string startText: "—"
@@ -89,44 +89,24 @@ Item {
         Layout.fillHeight: true
         Layout.minimumWidth: 170
         Layout.preferredHeight: 170
-        radius: AppTheme.radiusMedium
-        color: AppTheme.bgBase
-        border.color: AppTheme.borderDivider
-        border.width: 1
 
         ColumnLayout {
             id: cardCol
             anchors.fill: parent
-            anchors.leftMargin: AppTheme.spaceM
-            anchors.rightMargin: AppTheme.spaceM
+            anchors.leftMargin: card.padLeft
+            anchors.rightMargin: card.padRight
             anchors.topMargin: AppTheme.spaceS
             anchors.bottomMargin: AppTheme.spaceS
             spacing: AppTheme.spaceXXS
 
-            RowLayout {
+            Text {
                 Layout.fillWidth: true
-                spacing: AppTheme.spaceS
-
-                Item {
-                    width: 32; height: 32
-                    Layout.alignment: Qt.AlignVCenter
-                    IconImage {
-                        anchors.centerIn: parent
-                        source: "../icons/" + card.icon
-                        width: 20; height: 20
-                        color: card.accent
-                    }
-                }
-                Text {
-                    Layout.fillWidth: true
-                    Layout.alignment: Qt.AlignVCenter
-                    text: card.title
-                    color: AppTheme.textSecondary
-                    font.family: AppTheme.fontFamily
-                    font.pixelSize: AppTheme.sizeSmall
-                    font.weight: AppTheme.weightBold
-                    elide: Text.ElideRight
-                }
+                text: card.title
+                color: AppTheme.textSecondary
+                font.family: AppTheme.fontFamily
+                font.pixelSize: AppTheme.sizeSmall
+                font.weight: AppTheme.weightBold
+                elide: Text.ElideRight
             }
 
             // ОДОМЕТР: при смене месяца старое значение «прокатывается» вверх
@@ -258,7 +238,7 @@ Item {
             spacing: AppTheme.spaceM
 
             // ------------------------------------------
-            // ШАПКА: заголовок + период, «Деньги», «Всего дней»
+            // ШАПКА: заголовок + период, «Деньги», «Всего отдыха»
             // ------------------------------------------
             RowLayout {
                 Layout.fillWidth: true
@@ -287,7 +267,7 @@ Item {
                     }
                 }
 
-                // Распорка: прижимает «Деньги» и «Всего дней» к правому краю строки
+                // Распорка: прижимает «Деньги» и «Всего отдыха» к правому краю строки
                 Item { Layout.fillWidth: true }
 
                 // «Деньгами» — кнопка-стадион, как все кнопки программы.
@@ -309,7 +289,7 @@ Item {
                     }
                 }
 
-// «Всего дней» — переработка сотрудника в днях (справа в шапке).
+// «Всего отдыха» — переработка сотрудника в днях (справа в шапке).
                 // Один элемент на оба вида: число берётся из текущего набора итогов.
                 // Шрифт числа — как у даты в шапке меню дня (fontCondensed, sizeH4, bold).
                 RowLayout {
@@ -318,7 +298,7 @@ Item {
                     spacing: AppTheme.spaceXS
 
                     Text {
-                        text: "Всего"
+                        text: "Всего отдыха"
                         color: AppTheme.textTertiary
                         font.family: AppTheme.fontFamily
                         font.pixelSize: AppTheme.sizeSmall
@@ -344,17 +324,16 @@ Item {
             }
 
             // ------------------------------------------
-            // ТРИ КАРТОЧКИ ПОКАЗАТЕЛЕЙ (часы / дни / сверх нормы)
+            // ТРИ ГРАФЫ ПОКАЗАТЕЛЕЙ (часы / дни / сверх нормы)
             // ------------------------------------------
             RowLayout {
                 id: cardsRow
                 Layout.fillWidth: true
-                spacing: AppTheme.spaceM
+                spacing: 0
 
                 StatCard {
-                    title: "ДВО (в ночное время)"
-                    icon: "clock.svg"
-                    accent: AppTheme.accentBrand
+                    title: "Время отдыха за ночные часы"
+                    padLeft: 0
                     caption: root.endCaption
                     endText: root.summ.end_hours || "—"
                     endNeg: root.summ.is_hours_negative === true
@@ -362,10 +341,15 @@ Item {
                     accText: root.summ.acc_hours || "—"
                     compText: root.summ.comp_hours || "—"
                 }
+                Rectangle {
+                    Layout.fillHeight: true
+                    Layout.preferredWidth: 1
+                    Layout.topMargin: AppTheme.spaceS
+                    Layout.bottomMargin: AppTheme.spaceS
+                    color: AppTheme.borderDivider
+                }
                 StatCard {
-                    title: "ДДО (дни)"
-                    icon: "calendar.svg"
-                    accent: AppTheme.accentSuccess
+                    title: "Дополнительные дни отдыха"
                     caption: root.endCaption
                     endText: root.summ.end_days || "—"
                     endNeg: root.summ.is_days_negative === true
@@ -373,10 +357,16 @@ Item {
                     accText: root.summ.acc_days || "—"
                     compText: root.summ.comp_days || "—"
                 }
+                Rectangle {
+                    Layout.fillHeight: true
+                    Layout.preferredWidth: 1
+                    Layout.topMargin: AppTheme.spaceS
+                    Layout.bottomMargin: AppTheme.spaceS
+                    color: AppTheme.borderDivider
+                }
                 StatCard {
-                    title: "Сверхурочно (часы)"
-                    icon: "overtime.svg"
-                    accent: AppTheme.accentWarning
+                    title: "Сверхурочные часы"
+                    padRight: 0
                     caption: root.endCaption
                     endText: root.summ.end_overtime || "—"
                     endNeg: root.summ.is_overtime_negative === true
