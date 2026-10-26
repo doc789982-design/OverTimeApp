@@ -248,12 +248,41 @@ def compute_month_norm_minutes(db, employee_id: int, year: int, month: int, shif
 
     return total_minutes
 
-def _get_accruals_for_period(db, employee_id, start_dt, end_dt, shift_checker, holidays_set):
+def _get_accruals_for_period(db, employee_id, start_dt, end_dt, shift_checker, holidays_set, details=None):
     duties = db.list_duties_for_period(employee_id, start_dt, end_dt)
     breaks_map = db.breaks_for_duty_ids([int(d["id"]) for d in duties])
     shifted_checker = build_shifted_weekend_checker(db, employee_id)
     res = {"night": 0, "overtime_acc": 0, "days": 0, "shift_night": 0, "shift_holiday": 0}
     counted_days = set()
+    duty_details = {}
+    overtime_details = []
+
+    def duty_detail(d, seg_start, seg_end, employee_is_shift):
+        if details is None:
+            return None
+        duty_id = int(d["id"])
+        item = duty_details.get(duty_id)
+        if item is None:
+            item = {
+                "kind": "duty",
+                "duty_id": duty_id,
+                "start_dt": seg_start,
+                "end_dt": seg_end,
+                "comment": str(d["comment"] or ""),
+                "duty_shift": bool(int(d["is_shift"] or 0)),
+                "employee_shift": bool(employee_is_shift),
+                "night": 0,
+                "days": 0,
+                "day_dates": [],
+                "shift_minutes": 0,
+                "shift_night": 0,
+                "shift_holiday": 0,
+            }
+            duty_details[duty_id] = item
+        else:
+            item["start_dt"] = min(item["start_dt"], seg_start)
+            item["end_dt"] = max(item["end_dt"], seg_end)
+        return item
 
     curr_m = datetime(start_dt.year, start_dt.month, 1)
     while curr_m < end_dt:
@@ -267,17 +296,24 @@ def _get_accruals_for_period(db, employee_id, start_dt, end_dt, shift_checker, h
             ds, de = max(dt_parse(d["start_dt"]), c_s), min(dt_parse(d["end_dt"]), c_e)
             is_emp_shifter = shift_checker(ds.date())
             is_duty_marked_as_shift = bool(int(d["is_shift"] or 0))
+            det = duty_detail(d, ds, de, is_emp_shifter)
 
             for ps, pe in subtract_intervals((ds, de), breaks_map.get(int(d["id"]), [])):
                 
                 if is_emp_shifter:
                     if is_duty_marked_as_shift:
                         # Смена ПО ГРАФИКУ: идет в сравнение с нормой
-                        m_shift += round((pe - ps).total_seconds() / 60)
+                        shift_minutes = round((pe - ps).total_seconds() / 60)
+                        m_shift += shift_minutes
+                        if det is not None:
+                            det["shift_minutes"] += shift_minutes
                         
                         # Ночные внутри смены (используем round!)
                         for ns, ne in extract_night_intervals(ps, pe):
-                            res["shift_night"] += round((ne - ns).total_seconds() / 60)
+                            night_minutes = round((ne - ns).total_seconds() / 60)
+                            res["shift_night"] += night_minutes
+                            if det is not None:
+                                det["shift_night"] += night_minutes
                             
                         # Праздничные внутри смены
                         cd = ps.date()
@@ -288,39 +324,90 @@ def _get_accruals_for_period(db, employee_id, start_dt, end_dt, shift_checker, h
                             if cd in holidays_set:
                                 inter = intersect(ps, pe, d0, d1)
                                 if inter: 
-                                    res["shift_holiday"] += round((inter[1] - inter[0]).total_seconds() / 60)
+                                    holiday_minutes = round((inter[1] - inter[0]).total_seconds() / 60)
+                                    res["shift_holiday"] += holiday_minutes
+                                    if det is not None:
+                                        det["shift_holiday"] += holiday_minutes
                             cd += timedelta(days=1)
                     else:
                         # ВНЕ ГРАФИКА: Сверхурочка не копится, даем Дни
                         for ns, ne in extract_night_intervals(ps, pe):
-                            res["night"] += round((ne - ns).total_seconds() / 60)
+                            night_minutes = round((ne - ns).total_seconds() / 60)
+                            res["night"] += night_minutes
+                            if det is not None:
+                                det["night"] += night_minutes
                             
                         cd = ps.date()
                         while cd <= pe.date():
                             if intersect(ps, pe, datetime.combine(cd, time(6,0)), datetime.combine(cd, time(22,0))):
                                 res["days"] += 1
+                                if det is not None:
+                                    det["days"] += 1
+                                    det["day_dates"].append(cd)
                             cd += timedelta(days=1)
 
                 else:
                     # ПЯТИДНЕВКА
                     for ns, ne in extract_night_intervals(ps, pe):
-                        res["night"] += round((ne - ns).total_seconds() / 60)
+                        night_minutes = round((ne - ns).total_seconds() / 60)
+                        res["night"] += night_minutes
+                        if det is not None:
+                            det["night"] += night_minutes
 
                     cd = ps.date()
                     while cd <= pe.date():
                         is_w = db.get_calendar_month(d_iso(cd), d_iso(cd)).get(cd, default_is_working(cd, shifted_checker(cd)))
                         if not is_w or cd in holidays_set:
                             if intersect(ps, pe, datetime.combine(cd, time(6,0)), datetime.combine(cd, time(22,0))):
-                                counted_days.add(cd)
+                                if cd not in counted_days:
+                                    counted_days.add(cd)
+                                    if det is not None:
+                                        det["days"] += 1
+                                        det["day_dates"].append(cd)
                         cd += timedelta(days=1)
                         
-        if norm > 0 or m_shift > 0: 
-            res["overtime_acc"] += (m_shift - norm)
+        if norm > 0 or m_shift > 0:
+            overtime_delta = m_shift - norm
+            res["overtime_acc"] += overtime_delta
+            if details is not None:
+                overtime_details.append({
+                    "kind": "overtime_month",
+                    "year": int(curr_m.year),
+                    "month": int(curr_m.month),
+                    "shift_minutes": int(m_shift),
+                    "norm_minutes": int(norm),
+                    "overtime": int(overtime_delta),
+                })
             
         curr_m = m_e
 
     res["days"] += len(counted_days)
+    if details is not None:
+        details.extend(sorted(
+            duty_details.values(), key=lambda x: (x["start_dt"], x["duty_id"])))
+        details.extend(overtime_details)
     return res
+
+
+def get_accrual_details_for_period(db, employee_id, start_dt, end_dt):
+    """Итоги начислений и вклад отдельных дежурств за период.
+
+    Нужна окну «Почему такая цифра?»: суммы считаются тем же кодом, что
+    и панель «Итоги», а детали показывают, какие именно дежурства их дали.
+    """
+    details = []
+    if end_dt <= start_dt:
+        return {"night": 0, "overtime_acc": 0, "days": 0,
+                "shift_night": 0, "shift_holiday": 0}, details
+    holidays = db.get_holidays_month(
+        d_iso(date(start_dt.year, 1, 1)),
+        d_iso(date(end_dt.year, 12, 31)),
+    )
+    totals = _get_accruals_for_period(
+        db, employee_id, start_dt, end_dt,
+        build_shift_checker(db, employee_id), holidays, details,
+    )
+    return totals, details
 
 # Кэш итогов месяцев. Живёт только внутри одного обновления экрана —
 # см. summary_cache_scope. Панорама года считает 12 месяцев, и каждый

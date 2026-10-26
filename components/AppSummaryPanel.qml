@@ -25,6 +25,11 @@ Item {
 
     implicitHeight: backend.selectedEmployeeId !== 0 ? mainRect.height : 0
 
+    // Клик по графе или по «Всего» открывает расшифровку именно этой цифры
+    function openExplain(bucket) {
+        balanceExplainDialog.openExplain(bucket, root.isYearView ? "year" : "month")
+    }
+
     // Склонение: 1 день / 2 дня / 5 дней
     function daysWord(n) {
         if (n % 100 >= 11 && n % 100 <= 19) return "дней"
@@ -76,6 +81,8 @@ Item {
     component StatCard: Item {
         id: card
         property string title: ""
+        property string bucket: ""
+        readonly property bool explainHover: cardHover.hovered
         property int padLeft: AppTheme.spaceM
         property int padRight: AppTheme.spaceM
         property string endText: "—"
@@ -84,6 +91,16 @@ Item {
         property string accText: "—"
         property string compText: "—"
         property string caption: "остаток на конец месяца"
+
+        HoverHandler {
+            id: cardHover
+            enabled: card.bucket !== ""
+            cursorShape: Qt.PointingHandCursor
+        }
+        TapHandler {
+            enabled: card.bucket !== ""
+            onTapped: root.openExplain(card.bucket)
+        }
 
         Layout.fillWidth: true
         Layout.fillHeight: true
@@ -99,14 +116,29 @@ Item {
             anchors.bottomMargin: AppTheme.spaceS
             spacing: AppTheme.spaceXXS
 
-            Text {
+            RowLayout {
                 Layout.fillWidth: true
-                text: card.title
-                color: AppTheme.textSecondary
-                font.family: AppTheme.fontFamily
-                font.pixelSize: AppTheme.sizeSmall
-                font.weight: AppTheme.weightBold
-                elide: Text.ElideRight
+                spacing: AppTheme.spaceXS
+
+                Text {
+                    Layout.fillWidth: true
+                    text: card.title
+                    color: card.explainHover ? AppTheme.textOnSoft : AppTheme.textSecondary
+                    font.family: AppTheme.fontFamily
+                    font.pixelSize: AppTheme.sizeSmall
+                    font.weight: AppTheme.weightBold
+                    elide: Text.ElideRight
+                    Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
+                }
+                Text {
+                    text: "?"
+                    color: card.explainHover ? AppTheme.textOnSoft : AppTheme.textTertiary
+                    opacity: card.explainHover ? 1.0 : 0.45
+                    font.family: AppTheme.fontFamily
+                    font.pixelSize: AppTheme.sizeSmall
+                    font.weight: AppTheme.weightBold
+                    Behavior on opacity { NumberAnimation { duration: AppTheme.durMicro } }
+                }
             }
 
             // ОДОМЕТР: при смене месяца старое значение «прокатывается» вверх
@@ -297,6 +329,14 @@ Item {
                     Layout.alignment: Qt.AlignVCenter
                     spacing: AppTheme.spaceXS
 
+                    HoverHandler {
+                        id: totalHover
+                        cursorShape: Qt.PointingHandCursor
+                    }
+                    TapHandler {
+                        onTapped: root.openExplain("total")
+                    }
+
                     Text {
                         text: "Всего"
                         color: AppTheme.textTertiary
@@ -307,17 +347,27 @@ Item {
                     }
                     Text {
                         text: root.summ.total_days !== undefined ? root.summ.total_days : "—"
-                        color: AppTheme.textPrimary
+                        color: totalHover.hovered ? AppTheme.textOnSoft : AppTheme.textPrimary
                         font.family: AppTheme.fontCondensed
                         font.pixelSize: AppTheme.sizeH4
                         font.weight: AppTheme.weightBold
                         Layout.alignment: Qt.AlignVCenter
+                        Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
                     }
                     Text {
                         text: root.summ.total_days !== undefined ? root.daysWord(root.summ.total_days) : ""
                         color: AppTheme.textTertiary
                         font.family: AppTheme.fontFamily
                         font.pixelSize: AppTheme.sizeSmall
+                        Layout.alignment: Qt.AlignVCenter
+                    }
+                    Text {
+                        text: "?"
+                        color: totalHover.hovered ? AppTheme.textOnSoft : AppTheme.textTertiary
+                        opacity: totalHover.hovered ? 1.0 : 0.45
+                        font.family: AppTheme.fontFamily
+                        font.pixelSize: AppTheme.sizeSmall
+                        font.weight: AppTheme.weightBold
                         Layout.alignment: Qt.AlignVCenter
                     }
                 }
@@ -333,6 +383,7 @@ Item {
 
                 StatCard {
                     title: "Время отдыха за ночные часы"
+                    bucket: "hours"
                     padLeft: 0
                     caption: root.endCaption
                     endText: root.summ.end_hours || "—"
@@ -343,6 +394,7 @@ Item {
                 }
                 StatCard {
                     title: "Дополнительные дни отдыха"
+                    bucket: "days"
                     caption: root.endCaption
                     endText: root.summ.end_days || "—"
                     endNeg: root.summ.is_days_negative === true
@@ -352,6 +404,7 @@ Item {
                 }
                 StatCard {
                     title: "Сверхурочные часы"
+                    bucket: "overtime"
                     padRight: 0
                     caption: root.endCaption
                     endText: root.summ.end_overtime || "—"

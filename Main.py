@@ -28,8 +28,8 @@ from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtCore import QObject, Slot, Signal, Property, QUrl, QThread, QTimer, Qt
 
 from database import DB, format_day_conflicts
-from utils import fmt_date_iso, fmt_dt_iso, d_iso, d_parse, dt_parse, dt_iso, parse_hhmm, subtract_intervals, intersect, merge_intervals, fmt_minutes_ru_words
-from logic import compute_month_summary, is_employee_shift, is_employee_shifted_weekends, validate_non_negative_over_year, default_is_working, build_shifted_weekend_checker, resolve_is_working, _row_flag, summary_cache_scope, total_overtime_days, previous_year_rest_days, count_workdays_between, split_both_years
+from utils import fmt_date_iso, fmt_dt_iso, d_iso, d_parse, dt_parse, dt_iso, parse_hhmm, subtract_intervals, intersect, merge_intervals, fmt_minutes_ru_words, month_bounds_dt, ru_plural
+from logic import compute_month_summary, is_employee_shift, is_employee_shifted_weekends, validate_non_negative_over_year, default_is_working, build_shifted_weekend_checker, resolve_is_working, _row_flag, summary_cache_scope, total_overtime_days, previous_year_rest_days, count_workdays_between, split_both_years, get_accrual_details_for_period
 import app_update
 
 # ====================================================
@@ -1751,6 +1751,540 @@ class Backend(QObject):
             "overtime": max(0, (summ["start_overtime"] + summ["acc_overtime"]) // 60),
             "days": max(0, summ["start_days"] + summ["acc_days"])
         }
+
+    # ── «Почему такая цифра?» для панели «Итоги» ─────────────────────
+    @staticmethod
+    def _balance_fmt(bucket, value):
+        value = int(value or 0)
+        if bucket == "days":
+            return f"{value} {ru_plural(value, 'день', 'дня', 'дней')}"
+        return fmt_minutes_ru_words(value)
+
+    def _balance_period_data(self, scope):
+        """Суммы панели за месяц или год одним набором сырых чисел."""
+        if not self.active_db or self._selected_employee_id == 0:
+            return None
+        scope = "year" if str(scope or "").lower() == "year" else "month"
+        emp = self.active_db.get_employee(self._selected_employee_id)
+        start_month = str(emp["start_month"] or "")[:7] if emp else ""
+        hire_y = hire_m = None
+        if len(start_month) == 7 and start_month[4] == "-":
+            try:
+                hire_y, hire_m = int(start_month[:4]), int(start_month[5:7])
+            except Exception:
+                hire_y = hire_m = None
+
+        if scope == "month":
+            start_dt, end_dt = month_bounds_dt(self.current_year, self.current_month)
+            with summary_cache_scope():
+                agg = dict(compute_month_summary(
+                    self.active_db, self._selected_employee_id,
+                    self.current_year, self.current_month))
+            month_names = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+                           "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"]
+            period_text = f"{month_names[self.current_month - 1]} {self.current_year}"
+        else:
+            start_dt = datetime(self.current_year, 1, 1)
+            end_dt = datetime(self.current_year + 1, 1, 1)
+            with summary_cache_scope():
+                summaries = [compute_month_summary(
+                    self.active_db, self._selected_employee_id,
+                    self.current_year, m) for m in range(1, 13)]
+            first_idx = 0
+            if hire_y == self.current_year and hire_m:
+                first_idx = min(11, max(0, hire_m - 1))
+            first = summaries[first_idx]
+            last = summaries[-1]
+            agg = {
+                "start_hours": first.get("start_hours", 0),
+                "start_overtime": first.get("start_overtime", 0),
+                "start_days": first.get("start_days", 0),
+                "prev_h_start": first.get("prev_h_start", 0),
+                "prev_o_start": first.get("prev_o_start", 0),
+                "prev_d_start": first.get("prev_d_start", 0),
+                "acc_hours": sum(int(s.get("acc_hours", 0) or 0) for s in summaries),
+                "acc_overtime": sum(int(s.get("acc_overtime", 0) or 0) for s in summaries),
+                "acc_days": sum(int(s.get("acc_days", 0) or 0) for s in summaries),
+                "comp_h_real": sum(int(s.get("comp_h_real", 0) or 0) for s in summaries),
+                "comp_h_prev": sum(int(s.get("comp_h_prev", 0) or 0) for s in summaries),
+                "comp_o_real": sum(int(s.get("comp_o_real", 0) or 0) for s in summaries),
+                "comp_o_prev": sum(int(s.get("comp_o_prev", 0) or 0) for s in summaries),
+                "comp_d_real": sum(int(s.get("comp_d_real", 0) or 0) for s in summaries),
+                "comp_d_prev": sum(int(s.get("comp_d_prev", 0) or 0) for s in summaries),
+                "end_hours": last.get("end_hours", 0),
+                "end_overtime": last.get("end_overtime", 0),
+                "end_days": last.get("end_days", 0),
+                "prev_h_end": last.get("prev_h_end", 0),
+                "prev_o_end": last.get("prev_o_end", 0),
+                "prev_d_end": last.get("prev_d_end", 0),
+            }
+            period_text = f"{self.current_year} год"
+
+        agg["total_days"] = int(total_overtime_days(
+            agg.get("end_hours", 0), agg.get("prev_h_end", 0),
+            agg.get("end_overtime", 0), agg.get("prev_o_end", 0),
+            agg.get("end_days", 0), agg.get("prev_d_end", 0)))
+        return {
+            "scope": scope,
+            "start_dt": start_dt,
+            "end_dt": end_dt,
+            "agg": agg,
+            "period_text": period_text,
+            "employee": emp,
+            "hire_year": hire_y,
+            "hire_month": hire_m,
+        }
+
+    def _balance_accrual_rows(self, bucket, details):
+        rows = []
+        month_short = ["янв", "фев", "мар", "апр", "май", "июн",
+                       "июл", "авг", "сен", "окт", "ноя", "дек"]
+
+        def signed(value):
+            value = int(value or 0)
+            text = self._balance_fmt(bucket, value)
+            return ("+" + text) if value > 0 else text
+
+        for item in details or []:
+            if bucket == "overtime" and item.get("kind") == "overtime_month":
+                rows.append({
+                    "date_text": f"{month_short[item['month'] - 1]} {item['year']}",
+                    "title": "Смены по графику за месяц",
+                    "detail": (f"Отработано {fmt_minutes_ru_words(item['shift_minutes'])} "
+                               f"при норме {fmt_minutes_ru_words(item['norm_minutes'])}"),
+                    "amount_text": signed(item["overtime"]),
+                    "amount_value": int(item["overtime"] or 0),
+                    "kind": "acc",
+                    "source": "current",
+                })
+                continue
+            if item.get("kind") != "duty":
+                continue
+            amount = 0
+            if bucket == "hours":
+                amount = int(item.get("night", 0) or 0)
+            elif bucket == "days":
+                amount = int(item.get("days", 0) or 0)
+            if amount == 0:
+                continue
+
+            starts = item["start_dt"]
+            ends = item["end_dt"]
+            if starts.date() == ends.date():
+                title = f"Дежурство {starts:%H:%M}–{ends:%H:%M}"
+            else:
+                title = f"Дежурство {starts:%d.%m %H:%M} – {ends:%d.%m %H:%M}"
+            detail_bits = []
+            if bucket == "hours":
+                detail_bits.append("ночное время 22:00–06:00")
+            elif bucket == "days":
+                dates = item.get("day_dates") or []
+                shown = ", ".join(f"{d:%d.%m.%Y}" for d in dates[:6])
+                if len(dates) > 6:
+                    shown += f" и ещё {len(dates) - 6}"
+                if item.get("employee_shift") and not item.get("duty_shift"):
+                    detail_bits.append("дежурство вне графика" + (f": {shown}" if shown else ""))
+                else:
+                    detail_bits.append("дневное время в нерабочий день" + (f": {shown}" if shown else ""))
+            if item.get("comment"):
+                detail_bits.append(str(item["comment"]))
+            rows.append({
+                "date_text": f"{starts:%d.%m.%Y}",
+                "title": title,
+                "detail": " · ".join(detail_bits),
+                "amount_text": signed(amount),
+                "amount_value": int(amount),
+                "kind": "acc",
+                "source": "current",
+            })
+        return rows
+
+    def _balance_compensation_rows(self, bucket, start_dt, end_dt, agg):
+        comp_keys = {
+            "hours": ("comp_h_real", "comp_h_prev"),
+            "overtime": ("comp_o_real", "comp_o_prev"),
+            "days": ("comp_d_real", "comp_d_prev"),
+        }[bucket]
+        start_iso = d_iso(start_dt.date())
+        end_iso = d_iso(end_dt.date())
+        emp_id = self._selected_employee_id
+        rows = []
+        raw_totals = {"current": 0, "prev": 0}
+
+        def parse_date(value):
+            try:
+                return d_parse(str(value)[:10])
+            except Exception:
+                return None
+
+        def record_title(rec):
+            if rec["method"] == "money":
+                return "Компенсация деньгами"
+            if bucket == "days":
+                return "Дни отдыха"
+            if bucket == "overtime":
+                return "Отдых за сверхурочные часы"
+            return "Отдых за ночные часы"
+
+        def record_detail(rec, source, dates=None):
+            bits = []
+            if rec["method"] == "money":
+                if rec["order_no"]:
+                    bits.append(f"приказ № {rec['order_no']}")
+                if rec["order_date"]:
+                    bits.append(f"от {fmt_date_iso(rec['order_date'])}")
+            if dates:
+                shown = ", ".join(fmt_date_iso(d_iso(d)) for d in dates[:6])
+                if len(dates) > 6:
+                    shown += f" и ещё {len(dates) - 6}"
+                bits.append(shown)
+            if rec["comment"]:
+                bits.append(str(rec["comment"]))
+            if source == "prev":
+                bits.insert(0, "прошлый год")
+            return " · ".join(bits)
+
+        def add_row(rec, source, amount, sort_date, dates=None):
+            amount = int(amount or 0)
+            if amount == 0:
+                return
+            raw_totals[source] += amount
+            rows.append({
+                "_sort": sort_date or start_dt.date(),
+                "date_text": fmt_date_iso(d_iso(sort_date)) if sort_date else "",
+                "title": record_title(rec),
+                "detail": record_detail(rec, source, dates),
+                "amount_text": self._balance_fmt(bucket, -amount),
+                "amount_value": -amount,
+                "kind": "comp",
+                "source": source,
+            })
+
+        for source in ("current", "prev"):
+            if source == "current":
+                where = ("event_date IS NOT NULL AND event_date<>'' "
+                         "AND event_date<>'1900-01-01' AND event_date>=? AND event_date<?")
+                params = (emp_id, bucket, start_iso, end_iso)
+            else:
+                where = "event_date='1900-01-01' AND order_date>=? AND order_date<?"
+                params = (emp_id, bucket, start_iso, end_iso)
+
+            if bucket in ("hours", "overtime"):
+                recs = self.active_db.conn.execute(
+                    f"SELECT * FROM compensation WHERE employee_id=? AND unit=? AND {where} "
+                    "ORDER BY COALESCE(order_date, event_date), id", params).fetchall()
+                for rec in recs:
+                    sort_date = parse_date(
+                        rec["order_date"] if source == "prev" else rec["event_date"])
+                    add_row(rec, source, rec["amount_minutes"], sort_date)
+            else:
+                recs = self.active_db.conn.execute(
+                    f"SELECT * FROM compensation WHERE employee_id=? AND unit=? "
+                    f"AND method='money' AND {where} "
+                    "ORDER BY COALESCE(order_date, event_date), id", params).fetchall()
+                for rec in recs:
+                    sort_date = parse_date(
+                        rec["order_date"] if source == "prev" else rec["event_date"])
+                    add_row(rec, source, rec["amount_days"], sort_date)
+
+                if source == "current":
+                    joined = self.active_db.conn.execute(
+                        "SELECT c.*, cd.day_off_date AS child_date "
+                        "FROM compensation c JOIN comp_day_off_date cd "
+                        "ON cd.compensation_id=c.id "
+                        "WHERE c.employee_id=? AND c.unit='days' AND c.method='day_off' "
+                        "AND c.event_date IS NOT NULL AND c.event_date<>'' "
+                        "AND c.event_date<>'1900-01-01' "
+                        "ORDER BY cd.day_off_date, c.id", (emp_id,)).fetchall()
+                else:
+                    joined = self.active_db.conn.execute(
+                        "SELECT c.*, cd.day_off_date AS child_date "
+                        "FROM compensation c JOIN comp_day_off_date cd "
+                        "ON cd.compensation_id=c.id "
+                        "WHERE c.employee_id=? AND c.unit='days' AND c.method='day_off' "
+                        "AND c.event_date='1900-01-01' "
+                        "ORDER BY cd.day_off_date, c.id", (emp_id,)).fetchall()
+                grouped = {}
+                for rec in joined:
+                    child = parse_date(rec["child_date"])
+                    if child is None:
+                        continue
+                    anchor = parse_date(
+                        rec["event_date"] if source == "current"
+                        else (rec["order_date"] or rec["child_date"]))
+                    if anchor is None:
+                        anchor = child
+                    effective = date(anchor.year, 12, 31) if child.year > anchor.year else child
+                    if not (start_dt.date() <= effective < end_dt.date()):
+                        continue
+                    group = grouped.setdefault(int(rec["id"]), {
+                        "rec": rec, "dates": [], "effective": []})
+                    group["dates"].append(child)
+                    group["effective"].append(effective)
+                for group in grouped.values():
+                    add_row(group["rec"], source, len(group["dates"]),
+                            min(group["effective"]), group["dates"])
+
+        # Дни сверх дневной копилки программа закрывает ночными часами.
+        # Показываем этот пересчёт отдельной строкой, чтобы список записей
+        # сходился с цифрой «компенсировано» в панели.
+        for source, key in (("current", comp_keys[0]), ("prev", comp_keys[1])):
+            summary_comp = int(agg.get(key, 0) or 0)
+            raw = int(raw_totals[source] or 0)
+            if bucket == "hours":
+                diff = summary_comp - raw
+                if diff > 0:
+                    rows.append({
+                        "_sort": end_dt.date(),
+                        "date_text": "",
+                        "title": "Дни сверх дневной копилки закрыты ночными часами",
+                        "detail": "прошлый год" if source == "prev" else "этот год",
+                        "amount_text": self._balance_fmt(bucket, -diff),
+                        "amount_value": -diff,
+                        "kind": "adjustment",
+                        "source": source,
+                    })
+                elif diff < 0:
+                    rows.append({
+                        "_sort": end_dt.date(),
+                        "date_text": "",
+                        "title": "Пересчёт между копилками",
+                        "detail": "прошлый год" if source == "prev" else "этот год",
+                        "amount_text": "+" + self._balance_fmt(bucket, -diff),
+                        "amount_value": -diff,
+                        "kind": "adjustment",
+                        "source": source,
+                    })
+            elif bucket == "days":
+                diff = raw - summary_comp
+                if diff > 0:
+                    rows.append({
+                        "_sort": end_dt.date(),
+                        "date_text": "",
+                        "title": "Часть дней закрыта ночными часами",
+                        "detail": ("поэтому из дневной копилки прошлого года списано меньше"
+                                   if source == "prev" else
+                                   "поэтому из дневной копилки этого года списано меньше"),
+                        "amount_text": "+" + self._balance_fmt(bucket, diff),
+                        "amount_value": diff,
+                        "kind": "adjustment",
+                        "source": source,
+                    })
+                elif diff < 0:
+                    rows.append({
+                        "_sort": end_dt.date(),
+                        "date_text": "",
+                        "title": "Пересчёт между копилками",
+                        "detail": "прошлый год" if source == "prev" else "этот год",
+                        "amount_text": self._balance_fmt(bucket, diff),
+                        "amount_value": diff,
+                        "kind": "adjustment",
+                        "source": source,
+                    })
+            else:
+                diff = summary_comp - raw
+                if diff != 0:
+                    rows.append({
+                        "_sort": end_dt.date(),
+                        "date_text": "",
+                        "title": "Пересчёт между копилками",
+                        "detail": "прошлый год" if source == "prev" else "этот год",
+                        "amount_text": self._balance_fmt(bucket, -diff),
+                        "amount_value": -diff,
+                        "kind": "adjustment",
+                        "source": source,
+                    })
+
+        rows.sort(key=lambda r: (r["_sort"], 0 if r["source"] == "current" else 1,
+                                 1 if r["kind"] == "adjustment" else 0))
+        for row in rows:
+            row.pop("_sort", None)
+        return rows
+
+    def _balance_total_rows(self, agg):
+        parts = [
+            ("Ночные часы этого года", int(agg.get("end_hours", 0) or 0)),
+            ("Ночные часы прошлого года", int(agg.get("prev_h_end", 0) or 0)),
+            ("Сверхурочные часы этого года", int(agg.get("end_overtime", 0) or 0)),
+            ("Сверхурочные часы прошлого года", int(agg.get("prev_o_end", 0) or 0)),
+        ]
+        included = sum(max(0, value) for _, value in parts)
+        rows = []
+        for title, value in parts:
+            rows.append({
+                "date_text": "",
+                "title": title,
+                "detail": ("входят в расчёт" if value > 0 else
+                           "в расчёт не входят" if value < 0 else "остаток нулевой"),
+                "amount_text": fmt_minutes_ru_words(value),
+                "amount_value": value,
+                "kind": "total",
+                "source": "current",
+            })
+        rows.append({
+            "date_text": "",
+            "title": "Положительные часы вместе",
+            "detail": (f"{included} мин. ÷ 480 = {included // 480} "
+                       f"{ru_plural(included // 480, 'день', 'дня', 'дней')}; "
+                       f"остаток {included % 480} мин. целым днём не считается"),
+            "amount_text": fmt_minutes_ru_words(included),
+            "amount_value": included,
+            "kind": "total",
+            "source": "current",
+        })
+        for title, value in (
+                ("Дни этого года", int(agg.get("end_days", 0) or 0)),
+                ("Дни прошлого года", int(agg.get("prev_d_end", 0) or 0))):
+            rows.append({
+                "date_text": "",
+                "title": title,
+                "detail": "прибавляются к дням из часов",
+                "amount_text": self._balance_fmt("days", value),
+                "amount_value": value,
+                "kind": "total",
+                "source": "current",
+            })
+        return rows
+
+    @Slot(str, str, result="QVariant")
+    def getBalanceExplanation(self, bucket, scope):
+        """Расшифровка одной цифры панели «Итоги» для выбранного сотрудника."""
+        empty = {"ok": False, "title": "Почему такая цифра?", "subtitle": "",
+                 "bucket": str(bucket or ""), "scope": str(scope or "month"),
+                 "current_formula": "", "prev_formula": "", "result_text": "",
+                 "acc_rows": [], "comp_rows": [], "total_rows": [], "note": ""}
+        if not self.active_db or self._selected_employee_id == 0:
+            return empty
+        bucket = str(bucket or "hours").lower()
+        if bucket not in ("hours", "days", "overtime", "total"):
+            bucket = "hours"
+        try:
+            period = self._balance_period_data(scope)
+            if not period:
+                return empty
+            agg = period["agg"]
+            emp = period["employee"]
+            employee_name = " ".join(
+                str(emp[key] or "").strip()
+                for key in ("last_name", "first_name", "middle_name")
+                if str(emp[key] or "").strip()) if emp else ""
+            titles = {
+                "hours": "Время отдыха за ночные часы",
+                "days": "Дополнительные дни отдыха",
+                "overtime": "Сверхурочные часы",
+                "total": "Всего дней отдыха",
+            }
+            result = {
+                "ok": True,
+                "title": titles[bucket],
+                "subtitle": f"{employee_name} · {period['period_text']}",
+                "bucket": bucket,
+                "scope": period["scope"],
+                "current_formula": "",
+                "prev_formula": "",
+                "result_text": "",
+                "acc_rows": [],
+                "comp_rows": [],
+                "total_rows": [],
+                "note": "",
+            }
+            notes = []
+
+            opening_keys = {
+                "hours": ("opening_minutes", "prev_opening_minutes"),
+                "days": ("opening_days", "prev_opening_days"),
+                "overtime": ("opening_overtime_minutes", "prev_opening_overtime_minutes"),
+            }
+            if bucket in opening_keys and period["hire_year"] == self.current_year and emp:
+                cur_key, prev_key = opening_keys[bucket]
+                if int(emp[cur_key] or 0) or int(emp[prev_key] or 0):
+                    notes.append(
+                        "В остаток на начало включены вводные остатки из карточки сотрудника "
+                        "за первый год учёта.")
+            if (period["scope"] == "year" and period["hire_year"] == self.current_year
+                    and period["hire_month"] not in (None, 1)):
+                notes.append("Расчёт за год начинается с первого месяца учёта сотрудника.")
+
+            if bucket == "total":
+                total_days = int(agg.get("total_days", 0) or 0)
+                result["result_text"] = (
+                    f"{total_days} {ru_plural(total_days, 'день', 'дня', 'дней')}")
+                result["current_formula"] = (
+                    "Положительные ночные и сверхурочные часы делятся на 8 часов, "
+                    "затем прибавляются дни этого и прошлого года.")
+                result["total_rows"] = self._balance_total_rows(agg)
+                result["note"] = " ".join(notes)
+                return result
+
+            keys = {
+                "hours": ("start_hours", "acc_hours", "comp_h_real", "end_hours",
+                          "prev_h_start", "comp_h_prev", "prev_h_end", "night"),
+                "days": ("start_days", "acc_days", "comp_d_real", "end_days",
+                         "prev_d_start", "comp_d_prev", "prev_d_end", "days"),
+                "overtime": ("start_overtime", "acc_overtime", "comp_o_real", "end_overtime",
+                             "prev_o_start", "comp_o_prev", "prev_o_end", "overtime_acc"),
+            }[bucket]
+            start_v = int(agg.get(keys[0], 0) or 0)
+            acc_v = int(agg.get(keys[1], 0) or 0)
+            comp_v = int(agg.get(keys[2], 0) or 0)
+            end_v = int(agg.get(keys[3], 0) or 0)
+            prev_start = int(agg.get(keys[4], 0) or 0)
+            prev_comp = int(agg.get(keys[5], 0) or 0)
+            prev_end = int(agg.get(keys[6], 0) or 0)
+
+            result["current_formula"] = (
+                f"Этот год: на начало {self._balance_fmt(bucket, start_v)} · "
+                f"начислено {self._balance_fmt(bucket, acc_v)} · "
+                f"компенсировано {self._balance_fmt(bucket, comp_v)} · "
+                f"на конец {self._balance_fmt(bucket, end_v)}")
+            if prev_start or prev_comp or prev_end:
+                result["prev_formula"] = (
+                    f"Прошлый год: на начало {self._balance_fmt(bucket, prev_start)} · "
+                    f"компенсировано {self._balance_fmt(bucket, prev_comp)} · "
+                    f"на конец {self._balance_fmt(bucket, prev_end)}")
+            result["result_text"] = self._balance_fmt(bucket, end_v)
+            if prev_end:
+                result["result_text"] += f" · прошлый год {self._balance_fmt(bucket, prev_end)}"
+
+            totals, details = get_accrual_details_for_period(
+                self.active_db, self._selected_employee_id,
+                period["start_dt"], period["end_dt"])
+            acc_rows = self._balance_accrual_rows(bucket, details)
+            listed_acc = sum(int(r.get("amount_value", 0) or 0) for r in acc_rows)
+            if listed_acc != acc_v:
+                diff = acc_v - listed_acc
+                acc_rows.append({
+                    "date_text": "",
+                    "title": "Остальная часть начислений",
+                    "detail": "не разложилась по отдельным дежурствам",
+                    "amount_text": (("+" + self._balance_fmt(bucket, diff)) if diff > 0
+                                    else self._balance_fmt(bucket, diff)),
+                    "amount_value": diff,
+                    "kind": "adjustment",
+                    "source": "current",
+                })
+            result["acc_rows"] = acc_rows
+            result["comp_rows"] = self._balance_compensation_rows(
+                bucket, period["start_dt"], period["end_dt"], agg)
+
+            if bucket == "hours" and int(totals.get("shift_night", 0) or 0):
+                notes.append(
+                    f"Внутри смен по графику было ещё {fmt_minutes_ru_words(totals['shift_night'])} "
+                    "ночного времени. К этой графе оно не прибавляется и показано под панелью отдельно.")
+            if bucket in ("hours", "days") and any(
+                    r.get("kind") == "adjustment" for r in result["comp_rows"]):
+                notes.append(
+                    "Если дней взято больше, чем было в дневной копилке, лишние дни "
+                    "программа закрывает ночными часами из расчёта 8 часов за день.")
+            if bucket == "overtime" and acc_rows:
+                notes.append(
+                    "Сверхурочные у сменного графика считаются за месяц целиком: "
+                    "отработанные по графику часы сравниваются с нормой месяца.")
+            result["note"] = " ".join(notes)
+            return result
+        except Exception:
+            traceback.print_exc()
+            return empty
 
     @Slot(str)
     def loadDayDetails(self, date_str):
