@@ -705,6 +705,29 @@ AppLargeModal {
                         checked: backend.reminderEnabled
                         onCheckedChanged: backend.setReminderEnabled(checked)
                     }
+
+                    Text {
+                        width: parent.width
+                        text: "Напоминание об отдыхе за прошлый год"
+                        color: AppTheme.textPrimary
+                        font.family: AppTheme.fontFamily
+                        font.pixelSize: AppTheme.sizeBodyLarge
+                        font.weight: AppTheme.weightBold
+                    }
+                    Text {
+                        width: parent.width
+                        text: "Программа сравнивает неиспользованный отдых за прошлый год с рабочими днями, оставшимися до 31 декабря: выходные и праздники не считаются. Если дней отдыха останется не меньше, чем рабочих дней, появится напоминание со списком сотрудников."
+                        color: AppTheme.textSecondary
+                        font.family: AppTheme.fontFamily
+                        font.pixelSize: AppTheme.sizeBody
+                        wrapMode: Text.WordWrap
+                    }
+
+                    AppSwitch {
+                        text: "Напоминать об отдыхе за прошлый год"
+                        checked: backend.expiringRestReminderEnabled
+                        onCheckedChanged: backend.setExpiringRestReminderEnabled(checked)
+                    }
                 }
 
                 // ── 6. Обновление ─────────────────────────

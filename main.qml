@@ -28,6 +28,11 @@ ApplicationWindow {
     // Колбэк для диалога подтверждения (хранится, пока пользователь думает)
     property var confirmCallback: null
 
+    // Первый сотрудник из напоминания об отдыхе: кнопка «Открыть»
+    // в плашке у края экрана ведёт прямо к его карточке.
+    property int pendingAlertEmployeeId: 0
+    property real lastExpiringRestCheckMs: 0
+
     // Идёт ли анимация заставки при выборе базы (клики по списку запрещены)
     property bool startTransition: false
 
@@ -56,6 +61,7 @@ ApplicationWindow {
     // (Как в Telegram: «Приложение продолжит работу в фоне»)
     function minimizeToTray() {
         mainWindow.hide()
+        mainWindow.pendingAlertEmployeeId = 0
         if (!backend.trayHintWasShown()) {
             systemAlert.showCustom(
                 "OVERTIMETAB продолжит работать в фоне. Развернуть — клик по иконке возле часов.",
@@ -84,6 +90,11 @@ ApplicationWindow {
             // неподвижной шторкой (глазу это — короткая пауза-бит),
             // затем шторка летит над уже готовой сценой
             flightDelay.restart()
+            // Новая база — новый список: не прячем проверку за троттлингом
+            // прошлой базы и не ведём кнопку плашки к чужому сотруднику.
+            mainWindow.lastExpiringRestCheckMs = 0
+            mainWindow.pendingAlertEmployeeId = 0
+            expiringRestOpenTimer.restart()
         }
         function onDatabaseOpenFailed(message) {
             // База не открылась (файла нет, повреждена) — панель возвращается
@@ -1104,19 +1115,34 @@ FileDialog {
 
     AppUI.AppDesktopNotification {
         id: systemAlert
-        // Кнопка «Развернуть» в подсказке про трей возвращает окно
-        onActionTriggered: { mainWindow.show(); mainWindow.requestActivate() }
+        // Кнопка в плашке возвращает окно; у напоминания об отдыхе
+        // дополнительно открывает карточку первого сотрудника из списка.
+        onActionTriggered: {
+            mainWindow.show()
+            mainWindow.requestActivate()
+            if (mainWindow.pendingAlertEmployeeId > 0) {
+                let empId = mainWindow.pendingAlertEmployeeId
+                mainWindow.pendingAlertEmployeeId = 0
+                backend.selectEmployee(empId)
+                backend.setYear(new Date().getFullYear())
+            }
+        }
     }
 
     Timer {
         id: notificationTimer
         interval: 10800000; running: true; repeat: true
-        onTriggered: { if (backend.reminderEnabled) checkAndNotify() }
+        onTriggered: checkAndNotify(false)
     }
     Timer {
         id: startupNotificationTimer
         interval: 5000; running: true; repeat: false
-        onTriggered: { if (backend.reminderEnabled) checkAndNotify() }
+        onTriggered: checkAndNotify(false)
+    }
+    Timer {
+        id: expiringRestOpenTimer
+        interval: 6500; running: false; repeat: false
+        onTriggered: checkAndNotify(true)
     }
     Timer {
         id: updateScanTimer
@@ -1131,10 +1157,32 @@ FileDialog {
         onTriggered: whatsNewDialog.showIfNeeded()
     }
 
-    function checkAndNotify() {
+    function checkAndNotify(expiryOnly) {
+        let expiryMessage = ""
+        if (backend.expiringRestReminderEnabled) {
+            let nowMs = Date.now()
+            // Старт программы и открытие базы могут проверить одно и то же
+            // дважды подряд — тяжёлый пересчёт всех сотрудников не повторяем.
+            if (nowMs - mainWindow.lastExpiringRestCheckMs > 600000) {
+                let info = backend.getExpiringRestReminder()
+                if (info && info.checked) {
+                    mainWindow.lastExpiringRestCheckMs = nowMs
+                    expiryMessage = info.message || ""
+                    mainWindow.pendingAlertEmployeeId = info.employee_id || 0
+                }
+            }
+        }
+
         let d = new Date()
         let day = d.getDate()
-        if (day >= 28 || day <= 5) {
+        let tabDue = !expiryOnly && backend.reminderEnabled && (day >= 28 || day <= 5)
+        if (expiryMessage !== "") {
+            systemAlert.showCustom(
+                tabDue ? expiryMessage + "\n\n" + systemAlert.defaultMessage : expiryMessage,
+                "Открыть"
+            )
+        } else if (tabDue) {
+            mainWindow.pendingAlertEmployeeId = 0
             systemAlert.showNotification()
         }
     }

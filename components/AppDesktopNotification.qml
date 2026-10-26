@@ -15,7 +15,8 @@ Window {
     width: 400
     height: card.height + 32
 
-    property string message: "Не забудьте сделать табель, ознакомить с ним всех сотрудников и сдать его в кадровое подразделение до 5-го числа месяца. Скрыть до следующего напоминания."
+    readonly property string defaultMessage: "Не забудьте сделать табель, ознакомить с ним всех сотрудников и сдать его в кадровое подразделение до 5-го числа месяца. Скрыть до следующего напоминания."
+    property string message: root.defaultMessage
     property string actionText: ""
 
     signal actionTriggered()
@@ -91,6 +92,7 @@ Window {
     }
 
     function showNotification() {
+        root.message = root.defaultMessage
         root.actionText = ""
         _show()
     }

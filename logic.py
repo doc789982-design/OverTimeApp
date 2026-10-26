@@ -363,6 +363,68 @@ def total_overtime_days(end_hours, prev_h_end, end_overtime, prev_o_end, end_day
     return minutes // (8 * 60) + int(end_days) + int(prev_d_end)
 
 
+def previous_year_rest_days(prev_h_end, prev_o_end, prev_d_end):
+    """Неиспользованный отдых прошлого года в целых днях.
+
+    Часовые копилки, как и в «Всего дней», зажимаются в ноль отдельно,
+    суммируются и делятся на 8-часовой рабочий день. Дни прибавляются
+    как есть, но отрицательный прошлогодний остаток отдыхом не считается.
+    """
+    minutes = max(0, int(prev_h_end or 0)) + max(0, int(prev_o_end or 0))
+    return minutes // (8 * 60) + max(0, int(prev_d_end or 0))
+
+
+def _prod_calendar_maps(prod_calendar, year):
+    """Карты рабочих дней и праздников из производственного календаря."""
+    work_map = {}
+    holidays = set()
+    months = (prod_calendar or {}).get("months") or []
+    for month_idx, month in enumerate(months[:12], start=1):
+        for cell in (month or {}).get("cells") or []:
+            try:
+                d = date(int(year), month_idx, int(cell.get("d")))
+            except Exception:
+                continue
+            work_map[d] = not bool(cell.get("off"))
+            if cell.get("hol"):
+                holidays.add(d)
+    return work_map, holidays
+
+
+def count_workdays_between(db, employee_id, start_date, end_date, prod_calendar=None):
+    """Сколько рабочих дней сотрудника между датами включительно.
+
+    Сначала действуют дни и праздники из базы (включая ручные правки),
+    для отсутствующих дат подставляется официальный производственный
+    календарь, а если и его нет — обычный недельный шаблон сотрудника.
+    """
+    if end_date < start_date:
+        return 0
+
+    start_iso, end_iso = d_iso(start_date), d_iso(end_date)
+    work_map = db.get_calendar_month(start_iso, end_iso)
+    override_set = db.get_calendar_overrides(start_iso, end_iso)
+    holidays_set = db.get_holidays_month(start_iso, end_iso)
+
+    prod_map, prod_holidays = _prod_calendar_maps(prod_calendar, start_date.year)
+    for d, working in prod_map.items():
+        if start_date <= d <= end_date:
+            work_map.setdefault(d, working)
+            if d in prod_holidays:
+                holidays_set.add(d)
+
+    shifted_checker = build_shifted_weekend_checker(db, employee_id)
+    total = 0
+    cur = start_date
+    while cur <= end_date:
+        if resolve_is_working(
+            cur, bool(shifted_checker(cur)), work_map, holidays_set, override_set
+        ):
+            total += 1
+        cur += timedelta(days=1)
+    return total
+
+
 def split_both_years(cur: dict, prev: dict, comp_type: str, amount: int) -> tuple[int, int]:
     """Делит компенсацию «за оба года» между текущим годом и заначкой.
 

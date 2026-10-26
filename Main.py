@@ -29,7 +29,7 @@ from PySide6.QtCore import QObject, Slot, Signal, Property, QUrl, QThread, QTime
 
 from database import DB, format_day_conflicts
 from utils import fmt_date_iso, fmt_dt_iso, d_iso, d_parse, dt_parse, dt_iso, parse_hhmm, subtract_intervals, intersect, merge_intervals, fmt_minutes_ru_words
-from logic import compute_month_summary, is_employee_shift, is_employee_shifted_weekends, validate_non_negative_over_year, default_is_working, build_shifted_weekend_checker, resolve_is_working, _row_flag, summary_cache_scope, total_overtime_days, split_both_years
+from logic import compute_month_summary, is_employee_shift, is_employee_shifted_weekends, validate_non_negative_over_year, default_is_working, build_shifted_weekend_checker, resolve_is_working, _row_flag, summary_cache_scope, total_overtime_days, previous_year_rest_days, count_workdays_between, split_both_years
 import app_update
 
 # ====================================================
@@ -474,6 +474,7 @@ class Backend(QObject):
     itemDeleted = Signal(str, str)
     startHiddenChanged = Signal()
     reminderEnabledChanged = Signal()
+    expiringRestReminderEnabledChanged = Signal()
     reducedMotionChanged = Signal()      # «Меньше анимаций» (настройки)
     updateReadyChanged = Signal()
     updateBusyChanged = Signal()
@@ -512,6 +513,7 @@ class Backend(QObject):
         self._year_summary = {}
         self._is_dark_theme = True
         self._reminder_enabled = True    # Напоминание "сдать табель" (28-е — 5-е число)
+        self._expiring_rest_reminder_enabled = True  # Отдых за прошлый год не помещается до 31.12
         self._reduced_motion = False     # «Меньше анимаций» (тумблер в настройках)
         self._startup_update_enabled = True    # обновление при запуске
         self._tray_hint_shown = False    # Показывали ли подсказку про работу в фоне
@@ -824,6 +826,7 @@ class Backend(QObject):
                 self._time_input_mode = ui_cfg.get("time_input_mode", "tumbler")
                 self._is_dark_theme = ui_cfg.get("theme", "dark") == "dark"
                 self._reminder_enabled = ui_cfg.get("reminder_enabled", True)
+                self._expiring_rest_reminder_enabled = bool(ui_cfg.get("expiring_rest_reminder_enabled", True))
                 self._reduced_motion = bool(ui_cfg.get("reduced_motion", False))
                 self._startup_update_enabled = bool(ui_cfg.get("startup_update", True))
                 self._tray_hint_shown = ui_cfg.get("tray_hint_shown", False)
@@ -1206,6 +1209,10 @@ class Backend(QObject):
     def reminderEnabled(self):
         return self._reminder_enabled
 
+    @Property(bool, notify=expiringRestReminderEnabledChanged)
+    def expiringRestReminderEnabled(self):
+        return self._expiring_rest_reminder_enabled
+
     # ── «Меньше анимаций» (тумблер в настройках) ───────────────────────
     @Property(bool, notify=reducedMotionChanged)
     def reducedMotion(self):
@@ -1240,6 +1247,150 @@ class Backend(QObject):
             "Напоминания включены" if self._reminder_enabled else "Напоминания выключены",
             "success"
         )
+
+    @Slot(bool)
+    def setExpiringRestReminderEnabled(self, enabled):
+        if self._expiring_rest_reminder_enabled == bool(enabled): return
+        self._expiring_rest_reminder_enabled = bool(enabled)
+        self._write_ui_config(
+            "expiring_rest_reminder_enabled",
+            self._expiring_rest_reminder_enabled,
+        )
+        self.expiringRestReminderEnabledChanged.emit()
+
+    @staticmethod
+    def _short_employee_name(emp) -> str:
+        last = str(emp["last_name"] or "").strip()
+        initials = ""
+        for key in ("first_name", "middle_name"):
+            value = str(emp[key] or "").strip()
+            if value:
+                initials += value[0].upper() + "."
+        return f"{last} {initials}".strip()
+
+    @staticmethod
+    def _parse_optional_date(value):
+        text = str(value or "").strip()
+        if len(text) != 10:
+            return None
+        try:
+            return d_parse(text)
+        except Exception:
+            return None
+
+    def _expiring_rest_rows(self, today=None):
+        """Сотрудники, чей отдых за прошлый год уже не помещается в остаток года.
+
+        Сравниваются целые дни прошлогодней заначки на конец текущего
+        месяца и рабочие дни с сегодняшнего дня по 31 декабря (или по
+        дату окончания службы). Равенство тоже тревожно: чтобы успеть,
+        отдыхать придётся каждый оставшийся рабочий день.
+        """
+        if not self.active_db:
+            return []
+        today = today or date.today()
+        year_end = date(today.year, 12, 31)
+        prod_calendar = self.getProdCalendar(today.year)
+        employees = self.active_db.list_employees_for_month(
+            today.year, today.month, True, ""
+        )
+        rows = []
+        with summary_cache_scope():
+            for emp in employees:
+                try:
+                    emp_id = int(emp["id"])
+                    hire_date = self._parse_optional_date(emp["hire_date"])
+                    if hire_date is None:
+                        start_month = str(emp["start_month"] or "").strip()[:7]
+                        if len(start_month) == 7:
+                            hire_date = self._parse_optional_date(start_month + "-01")
+                    if hire_date and hire_date > today:
+                        continue
+
+                    end_date = self._parse_optional_date(emp["end_date"])
+                    if end_date and end_date < today:
+                        continue
+                    capacity_end = min(year_end, end_date) if end_date else year_end
+
+                    summ = compute_month_summary(
+                        self.active_db, emp_id, today.year, today.month
+                    )
+                    if "prev_h_end" not in summ:
+                        continue
+                    prev_days = previous_year_rest_days(
+                        summ.get("prev_h_end"), summ.get("prev_o_end"),
+                        summ.get("prev_d_end"),
+                    )
+                    if prev_days <= 0:
+                        continue
+
+                    workdays = count_workdays_between(
+                        self.active_db, emp_id, today, capacity_end, prod_calendar
+                    )
+                    if prev_days >= workdays:
+                        rows.append({
+                            "id": emp_id,
+                            "name": self._short_employee_name(emp),
+                            "prev_rest_days": int(prev_days),
+                            "workdays_left": int(workdays),
+                            "excess_days": int(prev_days - workdays),
+                        })
+                except Exception:
+                    continue
+        rows.sort(key=lambda r: (-r["excess_days"], -r["prev_rest_days"], r["name"]))
+        return rows
+
+    @staticmethod
+    def _format_expiring_rest_message(rows, today) -> str:
+        if not rows:
+            return ""
+        prev_year = today.year - 1
+        if len(rows) == 1:
+            row = rows[0]
+            if row["excess_days"] > 0:
+                tail = "Часть отдыха уже не поместится до 31 декабря."
+            else:
+                tail = "Чтобы успеть, нужно отдыхать каждый оставшийся рабочий день."
+            return (
+                f"Пора отгулять переработку за {prev_year} год. "
+                f"{row['name']} — {row['prev_rest_days']} дн., "
+                f"а рабочих дней до конца {today.year} года осталось "
+                f"{row['workdays_left']}. {tail}"
+            )
+
+        lines = [
+            f"Пора отгулять переработку за {prev_year} год — "
+            f"неиспользованного отдыха уже не меньше, чем рабочих дней "
+            f"до конца {today.year} года:"
+        ]
+        for row in rows[:4]:
+            lines.append(
+                f"• {row['name']} — {row['prev_rest_days']} дн. "
+                f"при {row['workdays_left']} рабочих днях"
+            )
+        if len(rows) > 4:
+            lines.append(f"• и ещё {len(rows) - 4}")
+        if any(row["excess_days"] > 0 for row in rows):
+            lines.append("У части сотрудников отдых уже не поместится до 31 декабря.")
+        return "\n".join(lines)
+
+    @Slot(result="QVariant")
+    def getExpiringRestReminder(self):
+        """Текст напоминания и первый сотрудник из списка для кнопки открытия."""
+        empty = {"checked": False, "message": "", "employee_id": 0, "count": 0}
+        if not self.active_db:
+            return empty
+        try:
+            today = date.today()
+            rows = self._expiring_rest_rows(today)
+            return {
+                "checked": True,
+                "message": self._format_expiring_rest_message(rows, today),
+                "employee_id": int(rows[0]["id"]) if rows else 0,
+                "count": len(rows),
+            }
+        except Exception:
+            return empty
 
     # ── Подсказка "программа работает в фоне" (показываем один раз) ────
     @Slot(result=bool)

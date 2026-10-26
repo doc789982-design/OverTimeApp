@@ -64,6 +64,14 @@ class StubBackend(QObject):
         return True
 
     @Property(bool, constant=True)
+    def expiringRestReminderEnabled(self):
+        return False
+
+    @Slot(result="QVariant")
+    def getExpiringRestReminder(self):
+        return {"checked": False, "message": "", "employee_id": 0, "count": 0}
+
+    @Property(bool, constant=True)
     def startHidden(self):
         return False
 
