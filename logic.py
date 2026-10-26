@@ -253,6 +253,9 @@ def _get_accruals_for_period(db, employee_id, start_dt, end_dt, shift_checker, h
     breaks_map = db.breaks_for_duty_ids([int(d["id"]) for d in duties])
     shifted_checker = build_shifted_weekend_checker(db, employee_id)
     res = {"night": 0, "overtime_acc": 0, "days": 0, "shift_night": 0, "shift_holiday": 0}
+    # Одна календарная дата может дать только один день. Это множество
+    # одинаково важно и для пятидневки, и для сменной внеграфика: перерывы
+    # режут дежурство на отрезки, но не должны умножать день за дату.
     counted_days = set()
     duty_details = {}
     overtime_details = []
@@ -340,10 +343,11 @@ def _get_accruals_for_period(db, employee_id, start_dt, end_dt, shift_checker, h
                         cd = ps.date()
                         while cd <= pe.date():
                             if intersect(ps, pe, datetime.combine(cd, time(6,0)), datetime.combine(cd, time(22,0))):
-                                res["days"] += 1
-                                if det is not None:
-                                    det["days"] += 1
-                                    det["day_dates"].append(cd)
+                                if cd not in counted_days:
+                                    counted_days.add(cd)
+                                    if det is not None:
+                                        det["days"] += 1
+                                        det["day_dates"].append(cd)
                             cd += timedelta(days=1)
 
                 else:

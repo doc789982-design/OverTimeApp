@@ -13,7 +13,9 @@
      по часовым остаткам и дням той же формулой, что и панель.
   D. У сменного графика сверхурочные объясняются помесячно:
      отработано по графику минус норма.
-  E. QML-контракт: все три графы и «Всего» нажимаемы и ведут в окно.
+  E. Внеграфика у сменного графика даёт только один день за календарную
+     дату — перерывы и повторное дежурство в ту же дату день не умножают.
+  F. QML-контракт: все три графы и «Всего» нажимаемы и ведут в окно.
 
 Запуск:
     LD_LIBRARY_PATH=/tmp/stubs QT_QPA_PLATFORM=offscreen \
@@ -173,6 +175,42 @@ def test_shift_overtime():
     print("D: сменные сверхурочные объяснены сравнением с нормой месяца ✓")
 
 
+def test_shift_off_schedule_days_unique():
+    db = make_db("shift_off_schedule.sqlite")
+    group_id = db.add_group("Смены", True, False)
+    emp_id = db.add_employee(
+        "Внеграфика", "Виктор", "Викторович", "майор", "инженер", "2026-01",
+        0, 0, 0, 0, 0, 0, group_id)
+    long_duty = db.add_duty(
+        emp_id, datetime(2026, 10, 10, 8, 0), datetime(2026, 10, 11, 8, 0),
+        "вне графика с перерывами", False)
+    db.replace_duty_breaks(long_duty, [
+        (datetime(2026, 10, 10, 12, 0), datetime(2026, 10, 10, 13, 0)),
+        (datetime(2026, 10, 10, 18, 0), datetime(2026, 10, 10, 19, 0)),
+        (datetime(2026, 10, 11, 2, 0), datetime(2026, 10, 11, 3, 0)),
+    ])
+    second_duty = db.add_duty(
+        emp_id, datetime(2026, 10, 11, 10, 0), datetime(2026, 10, 11, 12, 0),
+        "ещё раз в ту же дату", False)
+    db.conn.commit()
+
+    summary = compute_month_summary(db, emp_id, 2026, 10)
+    assert summary["acc_days"] == 2, summary
+
+    start, end = month_bounds_dt(2026, 10)
+    totals, details = get_accrual_details_for_period(db, emp_id, start, end)
+    by_id = {d["duty_id"]: d for d in details if d.get("kind") == "duty"}
+    assert totals["days"] == 2, totals
+    assert by_id[long_duty]["days"] == 2, by_id[long_duty]
+    assert by_id[long_duty]["day_dates"] == [date(2026, 10, 10), date(2026, 10, 11)]
+    assert by_id[second_duty]["days"] == 0, by_id[second_duty]
+
+    backend = make_backend(db, emp_id)
+    days = backend.getBalanceExplanation("days", "month")
+    assert rows_sum(days["acc_rows"]) == 2, days["acc_rows"]
+    print("E: перерывы внеграфика не размножают дни — одна дата = один день ✓")
+
+
 def test_qml_contract():
     panel = (ROOT / "components/AppSummaryPanel.qml").read_text(encoding="utf-8")
     dialog = (ROOT / "components/BalanceExplainDialog.qml").read_text(encoding="utf-8")
@@ -184,7 +222,7 @@ def test_qml_contract():
     assert "backend.getBalanceExplanation" in dialog
     assert "Почему такая цифра?" in dialog
     assert "BalanceExplainDialog" in main_qml
-    print("E: все цифры панели ведут в окно расшифровки ✓")
+    print("F: все цифры панели ведут в окно расшифровки ✓")
 
 
 def main():
@@ -192,6 +230,7 @@ def main():
     _ = app
     test_details_and_backend()
     test_shift_overtime()
+    test_shift_off_schedule_days_unique()
     test_qml_contract()
     print("PASS: расшифровка остатков сходится с панелью «Итоги»")
     return 0
