@@ -42,6 +42,13 @@ Item {
     readonly property int colComp: 170
     readonly property int colEnd: 190
 
+    // Ширина, ниже которой таблица из колонок не помещается.
+    // Тогда панель показывает компактный вид: те же цифры блоками,
+    // а не таблицей, — при узком окне ничего не уезжает за край.
+    readonly property int wideMinWidth: colStart + colWorked + colComp + colEnd
+            + 150 + AppTheme.spaceM * 6
+    readonly property bool compact: width > 0 && width < wideMinWidth + 6
+
     implicitHeight: backend && backend.selectedEmployeeId !== 0 ? mainRect.height : 0
 
     function num(key) {
@@ -199,6 +206,123 @@ Item {
     }
 
     // ==========================================
+    // КОМПАКТНЫЙ БЛОК (узкое окно)
+    // Один показатель: название и крупный остаток в первой строке,
+    // под ними — движение мелко: было · отработано · компенсировано.
+    // Пары «подпись + цифра» лежат в Flow и сами переносятся на
+    // следующую строку, если места по ширине не хватило.
+    // ==========================================
+    component ParamBlock: ColumnLayout {
+        id: pb
+        property string title: ""
+        property string bucket: "hours"
+        property string startKey: ""
+        property string accKey: ""
+        property string compKey: ""
+        property string endKey: ""
+        property string prevKey: ""
+
+        Layout.fillWidth: true
+        spacing: AppTheme.spaceXXS
+
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: AppTheme.spaceM
+
+            Text {
+                Layout.fillWidth: true
+                Layout.alignment: Qt.AlignVCenter
+                text: pb.title
+                color: AppTheme.textPrimary
+                font.family: AppTheme.fontFamily
+                font.pixelSize: AppTheme.sizeBody
+                font.weight: AppTheme.weightBold
+                wrapMode: Text.WordWrap
+            }
+            ColumnLayout {
+                Layout.alignment: Qt.AlignVCenter
+                spacing: 0
+
+                Text {
+                    Layout.alignment: Qt.AlignRight
+                    text: root.fmtBucket(pb.bucket, root.num(pb.endKey))
+                    color: root.num(pb.endKey) < 0
+                            ? AppTheme.textDanger : AppTheme.textPrimary
+                    font.family: AppTheme.fontFamily
+                    font.pixelSize: AppTheme.sizeH4
+                    font.features: {"tnum": 1}
+                    font.weight: AppTheme.weightBold
+                }
+                Text {
+                    visible: root.num(pb.prevKey) !== 0
+                    Layout.alignment: Qt.AlignRight
+                    text: root.prevYearLabel + ": "
+                            + root.fmtBucket(pb.bucket, root.num(pb.prevKey))
+                    color: root.num(pb.prevKey) < 0
+                            ? AppTheme.textDanger : AppTheme.textTertiary
+                    font.family: AppTheme.fontFamily
+                    font.pixelSize: AppTheme.sizeMicro
+                    font.features: {"tnum": 1}
+                }
+            }
+        }
+
+        Flow {
+            Layout.fillWidth: true
+            spacing: AppTheme.spaceS
+
+            Row {
+                spacing: AppTheme.spaceXXS
+                Text {
+                    text: "было"
+                    color: AppTheme.textTertiary
+                    font.family: AppTheme.fontFamily
+                    font.pixelSize: AppTheme.sizeSmall
+                }
+                Text {
+                    text: root.fmtBucket(pb.bucket, root.num(pb.startKey))
+                    color: root.flowColor(root.num(pb.startKey))
+                    font.family: AppTheme.fontFamily
+                    font.pixelSize: AppTheme.sizeSmall
+                    font.features: {"tnum": 1}
+                }
+            }
+            Row {
+                spacing: AppTheme.spaceXXS
+                Text {
+                    text: "отработано"
+                    color: AppTheme.textTertiary
+                    font.family: AppTheme.fontFamily
+                    font.pixelSize: AppTheme.sizeSmall
+                }
+                Text {
+                    text: root.workedText(pb.bucket, pb.accKey)
+                    color: root.flowColor(root.num(pb.accKey))
+                    font.family: AppTheme.fontFamily
+                    font.pixelSize: AppTheme.sizeSmall
+                    font.features: {"tnum": 1}
+                }
+            }
+            Row {
+                spacing: AppTheme.spaceXXS
+                Text {
+                    text: "компенсировано"
+                    color: AppTheme.textTertiary
+                    font.family: AppTheme.fontFamily
+                    font.pixelSize: AppTheme.sizeSmall
+                }
+                Text {
+                    text: root.compText(pb.bucket, pb.compKey)
+                    color: root.flowColor(root.num(pb.compKey))
+                    font.family: AppTheme.fontFamily
+                    font.pixelSize: AppTheme.sizeSmall
+                    font.features: {"tnum": 1}
+                }
+            }
+        }
+    }
+
+    // ==========================================
     // ГЛАВНАЯ ПАНЕЛЬ
     // ==========================================
     Rectangle {
@@ -281,6 +405,7 @@ Item {
             // Границы колонок общие на все строки — съехать нечему.
             // ------------------------------------------
             GridLayout {
+                visible: !root.compact
                 Layout.fillWidth: true
                 Layout.topMargin: AppTheme.spaceXXS
                 columns: 5
@@ -470,6 +595,94 @@ Item {
             }
 
             // ------------------------------------------
+            // КОМПАКТНЫЙ ВИД (узкое окно): те же цифры блоками.
+            // Даты периода — одной строкой сверху, как подписи
+            // колонок в широком виде.
+            // ------------------------------------------
+            ColumnLayout {
+                visible: root.compact
+                Layout.fillWidth: true
+                Layout.topMargin: AppTheme.spaceXXS
+                spacing: AppTheme.spaceM
+
+                Text {
+                    Layout.fillWidth: true
+                    text: "было — " + root.startWhen
+                            + " · отработано и компенсировано — " + root.flowWhen
+                            + " · осталось — " + root.endWhen
+                    color: AppTheme.textTertiary
+                    font.family: AppTheme.fontFamily
+                    font.pixelSize: AppTheme.sizeMicro
+                    wrapMode: Text.WordWrap
+                }
+
+                ParamBlock {
+                    title: "Время отдыха за ночные часы"
+                    bucket: "hours"
+                    startKey: "hours_start_value"
+                    accKey: "hours_acc_value"
+                    compKey: "hours_comp_value"
+                    endKey: "hours_end_value"
+                    prevKey: "hours_prev_end_value"
+                }
+                ParamBlock {
+                    title: "Дополнительные дни отдыха"
+                    bucket: "days"
+                    startKey: "days_start_value"
+                    accKey: "days_acc_value"
+                    compKey: "days_comp_value"
+                    endKey: "days_end_value"
+                    prevKey: "days_prev_end_value"
+                }
+                ParamBlock {
+                    title: "Сверхурочные часы"
+                    bucket: "overtime"
+                    startKey: "overtime_start_value"
+                    accKey: "overtime_acc_value"
+                    compKey: "overtime_comp_value"
+                    endKey: "overtime_end_value"
+                    prevKey: "overtime_prev_end_value"
+                }
+
+                // Всего — та же пара: подпись слева, крупная цифра справа
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: AppTheme.spaceM
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        Layout.alignment: Qt.AlignVCenter
+                        spacing: 0
+
+                        Text {
+                            text: "Всего"
+                            color: AppTheme.textPrimary
+                            font.family: AppTheme.fontFamily
+                            font.pixelSize: AppTheme.sizeBody
+                            font.weight: AppTheme.weightBold
+                        }
+                        Text {
+                            text: "все остатки в днях"
+                            color: AppTheme.textTertiary
+                            font.family: AppTheme.fontFamily
+                            font.pixelSize: AppTheme.sizeMicro
+                        }
+                    }
+                    Item { Layout.fillWidth: true }
+                    Text {
+                        Layout.alignment: Qt.AlignVCenter
+                        text: root.totalDays + " " + root.daysWord(root.totalDays)
+                        color: root.totalDays < 0
+                                ? AppTheme.textDanger : AppTheme.textPrimary
+                        font.family: AppTheme.fontFamily
+                        font.pixelSize: AppTheme.sizeH4
+                        font.features: {"tnum": 1}
+                        font.weight: AppTheme.weightBold
+                    }
+                }
+            }
+
+            // ------------------------------------------
             // НИЗ: только справочное мелким шрифтом
             // ------------------------------------------
             RowLayout {
@@ -480,12 +693,12 @@ Item {
                 Text {
                     text: root.secondaryText()
                     visible: text.length > 0
+                    Layout.fillWidth: true
                     color: AppTheme.textTertiary
                     font.family: AppTheme.fontFamily
                     font.pixelSize: AppTheme.sizeSmall
-                    elide: Text.ElideRight
+                    wrapMode: Text.WordWrap
                 }
-                Item { Layout.fillWidth: true }
                 RowLayout {
                     visible: root.isYearView
                     spacing: AppTheme.spaceXXS

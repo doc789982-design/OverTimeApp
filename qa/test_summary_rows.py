@@ -9,6 +9,8 @@
      значения (+16, −8), остаток прошлого года — словами, без скобок.
   C. Колонки имеют общие границы: правые края цифр совпадают во всех
      строках; нажатий, подсказки и горизонтальных разделителей нет.
+  D. Узкое окно: панель перестраивается в компактный вид блоками,
+     все цифры остаются видны и ничего не выходит за края панели.
 
 Запуск:
     LD_LIBRARY_PATH=/tmp/stubs QT_QPA_PLATFORM=offscreen \
@@ -185,6 +187,13 @@ def test_qml_rows(app):
         texts = []
 
         def walk(item):
+            # Невидимые ветки пропускаем: у панели два вида (таблица и
+            # компактный), одновременно показан только один из них.
+            try:
+                if not item.property("visible"):
+                    return
+            except Exception:
+                pass
             if "Text" in item.metaObject().className():
                 try:
                     value = item.property("text")
@@ -244,6 +253,37 @@ def test_qml_rows(app):
         assert "BalanceExplainDialog" not in main_qml
         assert "balanceExplainDialog" not in main_qml
         print("C: колонки ровные; нажатий, подсказки и линий между строками нет ✓")
+
+        # Узкое окно: компактный вид блоками, все цифры на месте и
+        # ни один текст не выходит за границы панели.
+        assert panel.property("compact") is False
+        qwin.setWidth(560)
+        qwin.setHeight(680)
+        settle(1.0)
+        assert panel.property("compact") is True, panel.property("width")
+        texts.clear()
+        walk(panel)
+        narrow = {}
+        for value, obj in texts:
+            narrow.setdefault(value, []).append(obj)
+        for needed in (
+                "было", "отработано", "компенсировано",
+                "12 ч.", "+16 ч.", "−8 ч.", "20 ч.",
+                "2025 год: 20 ч.", "Всего", "12 дней"):
+            assert needed in narrow, (needed, sorted(narrow))
+        assert "БЫЛО" not in narrow, "таблица должна быть скрыта в узком виде"
+        pw = float(panel.property("width") or 0)
+        ph = float(panel.property("height") or 0)
+        p0 = panel.mapToItem(None, QPointF(0, 0))
+        p1 = panel.mapToItem(None, QPointF(pw, ph))
+        for value, item in texts:
+            a = item.mapToItem(None, QPointF(0, 0))
+            b = item.mapToItem(None, QPointF(item.width(), item.height()))
+            assert a.x() >= p0.x() - 1 and b.x() <= p1.x() + 1, (
+                value, a.x(), b.x(), p0.x(), p1.x())
+            assert a.y() >= p0.y() - 1 and b.y() <= p1.y() + 1, (
+                value, a.y(), b.y(), p0.y(), p1.y())
+        print("D: узкий вид — все цифры видны, за край ничего не вылезает ✓")
     finally:
         try:
             wrapper.unlink()
