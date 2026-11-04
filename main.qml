@@ -1057,7 +1057,6 @@ ApplicationWindow {
     }
     AppUI.DayDutyDialog     { id: dayDutyDialog }
     AppUI.DayCompDialog     { id: dayCompDialog }
-    AppUI.BalanceExplainDialog { id: balanceExplainDialog }
     AppUI.EmpDialog         { id: empDialog }
     AppUI.EndStatusDialog   { id: endStatusDialog }
     AppUI.TransferDialog    { id: transferDialog }

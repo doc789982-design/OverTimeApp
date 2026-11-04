@@ -7,7 +7,8 @@
      прошлого года, а также подписи с настоящими датами периода.
   B. В настоящей панели видны заголовки колонок и подписанные
      значения (+16, −8), остаток прошлого года — словами, без скобок.
-  C. Нажатие на строку параметра и на «Всего» открывает расшифровку.
+  C. Колонки имеют общие границы: правые края цифр совпадают во всех
+     строках; нажатий, подсказки и горизонтальных разделителей нет.
 
 Запуск:
     LD_LIBRARY_PATH=/tmp/stubs QT_QPA_PLATFORM=offscreen \
@@ -144,13 +145,6 @@ import "components" as AppUI
 ApplicationWindow {
     width: 980; height: 380; visible: true
     color: "#111111"
-    Item {
-        id: balanceExplainDialog
-        objectName: "explainStub"
-        property string lastBucket: ""
-        property string lastScope: ""
-        function openExplain(bucket, scope) { lastBucket = bucket; lastScope = scope }
-    }
     Item { id: moneyInspector; function show() {} }
     AppUI.AppSummaryPanel {
         anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top
@@ -161,10 +155,9 @@ ApplicationWindow {
 
 
 def test_qml_rows(app):
-    from PySide6.QtCore import QPoint, QPointF, Qt
+    from PySide6.QtCore import QPointF
     from PySide6.QtQml import QQmlApplicationEngine
     from PySide6.QtQuick import QQuickWindow
-    from PySide6.QtTest import QTest
 
     stub = StubBackend()
     engine = QQmlApplicationEngine()
@@ -226,24 +219,31 @@ def test_qml_rows(app):
         assert xs == sorted(xs), xs
         print("B: колонки и подписанные цифры читаются одной строкой, скобок нет ✓")
 
-        explain = next(
-            o for o in qwin.findChildren(QObject)
-            if o.objectName() == "explainStub")
+        # Общие границы колонок: правые края цифр совпадают во всех строках.
+        def right_edge(value):
+            item = by_text[value][0]
+            return item.mapToItem(None, QPointF(item.width(), 0)).x()
 
-        def click_item(item):
-            pt = item.mapToItem(
-                None, QPointF(item.width() / 2, item.height() / 2))
-            QTest.mouseClick(
-                qwin, Qt.LeftButton, Qt.NoModifier,
-                QPoint(int(pt.x()), int(pt.y())))
-            settle(0.25)
+        for group in (
+                ("12 ч.", "2 д.", "−4 ч."),
+                ("+16 ч.", "+3 д.", "+20 ч."),
+                ("−8 ч.", "−1 д."),
+                ("20 ч.", "4 д.", "16 ч.", "12 дней")):
+            edges = [right_edge(value) for value in group]
+            assert max(edges) - min(edges) <= 1.0, (group, edges)
 
-        click_item(by_text["20 ч."][0])
-        assert explain.property("lastBucket") == "hours", explain.property("lastBucket")
-        assert explain.property("lastScope") == "month", explain.property("lastScope")
-        click_item(by_text["12 дней"][0])
-        assert explain.property("lastBucket") == "total", explain.property("lastBucket")
-        print("C: строка параметра и «Всего» открывают расшифровку ✓")
+        panel_qml = (ROOT / "components" / "AppSummaryPanel.qml").read_text(
+            encoding="utf-8")
+        for forbidden in ("TapHandler", "HoverHandler", "openExplain",
+                          "balanceExplainDialog", "Нажмите строку"):
+            assert forbidden not in panel_qml, forbidden
+        # Горизонтальных линий-разделителей в панели нет.
+        assert all(line.strip() != "height: 1" for line in panel_qml.splitlines())
+        assert not (ROOT / "components" / "BalanceExplainDialog.qml").exists()
+        main_qml = (ROOT / "main.qml").read_text(encoding="utf-8")
+        assert "BalanceExplainDialog" not in main_qml
+        assert "balanceExplainDialog" not in main_qml
+        print("C: колонки ровные; нажатий, подсказки и линий между строками нет ✓")
     finally:
         try:
             wrapper.unlink()

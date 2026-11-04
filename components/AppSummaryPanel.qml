@@ -13,10 +13,10 @@ Item {
     //
     // Панель читается как короткий расчёт слева направо:
     // было → отработано → компенсировано → осталось.
-    // Подписи колонок написаны один раз сверху, главная цифра —
-    // всегда в правой колонке «Осталось». Прошлый год не прячется
-    // в скобку: под остатком мелко стоит «2025 год: …», и только
-    // когда там не ноль. Подробности — по нажатию на строку.
+    // Все строки лежат в ОДНОЙ общей сетке, поэтому колонки имеют
+    // общие границы и цифры не могут «съехать» от строки к строке.
+    // Прошлый год не прячется в скобку: под остатком мелко стоит
+    // «2025 год: …», и только когда там не ноль.
     // ════════════════════════════════════════════════════════════════
     readonly property var summ: backend
             ? ((root.isYearView ? backend.yearSummary : backend.monthSummary) || ({}))
@@ -43,11 +43,6 @@ Item {
     readonly property int colEnd: 190
 
     implicitHeight: backend && backend.selectedEmployeeId !== 0 ? mainRect.height : 0
-
-    // Клик по строке или по «Всего» открывает расшифровку этой цифры
-    function openExplain(bucket) {
-        balanceExplainDialog.openExplain(bucket, root.isYearView ? "year" : "month")
-    }
 
     function num(key) {
         let v = root.summ ? root.summ[key] : undefined
@@ -121,6 +116,8 @@ Item {
         property bool strong: false
 
         Layout.preferredWidth: head.colWidth
+        Layout.minimumWidth: head.colWidth
+        Layout.maximumWidth: head.colWidth
         spacing: 0
 
         Text {
@@ -142,6 +139,61 @@ Item {
             opacity: 0.75
             font.family: AppTheme.fontFamily
             font.pixelSize: AppTheme.sizeMicro
+            elide: Text.ElideRight
+        }
+    }
+
+    // Обычная цифра потока: жёсткая ширина колонки, выравнивание вправо
+    component FlowText: Text {
+        id: flow
+        property int colWidth: 100
+
+        Layout.preferredWidth: flow.colWidth
+        Layout.minimumWidth: flow.colWidth
+        Layout.maximumWidth: flow.colWidth
+        Layout.fillHeight: true
+        horizontalAlignment: Text.AlignRight
+        verticalAlignment: Text.AlignVCenter
+        font.family: AppTheme.fontFamily
+        font.pixelSize: AppTheme.sizeBody
+        font.features: {"tnum": 1}
+        elide: Text.ElideRight
+    }
+
+    // Правая колонка ответа: остаток этого года и, если есть, прошлого
+    component EndCell: ColumnLayout {
+        id: endCell
+        property string bucket: "hours"
+        property int endValue: 0
+        property int prevValue: 0
+
+        Layout.preferredWidth: root.colEnd
+        Layout.minimumWidth: root.colEnd
+        Layout.maximumWidth: root.colEnd
+        Layout.alignment: Qt.AlignVCenter
+        spacing: 0
+
+        Text {
+            Layout.fillWidth: true
+            horizontalAlignment: Text.AlignRight
+            text: root.fmtBucket(endCell.bucket, endCell.endValue)
+            color: endCell.endValue < 0 ? AppTheme.textDanger : AppTheme.textPrimary
+            font.family: AppTheme.fontFamily
+            font.pixelSize: AppTheme.sizeH4
+            font.features: {"tnum": 1}
+            font.weight: AppTheme.weightBold
+            elide: Text.ElideRight
+        }
+        Text {
+            visible: endCell.prevValue !== 0
+            Layout.fillWidth: true
+            horizontalAlignment: Text.AlignRight
+            text: root.prevYearLabel + ": "
+                    + root.fmtBucket(endCell.bucket, endCell.prevValue)
+            color: endCell.prevValue < 0 ? AppTheme.textDanger : AppTheme.textTertiary
+            font.family: AppTheme.fontFamily
+            font.pixelSize: AppTheme.sizeMicro
+            font.features: {"tnum": 1}
             elide: Text.ElideRight
         }
     }
@@ -225,13 +277,17 @@ Item {
             }
 
             // ------------------------------------------
-            // ЗАГОЛОВКИ КОЛОНОК: один раз на всю таблицу
+            // ОДНА ОБЩАЯ СЕТКА: заголовки, три параметра, «Всего».
+            // Границы колонок общие на все строки — съехать нечему.
             // ------------------------------------------
-            RowLayout {
+            GridLayout {
                 Layout.fillWidth: true
                 Layout.topMargin: AppTheme.spaceXXS
-                spacing: AppTheme.spaceM
+                columns: 5
+                columnSpacing: AppTheme.spaceM
+                rowSpacing: AppTheme.spaceS
 
+                // Заголовки колонок
                 Item {
                     Layout.fillWidth: true
                     Layout.minimumWidth: 150
@@ -257,225 +313,164 @@ Item {
                     subtitle: root.endWhen
                     strong: true
                 }
-            }
 
-            Rectangle {
-                Layout.fillWidth: true
-                height: 1
-                color: AppTheme.borderDivider
-            }
-
-            // ------------------------------------------
-            // ТРИ СТРОКИ-ПАРАМЕТРА
-            // ------------------------------------------
-            Repeater {
-                model: [
-                    { "title": "Время отдыха за ночные часы", "bucket": "hours",
-                      "startKey": "hours_start_value", "accKey": "hours_acc_value",
-                      "compKey": "hours_comp_value", "endKey": "hours_end_value",
-                      "prevKey": "hours_prev_end_value" },
-                    { "title": "Дополнительные дни отдыха", "bucket": "days",
-                      "startKey": "days_start_value", "accKey": "days_acc_value",
-                      "compKey": "days_comp_value", "endKey": "days_end_value",
-                      "prevKey": "days_prev_end_value" },
-                    { "title": "Сверхурочные часы", "bucket": "overtime",
-                      "startKey": "overtime_start_value", "accKey": "overtime_acc_value",
-                      "compKey": "overtime_comp_value", "endKey": "overtime_end_value",
-                      "prevKey": "overtime_prev_end_value" }
-                ]
-
-                delegate: Item {
-                    id: rowItem
-                    required property var modelData
-
-                    property string bucket: modelData.bucket
-                    property int startValue: root.num(modelData.startKey)
-                    property int accValue: root.num(modelData.accKey)
-                    property int compValue: root.num(modelData.compKey)
-                    property int endValue: root.num(modelData.endKey)
-                    property int prevValue: root.num(modelData.prevKey)
-
+                // Время отдыха за ночные часы
+                Text {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: prevValue !== 0 ? 52 : 42
-
-                    Rectangle {
-                        anchors.fill: parent
-                        radius: AppTheme.radiusSmall
-                        color: rowHover.hovered ? AppTheme.stateHover : "transparent"
-                        Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
-                    }
-                    HoverHandler {
-                        id: rowHover
-                        cursorShape: Qt.PointingHandCursor
-                    }
-                    TapHandler {
-                        onTapped: root.openExplain(rowItem.bucket)
-                    }
-
-                    RowLayout {
-                        anchors.fill: parent
-                        spacing: AppTheme.spaceM
-
-                        Text {
-                            Layout.fillWidth: true
-                            Layout.minimumWidth: 150
-                            Layout.alignment: Qt.AlignVCenter
-                            text: modelData.title
-                            color: rowHover.hovered ? AppTheme.textOnSoft : AppTheme.textPrimary
-                            font.family: AppTheme.fontFamily
-                            font.pixelSize: AppTheme.sizeBody
-                            font.weight: AppTheme.weightBold
-                            wrapMode: Text.WordWrap
-                            Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
-                        }
-                        Text {
-                            Layout.preferredWidth: root.colStart
-                            Layout.alignment: Qt.AlignVCenter
-                            horizontalAlignment: Text.AlignRight
-                            text: root.fmtBucket(rowItem.bucket, rowItem.startValue)
-                            color: root.flowColor(rowItem.startValue)
-                            font.family: AppTheme.fontFamily
-                            font.pixelSize: AppTheme.sizeBody
-                            font.features: {"tnum": 1}
-                            elide: Text.ElideRight
-                        }
-                        Text {
-                            Layout.preferredWidth: root.colWorked
-                            Layout.alignment: Qt.AlignVCenter
-                            horizontalAlignment: Text.AlignRight
-                            text: root.workedText(rowItem.bucket, modelData.accKey)
-                            color: root.flowColor(rowItem.accValue)
-                            font.family: AppTheme.fontFamily
-                            font.pixelSize: AppTheme.sizeBody
-                            font.features: {"tnum": 1}
-                            elide: Text.ElideRight
-                        }
-                        Text {
-                            Layout.preferredWidth: root.colComp
-                            Layout.alignment: Qt.AlignVCenter
-                            horizontalAlignment: Text.AlignRight
-                            text: root.compText(rowItem.bucket, modelData.compKey)
-                            color: root.flowColor(rowItem.compValue)
-                            font.family: AppTheme.fontFamily
-                            font.pixelSize: AppTheme.sizeBody
-                            font.features: {"tnum": 1}
-                            elide: Text.ElideRight
-                        }
-                        ColumnLayout {
-                            Layout.preferredWidth: root.colEnd
-                            Layout.alignment: Qt.AlignVCenter
-                            spacing: 0
-
-                            Text {
-                                Layout.fillWidth: true
-                                horizontalAlignment: Text.AlignRight
-                                text: root.fmtBucket(rowItem.bucket, rowItem.endValue)
-                                color: rowItem.endValue < 0
-                                        ? AppTheme.textDanger
-                                        : (rowHover.hovered ? AppTheme.textOnSoft : AppTheme.textPrimary)
-                                font.family: AppTheme.fontFamily
-                                font.pixelSize: AppTheme.sizeH4
-                                font.features: {"tnum": 1}
-                                font.weight: AppTheme.weightBold
-                                elide: Text.ElideRight
-                                Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
-                            }
-                            Text {
-                                visible: rowItem.prevValue !== 0
-                                Layout.fillWidth: true
-                                horizontalAlignment: Text.AlignRight
-                                text: root.prevYearLabel + ": "
-                                        + root.fmtBucket(rowItem.bucket, rowItem.prevValue)
-                                color: rowItem.prevValue < 0
-                                        ? AppTheme.textDanger : AppTheme.textTertiary
-                                font.family: AppTheme.fontFamily
-                                font.pixelSize: AppTheme.sizeMicro
-                                font.features: {"tnum": 1}
-                                elide: Text.ElideRight
-                            }
-                        }
-                    }
-
-                    Rectangle {
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        anchors.bottom: parent.bottom
-                        height: 1
-                        color: AppTheme.borderDivider
-                        opacity: 0.65
-                    }
+                    Layout.minimumWidth: 150
+                    Layout.fillHeight: true
+                    text: "Время отдыха за ночные часы"
+                    color: AppTheme.textPrimary
+                    font.family: AppTheme.fontFamily
+                    font.pixelSize: AppTheme.sizeBody
+                    font.weight: AppTheme.weightBold
+                    verticalAlignment: Text.AlignVCenter
+                    wrapMode: Text.WordWrap
                 }
-            }
-
-            // ------------------------------------------
-            // ВСЕГО: итог правой колонки одной строкой
-            // ------------------------------------------
-            Item {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 46
-
-                Rectangle {
-                    anchors.fill: parent
-                    radius: AppTheme.radiusSmall
-                    color: totalHover.hovered ? AppTheme.stateHover : "transparent"
-                    Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
+                FlowText {
+                    colWidth: root.colStart
+                    text: root.fmtBucket("hours", root.num("hours_start_value"))
+                    color: root.flowColor(root.num("hours_start_value"))
                 }
-                HoverHandler {
-                    id: totalHover
-                    cursorShape: Qt.PointingHandCursor
+                FlowText {
+                    colWidth: root.colWorked
+                    text: root.workedText("hours", "hours_acc_value")
+                    color: root.flowColor(root.num("hours_acc_value"))
                 }
-                TapHandler {
-                    onTapped: root.openExplain("total")
+                FlowText {
+                    colWidth: root.colComp
+                    text: root.compText("hours", "hours_comp_value")
+                    color: root.flowColor(root.num("hours_comp_value"))
+                }
+                EndCell {
+                    bucket: "hours"
+                    endValue: root.num("hours_end_value")
+                    prevValue: root.num("hours_prev_end_value")
                 }
 
-                RowLayout {
-                    anchors.fill: parent
-                    spacing: AppTheme.spaceM
+                // Дополнительные дни отдыха
+                Text {
+                    Layout.fillWidth: true
+                    Layout.minimumWidth: 150
+                    Layout.fillHeight: true
+                    text: "Дополнительные дни отдыха"
+                    color: AppTheme.textPrimary
+                    font.family: AppTheme.fontFamily
+                    font.pixelSize: AppTheme.sizeBody
+                    font.weight: AppTheme.weightBold
+                    verticalAlignment: Text.AlignVCenter
+                    wrapMode: Text.WordWrap
+                }
+                FlowText {
+                    colWidth: root.colStart
+                    text: root.fmtBucket("days", root.num("days_start_value"))
+                    color: root.flowColor(root.num("days_start_value"))
+                }
+                FlowText {
+                    colWidth: root.colWorked
+                    text: root.workedText("days", "days_acc_value")
+                    color: root.flowColor(root.num("days_acc_value"))
+                }
+                FlowText {
+                    colWidth: root.colComp
+                    text: root.compText("days", "days_comp_value")
+                    color: root.flowColor(root.num("days_comp_value"))
+                }
+                EndCell {
+                    bucket: "days"
+                    endValue: root.num("days_end_value")
+                    prevValue: root.num("days_prev_end_value")
+                }
 
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        Layout.minimumWidth: 150
-                        Layout.alignment: Qt.AlignVCenter
-                        spacing: 0
+                // Сверхурочные часы
+                Text {
+                    Layout.fillWidth: true
+                    Layout.minimumWidth: 150
+                    Layout.fillHeight: true
+                    text: "Сверхурочные часы"
+                    color: AppTheme.textPrimary
+                    font.family: AppTheme.fontFamily
+                    font.pixelSize: AppTheme.sizeBody
+                    font.weight: AppTheme.weightBold
+                    verticalAlignment: Text.AlignVCenter
+                    wrapMode: Text.WordWrap
+                }
+                FlowText {
+                    colWidth: root.colStart
+                    text: root.fmtBucket("overtime", root.num("overtime_start_value"))
+                    color: root.flowColor(root.num("overtime_start_value"))
+                }
+                FlowText {
+                    colWidth: root.colWorked
+                    text: root.workedText("overtime", "overtime_acc_value")
+                    color: root.flowColor(root.num("overtime_acc_value"))
+                }
+                FlowText {
+                    colWidth: root.colComp
+                    text: root.compText("overtime", "overtime_comp_value")
+                    color: root.flowColor(root.num("overtime_comp_value"))
+                }
+                EndCell {
+                    bucket: "overtime"
+                    endValue: root.num("overtime_end_value")
+                    prevValue: root.num("overtime_prev_end_value")
+                }
 
-                        Text {
-                            text: "Всего"
-                            color: totalHover.hovered ? AppTheme.textOnSoft : AppTheme.textPrimary
-                            font.family: AppTheme.fontFamily
-                            font.pixelSize: AppTheme.sizeBody
-                            font.weight: AppTheme.weightBold
-                            Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
-                        }
-                        Text {
-                            text: "все остатки в днях"
-                            color: AppTheme.textTertiary
-                            font.family: AppTheme.fontFamily
-                            font.pixelSize: AppTheme.sizeMicro
-                        }
-                    }
-                    Item { Layout.preferredWidth: root.colStart }
-                    Item { Layout.preferredWidth: root.colWorked }
-                    Item { Layout.preferredWidth: root.colComp }
+                // Всего — итог правой колонки
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    Layout.minimumWidth: 150
+                    Layout.alignment: Qt.AlignVCenter
+                    spacing: 0
+
                     Text {
-                        Layout.preferredWidth: root.colEnd
-                        Layout.alignment: Qt.AlignVCenter
-                        horizontalAlignment: Text.AlignRight
-                        text: root.totalDays + " " + root.daysWord(root.totalDays)
-                        color: root.totalDays < 0
-                                ? AppTheme.textDanger
-                                : (totalHover.hovered ? AppTheme.textOnSoft : AppTheme.textPrimary)
+                        text: "Всего"
+                        color: AppTheme.textPrimary
                         font.family: AppTheme.fontFamily
-                        font.pixelSize: AppTheme.sizeH4
-                        font.features: {"tnum": 1}
+                        font.pixelSize: AppTheme.sizeBody
                         font.weight: AppTheme.weightBold
-                        elide: Text.ElideRight
-                        Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
                     }
+                    Text {
+                        text: "все остатки в днях"
+                        color: AppTheme.textTertiary
+                        font.family: AppTheme.fontFamily
+                        font.pixelSize: AppTheme.sizeMicro
+                    }
+                }
+                Item {
+                    Layout.preferredWidth: root.colStart
+                    Layout.minimumWidth: root.colStart
+                    Layout.maximumWidth: root.colStart
+                }
+                Item {
+                    Layout.preferredWidth: root.colWorked
+                    Layout.minimumWidth: root.colWorked
+                    Layout.maximumWidth: root.colWorked
+                }
+                Item {
+                    Layout.preferredWidth: root.colComp
+                    Layout.minimumWidth: root.colComp
+                    Layout.maximumWidth: root.colComp
+                }
+                Text {
+                    Layout.preferredWidth: root.colEnd
+                    Layout.minimumWidth: root.colEnd
+                    Layout.maximumWidth: root.colEnd
+                    Layout.fillHeight: true
+                    horizontalAlignment: Text.AlignRight
+                    verticalAlignment: Text.AlignVCenter
+                    text: root.totalDays + " " + root.daysWord(root.totalDays)
+                    color: root.totalDays < 0 ? AppTheme.textDanger : AppTheme.textPrimary
+                    font.family: AppTheme.fontFamily
+                    font.pixelSize: AppTheme.sizeH4
+                    font.features: {"tnum": 1}
+                    font.weight: AppTheme.weightBold
+                    elide: Text.ElideRight
                 }
             }
 
             // ------------------------------------------
-            // НИЗ: справочное мелким шрифтом + подсказка про нажатие
+            // НИЗ: только справочное мелким шрифтом
             // ------------------------------------------
             RowLayout {
                 Layout.fillWidth: true
@@ -510,16 +505,6 @@ Item {
                         font.pixelSize: AppTheme.sizeSmall
                         elide: Text.ElideRight
                     }
-                }
-                Text {
-                    Layout.alignment: Qt.AlignVCenter
-                    Layout.maximumWidth: 330
-                    text: "Нажмите строку — покажем дежурства и компенсации"
-                    color: AppTheme.textTertiary
-                    opacity: 0.75
-                    font.family: AppTheme.fontFamily
-                    font.pixelSize: AppTheme.sizeMicro
-                    elide: Text.ElideRight
                 }
             }
         }
