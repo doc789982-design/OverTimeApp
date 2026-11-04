@@ -9,8 +9,10 @@
      значения (+16, −8), остаток прошлого года — словами, без скобок.
   C. Колонки имеют общие границы: правые края цифр совпадают во всех
      строках; нажатий, подсказки и горизонтальных разделителей нет.
-  D. Узкое окно: панель перестраивается в компактный вид блоками,
-     все цифры остаются видны и ничего не выходит за края панели.
+  D. Узкое окно: та же таблица колонок, только уже — колонки и
+     шрифт пропорционально ужимаются. Отдельного вертикального
+     вида нет; все цифры видны, ничего не выходит за края панели
+     и не обрезается многоточием.
 
 Запуск:
     LD_LIBRARY_PATH=/tmp/stubs QT_QPA_PLATFORM=offscreen \
@@ -254,36 +256,71 @@ def test_qml_rows(app):
         assert "balanceExplainDialog" not in main_qml
         print("C: колонки ровные; нажатий, подсказки и линий между строками нет ✓")
 
-        # Узкое окно: компактный вид блоками, все цифры на месте и
-        # ни один текст не выходит за границы панели.
-        assert panel.property("compact") is False
+        # Узкое окно: та же таблица, только колонки и шрифт уже.
+        # Никакого отдельного «вертикального» вида блоками нет.
+        assert "compact" not in panel_qml and "ParamBlock" not in panel_qml
+
+        def collect():
+            texts.clear()
+            walk(panel)
+            got = {}
+            for value, obj in texts:
+                got.setdefault(value, []).append(obj)
+            return got
+
+        def check_inside():
+            pw = float(panel.property("width") or 0)
+            ph = float(panel.property("height") or 0)
+            p0 = panel.mapToItem(None, QPointF(0, 0))
+            p1 = panel.mapToItem(None, QPointF(pw, ph))
+            for value, item in texts:
+                a = item.mapToItem(None, QPointF(0, 0))
+                b = item.mapToItem(None, QPointF(item.width(), item.height()))
+                assert a.x() >= p0.x() - 1 and b.x() <= p1.x() + 1, (
+                    value, a.x(), b.x(), p0.x(), p1.x())
+                assert a.y() >= p0.y() - 1 and b.y() <= p1.y() + 1, (
+                    value, a.y(), b.y(), p0.y(), p1.y())
+
+        def truncated(item):
+            try:
+                return bool(item.property("truncated"))
+            except Exception:
+                return False
+
         qwin.setWidth(560)
-        qwin.setHeight(680)
+        qwin.setHeight(520)
         settle(1.0)
-        assert panel.property("compact") is True, panel.property("width")
-        texts.clear()
-        walk(panel)
-        narrow = {}
-        for value, obj in texts:
-            narrow.setdefault(value, []).append(obj)
+        narrow = collect()
         for needed in (
-                "было", "отработано", "компенсировано",
+                "БЫЛО", "ОТРАБОТАНО", "КОМПЕНСИРОВАНО", "ОСТАЛОСЬ",
                 "12 ч.", "+16 ч.", "−8 ч.", "20 ч.",
                 "2025 год: 20 ч.", "Всего", "12 дней"):
             assert needed in narrow, (needed, sorted(narrow))
-        assert "БЫЛО" not in narrow, "таблица должна быть скрыта в узком виде"
-        pw = float(panel.property("width") or 0)
-        ph = float(panel.property("height") or 0)
-        p0 = panel.mapToItem(None, QPointF(0, 0))
-        p1 = panel.mapToItem(None, QPointF(pw, ph))
-        for value, item in texts:
-            a = item.mapToItem(None, QPointF(0, 0))
-            b = item.mapToItem(None, QPointF(item.width(), item.height()))
-            assert a.x() >= p0.x() - 1 and b.x() <= p1.x() + 1, (
-                value, a.x(), b.x(), p0.x(), p1.x())
-            assert a.y() >= p0.y() - 1 and b.y() <= p1.y() + 1, (
-                value, a.y(), b.y(), p0.y(), p1.y())
-        print("D: узкий вид — все цифры видны, за край ничего не вылезает ✓")
+        assert "было" not in narrow, "вертикальных блоков быть не должно"
+        check_inside()
+        # Ни одна надпись не обрезана многоточием
+        cut = [value for value, item in texts if truncated(item)]
+        assert not cut, cut
+        # И колонки по-прежнему держат общие границы
+        for group in (
+                ("12 ч.", "2 д.", "−4 ч."),
+                ("+16 ч.", "+3 д.", "+20 ч."),
+                ("20 ч.", "4 д.", "16 ч.", "12 дней")):
+            edges = []
+            for value in group:
+                item = narrow[value][0]
+                edges.append(item.mapToItem(None, QPointF(item.width(), 0)).x())
+            assert max(edges) - min(edges) <= 1.0, (group, edges)
+
+        # Совсем узко: цифры всё равно целиком, за край ничего не выходит
+        qwin.setWidth(460)
+        settle(1.0)
+        tiny = collect()
+        check_inside()
+        for value in ("12 ч.", "+16 ч.", "−8 ч.", "20 ч.", "12 дней"):
+            assert value in tiny, (value, sorted(tiny))
+            assert not truncated(tiny[value][0]), value
+        print("D: узкое окно — та же таблица, колонки ужались, всё видно ✓")
     finally:
         try:
             wrapper.unlink()

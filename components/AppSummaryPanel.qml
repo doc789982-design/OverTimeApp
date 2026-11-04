@@ -37,17 +37,30 @@ Item {
     readonly property string prevYearLabel: root.summ.prev_year_label || "прошлый год"
     readonly property int totalDays: root.num("total_days")
 
-    readonly property int colStart: 110
-    readonly property int colWorked: 130
-    readonly property int colComp: 170
-    readonly property int colEnd: 190
+    // Колонки цифр: обычные ширины — 110/130/170/190. Если окно
+    // узкое и на всё места не хватает, колонки и шрифт просто
+    // пропорционально ужимаются: таблица остаётся той же таблицей
+    // при любой ширине, ничего за край не вылезает.
+    readonly property int titleMinW: 110
+    readonly property int colGap: width >= 700 ? AppTheme.spaceM
+            : (width >= 540 ? AppTheme.spaceS : AppTheme.spaceXS)
+    readonly property real colScale: width > 0
+            ? Math.min(1, Math.max(0, width - AppTheme.spaceM * 2
+                    - colGap * 4 - titleMinW) / 600)
+            : 1
+    readonly property int colStart: Math.floor(110 * colScale)
+    readonly property int colWorked: Math.floor(130 * colScale)
+    readonly property int colComp: Math.floor(170 * colScale)
+    readonly property int colEnd: Math.floor(190 * colScale)
 
-    // Ширина, ниже которой таблица из колонок не помещается.
-    // Тогда панель показывает компактный вид: те же цифры блоками,
-    // а не таблицей, — при узком окне ничего не уезжает за край.
-    readonly property int wideMinWidth: colStart + colWorked + colComp + colEnd
-            + 150 + AppTheme.spaceM * 6
-    readonly property bool compact: width > 0 && width < wideMinWidth + 6
+    readonly property int titleFont: colScale >= 0.8 ? AppTheme.sizeBody
+            : (colScale >= 0.6 ? 13 : 12)
+    readonly property int flowFont: colScale >= 0.85 ? AppTheme.sizeBody
+            : (colScale >= 0.68 ? 13 : 12)
+    readonly property int endFont: colScale >= 0.85 ? AppTheme.sizeH4
+            : (colScale >= 0.68 ? 21 : (colScale >= 0.55 ? 18 : 16))
+    readonly property int headFont: colScale >= 0.68 ? AppTheme.sizeMicro
+            : (colScale >= 0.55 ? 9 : 8)
 
     implicitHeight: backend && backend.selectedEmployeeId !== 0 ? mainRect.height : 0
 
@@ -133,9 +146,9 @@ Item {
             text: head.title
             color: head.strong ? AppTheme.textSecondary : AppTheme.textTertiary
             font.family: AppTheme.fontFamily
-            font.pixelSize: AppTheme.sizeMicro
+            font.pixelSize: root.headFont
             font.weight: AppTheme.weightBold
-            font.letterSpacing: 0.6
+            font.letterSpacing: root.colScale >= 0.9 ? 0.6 : 0
             elide: Text.ElideRight
         }
         Text {
@@ -145,12 +158,12 @@ Item {
             color: AppTheme.textTertiary
             opacity: 0.75
             font.family: AppTheme.fontFamily
-            font.pixelSize: AppTheme.sizeMicro
+            font.pixelSize: root.headFont
             elide: Text.ElideRight
         }
     }
 
-    // Обычная цифра потока: жёсткая ширина колонки, выравнивание вправо
+    // Обычная цифра потока: ширина — по своей колонке, выравнивание вправо
     component FlowText: Text {
         id: flow
         property int colWidth: 100
@@ -162,7 +175,7 @@ Item {
         horizontalAlignment: Text.AlignRight
         verticalAlignment: Text.AlignVCenter
         font.family: AppTheme.fontFamily
-        font.pixelSize: AppTheme.sizeBody
+        font.pixelSize: root.flowFont
         font.features: {"tnum": 1}
         elide: Text.ElideRight
     }
@@ -186,7 +199,7 @@ Item {
             text: root.fmtBucket(endCell.bucket, endCell.endValue)
             color: endCell.endValue < 0 ? AppTheme.textDanger : AppTheme.textPrimary
             font.family: AppTheme.fontFamily
-            font.pixelSize: AppTheme.sizeH4
+            font.pixelSize: root.endFont
             font.features: {"tnum": 1}
             font.weight: AppTheme.weightBold
             elide: Text.ElideRight
@@ -202,123 +215,6 @@ Item {
             font.pixelSize: AppTheme.sizeMicro
             font.features: {"tnum": 1}
             elide: Text.ElideRight
-        }
-    }
-
-    // ==========================================
-    // КОМПАКТНЫЙ БЛОК (узкое окно)
-    // Один показатель: название и крупный остаток в первой строке,
-    // под ними — движение мелко: было · отработано · компенсировано.
-    // Пары «подпись + цифра» лежат в Flow и сами переносятся на
-    // следующую строку, если места по ширине не хватило.
-    // ==========================================
-    component ParamBlock: ColumnLayout {
-        id: pb
-        property string title: ""
-        property string bucket: "hours"
-        property string startKey: ""
-        property string accKey: ""
-        property string compKey: ""
-        property string endKey: ""
-        property string prevKey: ""
-
-        Layout.fillWidth: true
-        spacing: AppTheme.spaceXXS
-
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: AppTheme.spaceM
-
-            Text {
-                Layout.fillWidth: true
-                Layout.alignment: Qt.AlignVCenter
-                text: pb.title
-                color: AppTheme.textPrimary
-                font.family: AppTheme.fontFamily
-                font.pixelSize: AppTheme.sizeBody
-                font.weight: AppTheme.weightBold
-                wrapMode: Text.WordWrap
-            }
-            ColumnLayout {
-                Layout.alignment: Qt.AlignVCenter
-                spacing: 0
-
-                Text {
-                    Layout.alignment: Qt.AlignRight
-                    text: root.fmtBucket(pb.bucket, root.num(pb.endKey))
-                    color: root.num(pb.endKey) < 0
-                            ? AppTheme.textDanger : AppTheme.textPrimary
-                    font.family: AppTheme.fontFamily
-                    font.pixelSize: AppTheme.sizeH4
-                    font.features: {"tnum": 1}
-                    font.weight: AppTheme.weightBold
-                }
-                Text {
-                    visible: root.num(pb.prevKey) !== 0
-                    Layout.alignment: Qt.AlignRight
-                    text: root.prevYearLabel + ": "
-                            + root.fmtBucket(pb.bucket, root.num(pb.prevKey))
-                    color: root.num(pb.prevKey) < 0
-                            ? AppTheme.textDanger : AppTheme.textTertiary
-                    font.family: AppTheme.fontFamily
-                    font.pixelSize: AppTheme.sizeMicro
-                    font.features: {"tnum": 1}
-                }
-            }
-        }
-
-        Flow {
-            Layout.fillWidth: true
-            spacing: AppTheme.spaceS
-
-            Row {
-                spacing: AppTheme.spaceXXS
-                Text {
-                    text: "было"
-                    color: AppTheme.textTertiary
-                    font.family: AppTheme.fontFamily
-                    font.pixelSize: AppTheme.sizeSmall
-                }
-                Text {
-                    text: root.fmtBucket(pb.bucket, root.num(pb.startKey))
-                    color: root.flowColor(root.num(pb.startKey))
-                    font.family: AppTheme.fontFamily
-                    font.pixelSize: AppTheme.sizeSmall
-                    font.features: {"tnum": 1}
-                }
-            }
-            Row {
-                spacing: AppTheme.spaceXXS
-                Text {
-                    text: "отработано"
-                    color: AppTheme.textTertiary
-                    font.family: AppTheme.fontFamily
-                    font.pixelSize: AppTheme.sizeSmall
-                }
-                Text {
-                    text: root.workedText(pb.bucket, pb.accKey)
-                    color: root.flowColor(root.num(pb.accKey))
-                    font.family: AppTheme.fontFamily
-                    font.pixelSize: AppTheme.sizeSmall
-                    font.features: {"tnum": 1}
-                }
-            }
-            Row {
-                spacing: AppTheme.spaceXXS
-                Text {
-                    text: "компенсировано"
-                    color: AppTheme.textTertiary
-                    font.family: AppTheme.fontFamily
-                    font.pixelSize: AppTheme.sizeSmall
-                }
-                Text {
-                    text: root.compText(pb.bucket, pb.compKey)
-                    color: root.flowColor(root.num(pb.compKey))
-                    font.family: AppTheme.fontFamily
-                    font.pixelSize: AppTheme.sizeSmall
-                    font.features: {"tnum": 1}
-                }
-            }
         }
     }
 
@@ -405,17 +301,16 @@ Item {
             // Границы колонок общие на все строки — съехать нечему.
             // ------------------------------------------
             GridLayout {
-                visible: !root.compact
                 Layout.fillWidth: true
                 Layout.topMargin: AppTheme.spaceXXS
                 columns: 5
-                columnSpacing: AppTheme.spaceM
+                columnSpacing: root.colGap
                 rowSpacing: AppTheme.spaceS
 
                 // Заголовки колонок
                 Item {
                     Layout.fillWidth: true
-                    Layout.minimumWidth: 150
+                    Layout.minimumWidth: root.titleMinW
                 }
                 ColumnHead {
                     colWidth: root.colStart
@@ -442,12 +337,12 @@ Item {
                 // Время отдыха за ночные часы
                 Text {
                     Layout.fillWidth: true
-                    Layout.minimumWidth: 150
+                    Layout.minimumWidth: root.titleMinW
                     Layout.fillHeight: true
                     text: "Время отдыха за ночные часы"
                     color: AppTheme.textPrimary
                     font.family: AppTheme.fontFamily
-                    font.pixelSize: AppTheme.sizeBody
+                    font.pixelSize: root.titleFont
                     font.weight: AppTheme.weightBold
                     verticalAlignment: Text.AlignVCenter
                     wrapMode: Text.WordWrap
@@ -476,12 +371,12 @@ Item {
                 // Дополнительные дни отдыха
                 Text {
                     Layout.fillWidth: true
-                    Layout.minimumWidth: 150
+                    Layout.minimumWidth: root.titleMinW
                     Layout.fillHeight: true
                     text: "Дополнительные дни отдыха"
                     color: AppTheme.textPrimary
                     font.family: AppTheme.fontFamily
-                    font.pixelSize: AppTheme.sizeBody
+                    font.pixelSize: root.titleFont
                     font.weight: AppTheme.weightBold
                     verticalAlignment: Text.AlignVCenter
                     wrapMode: Text.WordWrap
@@ -510,12 +405,12 @@ Item {
                 // Сверхурочные часы
                 Text {
                     Layout.fillWidth: true
-                    Layout.minimumWidth: 150
+                    Layout.minimumWidth: root.titleMinW
                     Layout.fillHeight: true
                     text: "Сверхурочные часы"
                     color: AppTheme.textPrimary
                     font.family: AppTheme.fontFamily
-                    font.pixelSize: AppTheme.sizeBody
+                    font.pixelSize: root.titleFont
                     font.weight: AppTheme.weightBold
                     verticalAlignment: Text.AlignVCenter
                     wrapMode: Text.WordWrap
@@ -544,7 +439,7 @@ Item {
                 // Всего — итог правой колонки
                 ColumnLayout {
                     Layout.fillWidth: true
-                    Layout.minimumWidth: 150
+                    Layout.minimumWidth: root.titleMinW
                     Layout.alignment: Qt.AlignVCenter
                     spacing: 0
 
@@ -552,7 +447,7 @@ Item {
                         text: "Всего"
                         color: AppTheme.textPrimary
                         font.family: AppTheme.fontFamily
-                        font.pixelSize: AppTheme.sizeBody
+                        font.pixelSize: root.titleFont
                         font.weight: AppTheme.weightBold
                     }
                     Text {
@@ -587,98 +482,10 @@ Item {
                     text: root.totalDays + " " + root.daysWord(root.totalDays)
                     color: root.totalDays < 0 ? AppTheme.textDanger : AppTheme.textPrimary
                     font.family: AppTheme.fontFamily
-                    font.pixelSize: AppTheme.sizeH4
+                    font.pixelSize: root.endFont
                     font.features: {"tnum": 1}
                     font.weight: AppTheme.weightBold
                     elide: Text.ElideRight
-                }
-            }
-
-            // ------------------------------------------
-            // КОМПАКТНЫЙ ВИД (узкое окно): те же цифры блоками.
-            // Даты периода — одной строкой сверху, как подписи
-            // колонок в широком виде.
-            // ------------------------------------------
-            ColumnLayout {
-                visible: root.compact
-                Layout.fillWidth: true
-                Layout.topMargin: AppTheme.spaceXXS
-                spacing: AppTheme.spaceM
-
-                Text {
-                    Layout.fillWidth: true
-                    text: "было — " + root.startWhen
-                            + " · отработано и компенсировано — " + root.flowWhen
-                            + " · осталось — " + root.endWhen
-                    color: AppTheme.textTertiary
-                    font.family: AppTheme.fontFamily
-                    font.pixelSize: AppTheme.sizeMicro
-                    wrapMode: Text.WordWrap
-                }
-
-                ParamBlock {
-                    title: "Время отдыха за ночные часы"
-                    bucket: "hours"
-                    startKey: "hours_start_value"
-                    accKey: "hours_acc_value"
-                    compKey: "hours_comp_value"
-                    endKey: "hours_end_value"
-                    prevKey: "hours_prev_end_value"
-                }
-                ParamBlock {
-                    title: "Дополнительные дни отдыха"
-                    bucket: "days"
-                    startKey: "days_start_value"
-                    accKey: "days_acc_value"
-                    compKey: "days_comp_value"
-                    endKey: "days_end_value"
-                    prevKey: "days_prev_end_value"
-                }
-                ParamBlock {
-                    title: "Сверхурочные часы"
-                    bucket: "overtime"
-                    startKey: "overtime_start_value"
-                    accKey: "overtime_acc_value"
-                    compKey: "overtime_comp_value"
-                    endKey: "overtime_end_value"
-                    prevKey: "overtime_prev_end_value"
-                }
-
-                // Всего — та же пара: подпись слева, крупная цифра справа
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: AppTheme.spaceM
-
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        Layout.alignment: Qt.AlignVCenter
-                        spacing: 0
-
-                        Text {
-                            text: "Всего"
-                            color: AppTheme.textPrimary
-                            font.family: AppTheme.fontFamily
-                            font.pixelSize: AppTheme.sizeBody
-                            font.weight: AppTheme.weightBold
-                        }
-                        Text {
-                            text: "все остатки в днях"
-                            color: AppTheme.textTertiary
-                            font.family: AppTheme.fontFamily
-                            font.pixelSize: AppTheme.sizeMicro
-                        }
-                    }
-                    Item { Layout.fillWidth: true }
-                    Text {
-                        Layout.alignment: Qt.AlignVCenter
-                        text: root.totalDays + " " + root.daysWord(root.totalDays)
-                        color: root.totalDays < 0
-                                ? AppTheme.textDanger : AppTheme.textPrimary
-                        font.family: AppTheme.fontFamily
-                        font.pixelSize: AppTheme.sizeH4
-                        font.features: {"tnum": 1}
-                        font.weight: AppTheme.weightBold
-                    }
                 }
             }
 
