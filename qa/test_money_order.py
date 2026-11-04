@@ -56,7 +56,9 @@ def fresh_db():
                     "2026-01", 0, 0, 0, 10 * 60, 6 * 60, 3)
     # ночные часы появляются из дежурств: 20:00–08:00 на будний день
     db.add_duty(1, datetime(2026, 10, 7, 20, 0), datetime(2026, 10, 8, 8, 0), "")
-    db.add_duty(2, datetime(2026, 10, 7, 20, 0), datetime(2026, 10, 8, 8, 0), "")
+    # У второго дежурство короче: суммы получателей обязаны различаться,
+    # иначе тест не заметит подмену личной суммы общей по приказу.
+    db.add_duty(2, datetime(2026, 10, 7, 20, 0), datetime(2026, 10, 8, 4, 0), "")
     db.conn.commit()
     return db
 
@@ -131,6 +133,19 @@ def part_bc_order_and_journal() -> None:
     assert o["order_no"] == "245" and o["count"] == 2
     assert o["hours"] == sum(bal.values()), o
     assert {e["id"] for e in o["employees"]} == {1, 2}
+    by_id = {e["id"]: e for e in o["employees"]}
+    assert by_id[1]["hours"] == bal[1] and by_id[2]["hours"] == bal[2], by_id
+    assert bal[1] != bal[2], bal
+    # карточка приказа для выбранного сотрудника — только его сумма,
+    # а общий итог приказа остаётся в поле hours для прочих случаев
+    for sel in (1, 2):
+        b._selected_employee_id = sel
+        b.loadMoneyOrders()
+        oo = [x for x in b._money_orders if x["order_no"] == "245"][0]
+        assert oo["card_employee_id"] == sel, oo
+        assert oo["card_hours"] == bal[sel], oo
+        assert oo["hours"] == sum(bal.values()), oo
+    b._selected_employee_id = 0
 
     # ── ошибка: Петрову просим больше, чем есть; база не трогается ──
     before = db.conn.execute(

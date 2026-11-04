@@ -3094,12 +3094,33 @@ class Backend(QObject):
             if self.active_db:
                 self.active_db.conn.execute("ROLLBACK;")
 
+    @staticmethod
+    def _sanitize_opening_balances(open_mins, open_overtime_mins, open_days,
+                                   prev_mins, prev_overtime, prev_days):
+        """Начальные ночные часы и дни не бывают отрицательными.
+
+        Сверхурочные — исключение: сотрудник может начать учёт с минусом
+        сверх нормы, поэтому оба сверхурочных остатка сохраняем как есть.
+        """
+        return (
+            max(0, int(open_mins or 0)),
+            int(open_overtime_mins or 0),
+            max(0, int(open_days or 0)),
+            max(0, int(prev_mins or 0)),
+            int(prev_overtime or 0),
+            max(0, int(prev_days or 0)),
+        )
+
     @Slot(str, str, str, str, str, str, int, int, int, int, int, int)
     def saveEmployee(self, last_name, first_name, middle_name, rank, position, start_month, open_mins, open_overtime_mins, open_days, prev_mins, prev_overtime, prev_days):
         if not self.active_db: return
         if not last_name.strip() or not first_name.strip():
             print("ПИТОН: Ошибка! Фамилия и имя обязательны.")
             return
+        (open_mins, open_overtime_mins, open_days,
+         prev_mins, prev_overtime, prev_days) = self._sanitize_opening_balances(
+            open_mins, open_overtime_mins, open_days,
+            prev_mins, prev_overtime, prev_days)
 
         try:
             self.active_db.begin()
@@ -3127,6 +3148,10 @@ class Backend(QObject):
         if not last_name.strip() or not first_name.strip():
             print("ПИТОН: Ошибка! Фамилия и имя обязательны.")
             return
+        (open_mins, open_overtime_mins, open_days,
+         prev_mins, prev_overtime, prev_days) = self._sanitize_opening_balances(
+            open_mins, open_overtime_mins, open_days,
+            prev_mins, prev_overtime, prev_days)
 
         try:
             self.active_db.begin()
@@ -3551,12 +3576,23 @@ class Backend(QObject):
                 emp["days"] += int(r["amount_days"] or 0)
 
         res = []
+        selected_id = int(getattr(self, "_selected_employee_id", 0) or 0)
         for key in order:
             g = groups[key]
             emps = list(g["employees"].values())
             # режим приказа: только заначка → 1, вперемешку → 2, иначе 0
             source_mode = 1 if g["prev"] > 0 and g["cur"] == 0 else (
                 2 if g["prev"] > 0 else 0)
+            total_hours = sum(e["hours"] for e in emps)
+            total_overtime = sum(e["overtime"] for e in emps)
+            total_days = sum(e["days"] for e in emps)
+            # Карточка журнала открывается из панели выбранного сотрудника.
+            # Его личную сумму считаем здесь же, в Python, а не ищем её
+            # в QML по вложенному списку получателей: так карточка не
+            # покажет общий итог приказа вместо суммы этого сотрудника.
+            card_emp = next(
+                (e for e in emps if int(e.get("id") or 0) == selected_id),
+                None) if len(emps) > 1 and selected_id > 0 else None
             res.append({
                 "order_no": g["order_no"],
                 "order_date": g["order_date"],
@@ -3564,9 +3600,15 @@ class Backend(QObject):
                 "comment": g["comment"],
                 "source_mode": source_mode,
                 "count": len(emps),
-                "hours": sum(e["hours"] for e in emps),
-                "overtime": sum(e["overtime"] for e in emps),
-                "days": sum(e["days"] for e in emps),
+                "hours": total_hours,
+                "overtime": total_overtime,
+                "days": total_days,
+                "card_employee_id": int(card_emp["id"]) if card_emp else 0,
+                "card_name": card_emp["name"] if card_emp else "",
+                "card_hours": card_emp["hours"] if card_emp else total_hours,
+                "card_overtime": (card_emp["overtime"] if card_emp
+                                  else total_overtime),
+                "card_days": card_emp["days"] if card_emp else total_days,
                 "employees": emps,
             })
         self._money_orders = res

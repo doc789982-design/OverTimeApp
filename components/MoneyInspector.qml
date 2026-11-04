@@ -50,12 +50,26 @@ AppDialog {
     function cardAmount(order) {
         let src = order
         let label = ""
-        if (order.count > 1 && backend.selectedEmployeeId > 0) {
-            for (let i = 0; i < order.employees.length; i++) {
-                if (order.employees[i].id === backend.selectedEmployeeId) {
-                    src = order.employees[i]
-                    label = shortName(order.employees[i].name) + ": "
-                    break
+        let selectedId = Number(backend.selectedEmployeeId || 0)
+        if (order.count > 1 && selectedId > 0) {
+            // Backend при загрузке журнала уже посчитал личную сумму
+            // выбранного сотрудника — берём её напрямую. Поиск ниже
+            // оставлен для старых/тестовых данных без card_* полей.
+            if (Number(order.card_employee_id || 0) === selectedId) {
+                src = {
+                    hours: Number(order.card_hours || 0),
+                    overtime: Number(order.card_overtime || 0),
+                    days: Number(order.card_days || 0)
+                }
+                label = shortName(order.card_name || "") + ": "
+            } else {
+                let emps = order.employees || []
+                for (let i = 0; i < emps.length; i++) {
+                    if (Number(emps[i].id || 0) === selectedId) {
+                        src = emps[i]
+                        label = shortName(emps[i].name) + ": "
+                        break
+                    }
                 }
             }
         }

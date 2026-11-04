@@ -27,6 +27,12 @@ AppDialog {
 
     onAboutToShow: empErrorMsg.visible = false
 
+    // Пустое поле и одиночный минус при вводе означают ноль, а не NaN.
+    function fieldInt(field) {
+        let value = parseInt(field.text, 10)
+        return isNaN(value) ? 0 : value
+    }
+
     Column {
         width: parent.width
         spacing: AppTheme.spaceM
@@ -139,6 +145,7 @@ AppDialog {
             AppTextField {
                 id: empOpenOvertime
                 numericOnly: true
+                allowNegative: true
                 width: (parent.width - AppTheme.spaceS * 2) / 3
                 label: "Сверхурочно (ч)"
                 text: "0"
@@ -147,6 +154,7 @@ AppDialog {
             AppTextField {
                 id: empPrevOpenOvertime
                 numericOnly: true
+                allowNegative: true
                 width: (parent.width - AppTheme.spaceS * 2) / 3
                 label: "Сверхурочно (ч)"
                 text: "0"
@@ -194,13 +202,13 @@ AppDialog {
         }
         empErrorMsg.visible = false
 
-        let cur_mins = parseInt(empOpenHours.text || "0") * 60
-        let cur_over = parseInt(empOpenOvertime.text || "0") * 60
-        let cur_days = parseInt(empOpenDays.text || "0")
-        
-        let prev_mins = parseInt(empPrevOpenHours.text || "0") * 60
-        let prev_over = parseInt(empPrevOpenOvertime.text || "0") * 60
-        let prev_days = parseInt(empPrevOpenDays.text || "0")
+        let cur_mins = root.fieldInt(empOpenHours) * 60
+        let cur_over = root.fieldInt(empOpenOvertime) * 60
+        let cur_days = root.fieldInt(empOpenDays)
+
+        let prev_mins = root.fieldInt(empPrevOpenHours) * 60
+        let prev_over = root.fieldInt(empPrevOpenOvertime) * 60
+        let prev_days = root.fieldInt(empPrevOpenDays)
 
         if (root.editId === 0) {
             backend.saveEmployee(

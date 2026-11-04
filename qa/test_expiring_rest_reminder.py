@@ -185,7 +185,11 @@ def test_qml_contract():
     assert "backend.setExpiringRestReminderEnabled(checked)" in settings
     assert "readonly property string defaultMessage" in notification
     assert "root.message = root.defaultMessage" in notification
-    print("E: QML проверяет после открытия базы и не затирает текст табеля ✓")
+    assert "Screen.desktopAvailableHeight" in notification
+    assert "Screen.desktopAvailableWidth" in notification
+    assert "root.y = root.targetY()" in notification
+    assert "root.y = 60" not in notification
+    print("E: QML проверяет после открытия базы, уведомление стоит снизу над панелью задач ✓")
 
 
 def main():

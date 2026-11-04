@@ -16,10 +16,27 @@ Window {
     height: card.height + 32
 
     readonly property string defaultMessage: "Не забудьте сделать табель, ознакомить с ним всех сотрудников и сдать его в кадровое подразделение до 5-го числа месяца. Скрыть до следующего напоминания."
+    readonly property int screenMargin: 20
     property string message: root.defaultMessage
     property string actionText: ""
 
     signal actionTriggered()
+
+    // Нижний правый угол доступной части экрана: desktopAvailable*
+    // не включает панель задач Windows, поэтому плашка встаёт над ней.
+    function targetX() {
+        return Screen.virtualX + Screen.desktopAvailableWidth - root.width - root.screenMargin
+    }
+    function targetY() {
+        return Screen.virtualY + Screen.desktopAvailableHeight - root.height - root.screenMargin
+    }
+
+    // Высота зависит от длины текста: если карточка пересчиталась уже
+    // после показа, её нижний край всё равно должен остаться на месте.
+    onHeightChanged: {
+        if (root.visible)
+            root.y = root.targetY()
+    }
 
     Rectangle {
         id: card
@@ -104,17 +121,16 @@ Window {
     }
 
     function _show() {
-        let screenW = Screen.width
-        let startX = screenW + 50
-        let targetX = screenW - root.width - 20
+        let startX = Screen.virtualX + Screen.width + 50
+        let endX = root.targetX()
 
         root.x = startX
-        root.y = 60
+        root.y = root.targetY()
         root.opacity = 0.0
 
         openXAnim.from = startX
-        openXAnim.to = targetX
-        closeXAnim.from = targetX
+        openXAnim.to = endX
+        closeXAnim.from = endX
         closeXAnim.to = startX
 
         root.show()
