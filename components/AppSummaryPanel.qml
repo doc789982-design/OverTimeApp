@@ -130,15 +130,6 @@ Item {
                     elide: Text.ElideRight
                     Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
                 }
-                Text {
-                    text: "?"
-                    color: card.explainHover ? AppTheme.textOnSoft : AppTheme.textTertiary
-                    opacity: card.explainHover ? 1.0 : 0.45
-                    font.family: AppTheme.fontFamily
-                    font.pixelSize: AppTheme.sizeSmall
-                    font.weight: AppTheme.weightBold
-                    Behavior on opacity { NumberAnimation { duration: AppTheme.durMicro } }
-                }
             }
 
             // ОДОМЕТР: при смене месяца старое значение «прокатывается» вверх
@@ -359,15 +350,6 @@ Item {
                         color: AppTheme.textTertiary
                         font.family: AppTheme.fontFamily
                         font.pixelSize: AppTheme.sizeSmall
-                        Layout.alignment: Qt.AlignVCenter
-                    }
-                    Text {
-                        text: "?"
-                        color: totalHover.hovered ? AppTheme.textOnSoft : AppTheme.textTertiary
-                        opacity: totalHover.hovered ? 1.0 : 0.45
-                        font.family: AppTheme.fontFamily
-                        font.pixelSize: AppTheme.sizeSmall
-                        font.weight: AppTheme.weightBold
                         Layout.alignment: Qt.AlignVCenter
                     }
                 }

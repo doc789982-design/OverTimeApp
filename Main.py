@@ -28,7 +28,7 @@ from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtCore import QObject, Slot, Signal, Property, QUrl, QThread, QTimer, Qt
 
 from database import DB, format_day_conflicts
-from utils import fmt_date_iso, fmt_dt_iso, d_iso, d_parse, dt_parse, dt_iso, parse_hhmm, subtract_intervals, intersect, merge_intervals, fmt_minutes_ru_words, month_bounds_dt, ru_plural
+from utils import fmt_date_iso, fmt_dt_iso, d_iso, d_parse, dt_parse, dt_iso, parse_hhmm, subtract_intervals, intersect, merge_intervals, fmt_minutes_ru_words, fmt_minutes_ru_full, month_bounds_dt, ru_plural
 from logic import compute_month_summary, is_employee_shift, is_employee_shifted_weekends, validate_non_negative_over_year, default_is_working, build_shifted_weekend_checker, resolve_is_working, _row_flag, summary_cache_scope, total_overtime_days, previous_year_rest_days, count_workdays_between, split_both_years, get_accrual_details_for_period
 import app_update
 
@@ -2691,6 +2691,8 @@ class Backend(QObject):
         
         duty_map = {}
         comp_set = set()
+        comp_totals = {}
+        comp_labels = {}
         status_map = {}
         
         if self._selected_employee_id > 0:
@@ -2698,16 +2700,45 @@ class Backend(QObject):
             status_map = self.active_db.get_statuses_for_period(eid, d_iso(grid_start), d_iso(grid_end))
             
             # ЗАГРУЗКА КОМПЕНСАЦИЙ ДЛЯ СЕТКИ
+            # Заодно собираем подпись дня («8 часов», «1 день»):
+            # её показывает разворачивающаяся при наведении метка «В»,
+            # чтобы сумму было видно без открытия инспектора дня.
+            def add_comp_label(display_d, unit, minutes=0):
+                if not display_d:
+                    return
+                comp_set.add(display_d)
+                bucket = comp_totals.setdefault(
+                    display_d, {"hours": 0, "overtime": 0, "days": 0})
+                if unit in ("hours", "overtime"):
+                    bucket[unit] += int(minutes or 0)
+                else:
+                    bucket["days"] += 1
+
             comps = self.active_db.list_compensations_for_period(eid, d_iso(grid_start), d_iso(grid_end))
             for c in comps:
                 if c["unit"] in ("hours", "overtime"):
                     # Если есть визуальная дата (order_date), берем её, иначе event_date
                     display_d = c["order_date"] if c["order_date"] else c["event_date"]
-                    if display_d: comp_set.add(display_d)
+                    add_comp_label(display_d, c["unit"], c["amount_minutes"])
                 else:
-                    # Для дней берем все даты из связанной таблицы
+                    # Для дней берем все даты из связанной таблицы:
+                    # в каждой дате стоит один день этой компенсации
                     for cd in self.active_db.get_comp_dates(int(c["id"])):
-                        comp_set.add(cd)
+                        add_comp_label(cd, c["unit"])
+
+            for display_d, bucket in comp_totals.items():
+                parts = []
+                both_times = bool(bucket["hours"] and bucket["overtime"])
+                if bucket["hours"]:
+                    txt = fmt_minutes_ru_full(bucket["hours"])
+                    parts.append(f"ноч. {txt}" if both_times else txt)
+                if bucket["overtime"]:
+                    txt = fmt_minutes_ru_full(bucket["overtime"])
+                    parts.append(f"сверх {txt}" if both_times else txt)
+                if bucket["days"]:
+                    n = bucket["days"]
+                    parts.append(f"{n} {ru_plural(n, 'день', 'дня', 'дней')}")
+                comp_labels[display_d] = " · ".join(parts) or "компенсация"
             
             start_dt = datetime.combine(grid_start, datetime.min.time())
             end_dt = datetime.combine(grid_end + timedelta(days=1), datetime.min.time())
@@ -2757,6 +2788,7 @@ class Backend(QObject):
                     "is_pre_holiday": d in pre_holidays_set,
                     "status": status_map.get(d, ""),
                     "has_comp": d_str in comp_set,
+                    "comp_label": comp_labels.get(d_str, ""),
                     "duties": duty_map.get(d_str, [])
                 })
                 

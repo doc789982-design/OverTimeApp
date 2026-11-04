@@ -542,6 +542,9 @@ Item {
 
                             Column {
                                 id: rightPanel
+                                // Поверх дежурств: развёрнутая при наведении
+                                // пилюлька метки уходит влево, поверх ячейки
+                                z: 5
                                 anchors.top: parent.top
                                 anchors.right: parent.right
                                 anchors.margins: AppTheme.spaceXS
@@ -567,6 +570,15 @@ Item {
                                     width: 18
                                     height: 18
                                     anchors.horizontalCenter: parent.horizontalCenter
+
+                                    // При наведении круг «В» разворачивается
+                                    // влево в пилюльку с суммой компенсации:
+                                    // «8 часов», «3 часа», «1 день» — без
+                                    // открытия инспектора дня
+                                    property bool expanded: compMouse.containsMouse
+                                    readonly property string fullLabel: isValid && dayInfo.comp_label
+                                                                         ? dayInfo.comp_label
+                                                                         : "компенсация"
 
                                     // Появление метки — «собирается» на месте:
                                     // проявление и рост. При смене месяца вход
@@ -607,19 +619,43 @@ Item {
 
                                     Rectangle {
                                         id: compBody
-                                        anchors.fill: parent
+                                        // Правый край на месте, рост — только влево
+                                        anchors.right: parent.right
+                                        anchors.top: parent.top
+                                        height: parent.height
+                                        width: compBadgeItem.expanded
+                                               ? Math.min(Math.max(18, dayCell.width - 12),
+                                                          Math.max(18, compFullText.implicitWidth + 14))
+                                               : 18
                                         radius: AppTheme.radiusPill
                                         color: AppTheme.bgTealSoft
+                                        clip: true
+                                        Behavior on width {
+                                            NumberAnimation { duration: AppTheme.durFast; easing.type: AppTheme.easeStandard }
+                                        }
                                         Text {
                                             anchors.centerIn: parent
                                             text: "В"
                                             font.pixelSize: AppTheme.sizeMicro
                                             font.weight: AppTheme.weightBold
                                             color: AppTheme.accentTeal
+                                            opacity: compBadgeItem.expanded ? 0 : 1
+                                            Behavior on opacity { NumberAnimation { duration: AppTheme.durMicro } }
+                                        }
+                                        Text {
+                                            id: compFullText
+                                            anchors.centerIn: parent
+                                            text: compBadgeItem.fullLabel
+                                            font.pixelSize: AppTheme.sizeMicro
+                                            font.weight: AppTheme.weightBold
+                                            color: AppTheme.accentTeal
+                                            opacity: compBadgeItem.expanded ? 1 : 0
+                                            Behavior on opacity { NumberAnimation { duration: AppTheme.durMicro } }
                                         }
                                         // Нажатие на метку — окно правок компенсации этого дня
                                         HoverHandler { cursorShape: Qt.PointingHandCursor }
                                         MouseArea {
+                                            id: compMouse
                                             anchors.fill: parent
                                             hoverEnabled: true
                                             cursorShape: Qt.PointingHandCursor
@@ -645,6 +681,18 @@ Item {
                                     width: 18
                                     height: 18
                                     anchors.horizontalCenter: parent.horizontalCenter
+
+                                    // Как метка «В»: при наведении круг
+                                    // разворачивается влево в пилюльку
+                                    // с полным словом статуса
+                                    property bool expanded: statusHover.hovered
+                                    readonly property string fullLabel: !isValid
+                                                                         ? ""
+                                                                         : (dayInfo.status === "Б"
+                                                                            ? "больничный"
+                                                                            : (dayInfo.status === "О"
+                                                                               ? "отпуск"
+                                                                               : "командировка"))
 
                                     // Появление метки — «собирается» на месте:
                                     // проявление и рост. При смене месяца вход
@@ -685,7 +733,14 @@ Item {
 
                                     Rectangle {
                                         id: statusBody
-                                        anchors.fill: parent
+                                        // Правый край на месте, рост — только влево
+                                        anchors.right: parent.right
+                                        anchors.top: parent.top
+                                        height: parent.height
+                                        width: statusBarItem.expanded
+                                               ? Math.min(Math.max(18, dayCell.width - 12),
+                                                          Math.max(18, statusFullText.implicitWidth + 14))
+                                               : 18
                                         radius: AppTheme.radiusPill
                                         color: !isValid
                                                ? "transparent"
@@ -694,7 +749,19 @@ Item {
                                                   : (dayInfo.status === "О"
                                                      ? AppTheme.bgWarningSoft
                                                      : AppTheme.bgPurpleSoft))
-                                        Text { 
+                                        clip: true
+                                        Behavior on width {
+                                            NumberAnimation { duration: AppTheme.durFast; easing.type: AppTheme.easeStandard }
+                                        }
+
+                                        // Только смотрит на курсор, клики не трогает:
+                                        // нажатие по метке по-прежнему открывает день
+                                        HoverHandler {
+                                            id: statusHover
+                                            cursorShape: Qt.PointingHandCursor
+                                        }
+
+                                        Text {
                                             anchors.centerIn: parent
                                             text: isValid ? dayInfo.status : ""
                                             font.pixelSize: AppTheme.sizeMicro
@@ -706,6 +773,24 @@ Item {
                                                       : (dayInfo.status === "О"
                                                          ? AppTheme.accentWarning
                                                          : AppTheme.accentPurple))
+                                            opacity: statusBarItem.expanded ? 0 : 1
+                                            Behavior on opacity { NumberAnimation { duration: AppTheme.durMicro } }
+                                        }
+                                        Text {
+                                            id: statusFullText
+                                            anchors.centerIn: parent
+                                            text: statusBarItem.fullLabel
+                                            font.pixelSize: AppTheme.sizeMicro
+                                            font.weight: AppTheme.weightBold
+                                            color: !isValid
+                                                   ? "transparent"
+                                                   : (dayInfo.status === "Б"
+                                                      ? AppTheme.accentDanger
+                                                      : (dayInfo.status === "О"
+                                                         ? AppTheme.accentWarning
+                                                         : AppTheme.accentPurple))
+                                            opacity: statusBarItem.expanded ? 1 : 0
+                                            Behavior on opacity { NumberAnimation { duration: AppTheme.durMicro } }
                                         }
                                     }
 

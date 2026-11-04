@@ -147,3 +147,16 @@ def fmt_minutes_ru_words(minutes: int) -> str:
     parts = [f"{h} ч."]
     if mm > 0: parts.append(f"{mm} м.")
     return sign + " ".join(parts)
+
+def fmt_minutes_ru_full(minutes: int) -> str:
+    """Полными словами: «1 час», «3 часа», «8 часов 30 минут»."""
+    sign = "-" if minutes < 0 else ""
+    m = abs(int(minutes))
+    h = m // 60
+    mm = m % 60
+    parts = []
+    if h:
+        parts.append(f"{h} {ru_plural(h, 'час', 'часа', 'часов')}")
+    if mm or not parts:
+        parts.append(f"{mm} {ru_plural(mm, 'минута', 'минуты', 'минут')}")
+    return sign + " ".join(parts)
