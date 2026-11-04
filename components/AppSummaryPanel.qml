@@ -9,229 +9,140 @@ Item {
     property bool isYearView: false
 
     // ════════════════════════════════════════════════════════════════
-    // ОДНА ПАНЕЛЬ — ДВА НАПОЛНЕНИЯ
-    // Месяц и год показываются одним и тем же элементом: шапка с
-    // заголовком, кнопкой «Деньги» и графой «Всего дней», три карточки
-    // показателей и поясняющая строка снизу. Различается только
-    // источник данных (summ) и подписи периода.
+    // ПАНЕЛЬ «ИТОГИ»: ТРИ ПАРАМЕТРА — ТРИ СТРОКИ
+    //
+    // Панель читается как короткий расчёт слева направо:
+    // было → отработано → компенсировано → осталось.
+    // Подписи колонок написаны один раз сверху, главная цифра —
+    // всегда в правой колонке «Осталось». Прошлый год не прячется
+    // в скобку: под остатком мелко стоит «2025 год: …», и только
+    // когда там не ноль. Подробности — по нажатию на строку.
     // ════════════════════════════════════════════════════════════════
-    readonly property var summ: root.isYearView ? backend.yearSummary : backend.monthSummary
-    readonly property bool isShiftMonth: !root.isYearView && backend.monthSummary.is_shift === true
-    readonly property string periodText: root.isYearView
-            ? (backend.currentPeriodText.split(" ")[1] + " год")
-            : backend.currentPeriodText
-    readonly property string endCaption: root.isYearView ? "остаток на конец года"
-                                                         : "остаток на конец месяца"
+    readonly property var summ: backend
+            ? ((root.isYearView ? backend.yearSummary : backend.monthSummary) || ({}))
+            : ({})
+    readonly property bool isShiftMonth: !root.isYearView && root.summ.is_shift === true
+    readonly property string periodText: {
+        if (!backend || !backend.currentPeriodText) return ""
+        if (!root.isYearView) return backend.currentPeriodText
+        let parts = String(backend.currentPeriodText).split(" ")
+        return parts.length > 1 ? parts[1] + " год" : backend.currentPeriodText
+    }
+    readonly property string startWhen: root.summ.period_start_label
+            || (root.isYearView ? "на 1 января" : "на начало месяца")
+    readonly property string flowWhen: root.summ.period_flow_label
+            || (root.isYearView ? "за год" : "за месяц")
+    readonly property string endWhen: root.summ.period_end_label
+            || (root.isYearView ? "на 31 декабря" : "на конец месяца")
+    readonly property string prevYearLabel: root.summ.prev_year_label || "прошлый год"
+    readonly property int totalDays: root.num("total_days")
 
-    implicitHeight: backend.selectedEmployeeId !== 0 ? mainRect.height : 0
+    readonly property int colStart: 110
+    readonly property int colWorked: 130
+    readonly property int colComp: 170
+    readonly property int colEnd: 190
 
-    // Клик по графе или по «Всего» открывает расшифровку именно этой цифры
+    implicitHeight: backend && backend.selectedEmployeeId !== 0 ? mainRect.height : 0
+
+    // Клик по строке или по «Всего» открывает расшифровку этой цифры
     function openExplain(bucket) {
         balanceExplainDialog.openExplain(bucket, root.isYearView ? "year" : "month")
     }
 
+    function num(key) {
+        let v = root.summ ? root.summ[key] : undefined
+        let n = Number(v)
+        return isNaN(n) ? 0 : n
+    }
+
+    // Минуты — как в остальной программе: «8 ч.», «8 ч. 30 м.»
+    function fmtBucket(bucket, value) {
+        let v = Math.trunc(Number(value) || 0)
+        if (bucket === "days")
+            return v + " д."
+        let sign = v < 0 ? "−" : ""
+        let a = Math.abs(v)
+        let h = Math.trunc(a / 60)
+        let m = a % 60
+        return sign + h + " ч." + (m > 0 ? " " + m + " м." : "")
+    }
+
+    function workedText(bucket, key) {
+        let v = root.num(key)
+        if (v === 0) return "—"
+        return (v > 0 ? "+" : "") + root.fmtBucket(bucket, v)
+    }
+
+    function compText(bucket, key) {
+        let v = root.num(key)
+        if (v === 0) return "—"
+        if (v > 0) return "−" + root.fmtBucket(bucket, v)
+        return root.fmtBucket(bucket, v)
+    }
+
+    function flowColor(value) {
+        if (value < 0) return AppTheme.textDanger
+        if (value === 0) return AppTheme.textTertiary
+        return AppTheme.textSecondary
+    }
+
     // Склонение: 1 день / 2 дня / 5 дней
     function daysWord(n) {
-        if (n % 100 >= 11 && n % 100 <= 19) return "дней"
-        var d = n % 10
+        let a = Math.abs(Math.trunc(Number(n) || 0))
+        if (a % 100 >= 11 && a % 100 <= 19) return "дней"
+        let d = a % 10
         if (d === 1) return "день"
         if (d >= 2 && d <= 4) return "дня"
         return "дней"
     }
 
-    // ==========================================
-    // МИНИ-ЯЧЕЙКА ПОТОКА ВНУТРИ КАРТОЧКИ
-    // Значение отцентрировано по горизонтали относительно пояснения снизу.
-    // ==========================================
-    // Ячейка мини-потока. В тёмной теме значения белые, а скобка прошлого
-    // года — полупрозрачный белый (серые скобки #9E9E9E из Main.py
-    // подменяются здесь); в светлой — прежние зелёный/красный и серый
-    component MiniStat: Column {
-        id: ms
-        property string valText: "—"
-        property string labelText: ""
-        property color valColor: AppTheme.textPrimary
-        spacing: 1
-
-        Text {
-            width: ms.width
-            horizontalAlignment: Text.AlignHCenter
-            text: AppTheme.isDark ? ms.valText.replace(/#9E9E9E/g, "#B3FFFFFF") : ms.valText
-            color: ms.valColor
-            font.family: AppTheme.fontFamily
-            font.pixelSize: AppTheme.sizeSmall
-            font.weight: AppTheme.weightBold
-            elide: Text.ElideRight
-            textFormat: Text.StyledText
+    function secondaryText() {
+        if (root.isYearView) {
+            return "Больничный " + (root.summ.b_days || "—")
+                    + " · Отпуск " + (root.summ.o_days || "—")
+                    + " · Командировка " + (root.summ.k_days || "—")
         }
-        Text {
-            width: ms.width
-            horizontalAlignment: Text.AlignHCenter
-            text: ms.labelText
-            color: AppTheme.textTertiary
-            font.family: AppTheme.fontFamily
-            font.pixelSize: AppTheme.sizeMicro
-            elide: Text.ElideRight
+        if (root.isShiftMonth) {
+            return "По графику: ночью " + (root.summ.shift_night || "—")
+                    + " · в праздники " + (root.summ.shift_holiday || "—")
+                    + " · норма месяца " + (root.summ.norm_minutes || "0")
         }
+        return ""
     }
 
     // ==========================================
-    // ГРАФА ОДНОГО ПОКАЗАТЕЛЯ
+    // ЗАГОЛОВОК КОЛОНКИ
     // ==========================================
-    component StatCard: Item {
-        id: card
+    component ColumnHead: ColumnLayout {
+        id: head
         property string title: ""
-        property string bucket: ""
-        readonly property bool explainHover: cardHover.hovered
-        property int padLeft: AppTheme.spaceM
-        property int padRight: AppTheme.spaceM
-        property string endText: "—"
-        property bool endNeg: false
-        property string startText: "—"
-        property string accText: "—"
-        property string compText: "—"
-        property string caption: "остаток на конец месяца"
+        property string subtitle: ""
+        property int colWidth: 100
+        property bool strong: false
 
-        HoverHandler {
-            id: cardHover
-            enabled: card.bucket !== ""
-            cursorShape: Qt.PointingHandCursor
+        Layout.preferredWidth: head.colWidth
+        spacing: 0
+
+        Text {
+            Layout.fillWidth: true
+            horizontalAlignment: Text.AlignRight
+            text: head.title
+            color: head.strong ? AppTheme.textSecondary : AppTheme.textTertiary
+            font.family: AppTheme.fontFamily
+            font.pixelSize: AppTheme.sizeMicro
+            font.weight: AppTheme.weightBold
+            font.letterSpacing: 0.6
+            elide: Text.ElideRight
         }
-        TapHandler {
-            enabled: card.bucket !== ""
-            onTapped: root.openExplain(card.bucket)
-        }
-
-        Layout.fillWidth: true
-        Layout.fillHeight: true
-        Layout.minimumWidth: 170
-        Layout.preferredHeight: 170
-
-        ColumnLayout {
-            id: cardCol
-            anchors.fill: parent
-            anchors.leftMargin: card.padLeft
-            anchors.rightMargin: card.padRight
-            anchors.topMargin: AppTheme.spaceS
-            anchors.bottomMargin: AppTheme.spaceS
-            spacing: AppTheme.spaceXXS
-
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: AppTheme.spaceXS
-
-                Text {
-                    Layout.fillWidth: true
-                    text: card.title
-                    color: card.explainHover ? AppTheme.textOnSoft : AppTheme.textSecondary
-                    font.family: AppTheme.fontFamily
-                    font.pixelSize: AppTheme.sizeSmall
-                    font.weight: AppTheme.weightBold
-                    elide: Text.ElideRight
-                    Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
-                }
-            }
-
-            // ОДОМЕТР: при смене месяца старое значение «прокатывается» вверх
-            // и растворяется, новое выезжает снизу — как счётчик с барабаном.
-            // Анимируются два готовых Text, поэтому работает любой формат
-            // строки: скобки прошлого года, «ч.», «дн.» — без перерисовки цифр
-            Item {
-                id: odometer
-                Layout.fillWidth: true
-                Layout.topMargin: AppTheme.spaceXS
-                Layout.preferredHeight: odoMain.implicitHeight
-                clip: true
-
-                property string lastShown: ""
-                property bool primed: false
-
-                Text {
-                    id: odoMain
-                    x: 0; y: 0
-                    width: odometer.width
-                    text: card.endText
-                    color: card.endNeg ? AppTheme.textDanger : AppTheme.textPrimary
-                    font.family: AppTheme.fontFamily
-                    font.pixelSize: AppTheme.sizeH3
-                    font.features: {"tnum": 1}
-                    font.weight: AppTheme.weightBold
-                    textFormat: Text.StyledText
-                    elide: Text.ElideRight
-                }
-                Text {
-                    id: odoGhost
-                    x: 0; y: 0
-                    width: odometer.width
-                    opacity: 0
-                    text: ""
-                    color: card.endNeg ? AppTheme.textDanger : AppTheme.textPrimary
-                    font.family: AppTheme.fontFamily
-                    font.pixelSize: AppTheme.sizeH3
-                    font.features: {"tnum": 1}
-                    font.weight: AppTheme.weightBold
-                    textFormat: Text.StyledText
-                    elide: Text.ElideRight
-                }
-
-                Connections {
-                    target: card
-                    function onEndTextChanged() {
-                        // первый показ — без анимации
-                        if (!odometer.primed) {
-                            odometer.primed = true
-                            odometer.lastShown = card.endText
-                            return
-                        }
-                        if (card.endText === odometer.lastShown) return
-                        odoGhost.text = odometer.lastShown
-                        odoGhost.y = 0
-                        odoGhost.opacity = 1
-                        odoMain.y = odoMain.implicitHeight + 4
-                        odoRoll.start()
-                        odometer.lastShown = card.endText
-                    }
-                }
-
-                ParallelAnimation {
-                    id: odoRoll
-                    NumberAnimation { target: odoGhost; property: "y"; to: -odoGhost.implicitHeight - 4; duration: 220; easing.type: Easing.OutCubic }
-                    NumberAnimation { target: odoGhost; property: "opacity"; to: 0; duration: 220; easing.type: Easing.OutCubic }
-                    NumberAnimation { target: odoMain; property: "y"; to: 0; duration: 220; easing.type: Easing.OutCubic }
-                }
-            }
-            Text {
-                Layout.fillWidth: true
-                text: card.caption
-                color: AppTheme.textTertiary
-                font.family: AppTheme.fontFamily
-                font.pixelSize: AppTheme.sizeMicro
-            }
-
-            // Распорка — прижимает разделитель и поток вниз карточки
-            Item { Layout.fillHeight: true }
-
-            Rectangle {
-                Layout.fillWidth: true
-                height: 1
-                Layout.topMargin: AppTheme.spaceXS
-                color: AppTheme.borderDivider
-            }
-
-            // Поток: три равные ячейки «на начало / +начислено / −компенсировано».
-            // Обычный Row с явной шириной каждой ячейки — без вложенных layout-ов,
-            // чтобы ячейки всегда ложились в один ряд внутри карточки.
-            Row {
-                id: flowRow
-                Layout.fillWidth: true
-                Layout.preferredHeight: 30
-                Layout.topMargin: AppTheme.spaceXXS
-                spacing: 0
-
-                MiniStat { width: flowRow.width / 3; valText: card.startText; labelText: "на начало" }
-                MiniStat { width: flowRow.width / 3; valText: card.accText;  labelText: "начислено"; valColor: AppTheme.isDark ? "#FFFFFF" : AppTheme.accentSuccess }
-                MiniStat { width: flowRow.width / 3; valText: card.compText; labelText: "компенсировано"; valColor: AppTheme.isDark ? "#FFFFFF" : AppTheme.accentDanger }
-            }
+        Text {
+            Layout.fillWidth: true
+            horizontalAlignment: Text.AlignRight
+            text: head.subtitle
+            color: AppTheme.textTertiary
+            opacity: 0.75
+            font.family: AppTheme.fontFamily
+            font.pixelSize: AppTheme.sizeMicro
+            elide: Text.ElideRight
         }
     }
 
@@ -240,16 +151,16 @@ Item {
     // ==========================================
     Rectangle {
         id: mainRect
-        visible: backend.selectedEmployeeId !== 0
+        visible: backend && backend.selectedEmployeeId !== 0
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
         height: summaryBody.implicitHeight + AppTheme.spaceM * 2
         radius: AppTheme.radiusLarge
         color: AppTheme.bgSurface
-        border.color: AppTheme.borderDivider; border.width: 1
+        border.color: AppTheme.borderDivider
+        border.width: 1
 
-        // Тень-картинка вместо вычисляемой (Level 1)
         AppShadow { level: 1 }
 
         ColumnLayout {
@@ -258,10 +169,10 @@ Item {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.margins: AppTheme.spaceM
-            spacing: AppTheme.spaceM
+            spacing: AppTheme.spaceXS
 
             // ------------------------------------------
-            // ШАПКА: заголовок + период, «Деньги», «Всего дней»
+            // ШАПКА: заголовок, период и «Деньгами»
             // ------------------------------------------
             RowLayout {
                 Layout.fillWidth: true
@@ -290,7 +201,6 @@ Item {
                     }
                 }
 
-                // Распорка: прижимает «Деньги» и «Всего дней» к правому краю строки
                 Item { Layout.fillWidth: true }
 
                 // «Деньгами» — кнопка-стадион, как все кнопки программы.
@@ -306,195 +216,285 @@ Item {
                     onClicked: { backend.loadMoneyOrders(); moneyInspector.show() }
                     AppToolTip {
                         anchors.horizontalCenter: parent.horizontalCenter
-                        anchors.bottom: parent.top; anchors.bottomMargin: AppTheme.spaceXXS
+                        anchors.bottom: parent.top
+                        anchors.bottomMargin: AppTheme.spaceXXS
                         isVisible: parent.hovered
                         text: "Приказы о денежной компенсации"
                     }
                 }
+            }
 
-// «Всего дней» — переработка сотрудника в днях (справа в шапке).
-                // Один элемент на оба вида: число берётся из текущего набора итогов.
-                // Шрифт числа — как у даты в шапке меню дня (fontCondensed, sizeH4, bold).
-                RowLayout {
-                    id: totalDaysStat
-                    Layout.alignment: Qt.AlignVCenter
-                    spacing: AppTheme.spaceXS
+            // ------------------------------------------
+            // ЗАГОЛОВКИ КОЛОНОК: один раз на всю таблицу
+            // ------------------------------------------
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.topMargin: AppTheme.spaceXXS
+                spacing: AppTheme.spaceM
 
+                Item {
+                    Layout.fillWidth: true
+                    Layout.minimumWidth: 150
+                }
+                ColumnHead {
+                    colWidth: root.colStart
+                    title: "БЫЛО"
+                    subtitle: root.startWhen
+                }
+                ColumnHead {
+                    colWidth: root.colWorked
+                    title: "ОТРАБОТАНО"
+                    subtitle: root.flowWhen
+                }
+                ColumnHead {
+                    colWidth: root.colComp
+                    title: "КОМПЕНСИРОВАНО"
+                    subtitle: root.flowWhen
+                }
+                ColumnHead {
+                    colWidth: root.colEnd
+                    title: "ОСТАЛОСЬ"
+                    subtitle: root.endWhen
+                    strong: true
+                }
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                height: 1
+                color: AppTheme.borderDivider
+            }
+
+            // ------------------------------------------
+            // ТРИ СТРОКИ-ПАРАМЕТРА
+            // ------------------------------------------
+            Repeater {
+                model: [
+                    { "title": "Время отдыха за ночные часы", "bucket": "hours",
+                      "startKey": "hours_start_value", "accKey": "hours_acc_value",
+                      "compKey": "hours_comp_value", "endKey": "hours_end_value",
+                      "prevKey": "hours_prev_end_value" },
+                    { "title": "Дополнительные дни отдыха", "bucket": "days",
+                      "startKey": "days_start_value", "accKey": "days_acc_value",
+                      "compKey": "days_comp_value", "endKey": "days_end_value",
+                      "prevKey": "days_prev_end_value" },
+                    { "title": "Сверхурочные часы", "bucket": "overtime",
+                      "startKey": "overtime_start_value", "accKey": "overtime_acc_value",
+                      "compKey": "overtime_comp_value", "endKey": "overtime_end_value",
+                      "prevKey": "overtime_prev_end_value" }
+                ]
+
+                delegate: Item {
+                    id: rowItem
+                    required property var modelData
+
+                    property string bucket: modelData.bucket
+                    property int startValue: root.num(modelData.startKey)
+                    property int accValue: root.num(modelData.accKey)
+                    property int compValue: root.num(modelData.compKey)
+                    property int endValue: root.num(modelData.endKey)
+                    property int prevValue: root.num(modelData.prevKey)
+
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: prevValue !== 0 ? 52 : 42
+
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: AppTheme.radiusSmall
+                        color: rowHover.hovered ? AppTheme.stateHover : "transparent"
+                        Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
+                    }
                     HoverHandler {
-                        id: totalHover
+                        id: rowHover
                         cursorShape: Qt.PointingHandCursor
                     }
                     TapHandler {
-                        onTapped: root.openExplain("total")
+                        onTapped: root.openExplain(rowItem.bucket)
                     }
-
-                    Text {
-                        text: "Всего"
-                        color: AppTheme.textTertiary
-                        font.family: AppTheme.fontFamily
-                        font.pixelSize: AppTheme.sizeSmall
-                        font.weight: AppTheme.weightMedium
-                        Layout.alignment: Qt.AlignVCenter
-                    }
-                    Text {
-                        text: root.summ.total_days !== undefined ? root.summ.total_days : "—"
-                        color: totalHover.hovered ? AppTheme.textOnSoft : AppTheme.textPrimary
-                        font.family: AppTheme.fontCondensed
-                        font.pixelSize: AppTheme.sizeH4
-                        font.weight: AppTheme.weightBold
-                        Layout.alignment: Qt.AlignVCenter
-                        Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
-                    }
-                    Text {
-                        text: root.summ.total_days !== undefined ? root.daysWord(root.summ.total_days) : ""
-                        color: AppTheme.textTertiary
-                        font.family: AppTheme.fontFamily
-                        font.pixelSize: AppTheme.sizeSmall
-                        Layout.alignment: Qt.AlignVCenter
-                    }
-                }
-            }
-
-            // ------------------------------------------
-            // ТРИ ГРАФЫ ПОКАЗАТЕЛЕЙ (часы / дни / сверх нормы)
-            // ------------------------------------------
-            RowLayout {
-                id: cardsRow
-                Layout.fillWidth: true
-                spacing: 0
-
-                StatCard {
-                    title: "Время отдыха за ночные часы"
-                    bucket: "hours"
-                    padLeft: 0
-                    caption: root.endCaption
-                    endText: root.summ.end_hours || "—"
-                    endNeg: root.summ.is_hours_negative === true
-                    startText: root.summ.start_hours || "—"
-                    accText: root.summ.acc_hours || "—"
-                    compText: root.summ.comp_hours || "—"
-                }
-                StatCard {
-                    title: "Дополнительные дни отдыха"
-                    bucket: "days"
-                    caption: root.endCaption
-                    endText: root.summ.end_days || "—"
-                    endNeg: root.summ.is_days_negative === true
-                    startText: root.summ.start_days || "—"
-                    accText: root.summ.acc_days || "—"
-                    compText: root.summ.comp_days || "—"
-                }
-                StatCard {
-                    title: "Сверхурочные часы"
-                    bucket: "overtime"
-                    padRight: 0
-                    caption: root.endCaption
-                    endText: root.summ.end_overtime || "—"
-                    endNeg: root.summ.is_overtime_negative === true
-                    startText: root.summ.start_overtime || "—"
-                    accText: root.summ.acc_overtime || "—"
-                    compText: root.summ.comp_overtime || "—"
-                }
-            }
-
-            // ------------------------------------------
-            // ПОЯСНЯЮЩАЯ СТРОКА (месяц): сменный график
-            // «в ночь» (синий), «праздничные» (красный), норма — нейтральная.
-            // ------------------------------------------
-            RowLayout {
-                id: shiftRow
-                Layout.fillWidth: true
-                visible: root.isShiftMonth
-                spacing: AppTheme.spaceL
-
-                property color nightC: Qt.rgba(AppTheme.accentBrand.r, AppTheme.accentBrand.g, AppTheme.accentBrand.b, 0.72)
-                property color holC:   Qt.rgba(AppTheme.accentDanger.r, AppTheme.accentDanger.g, AppTheme.accentDanger.b, 0.75)
-
-                Row {
-                    Layout.alignment: Qt.AlignVCenter
-                    spacing: AppTheme.spaceXXS
-                    IconImage { source: "../icons/night.svg";    width: 13; height: 13; color: shiftRow.nightC }
-                    Text {
-                        text: "в ночное время " + (backend.monthSummary.shift_night || "—")
-                        color: shiftRow.nightC
-                        font.family: AppTheme.fontFamily; font.pixelSize: AppTheme.sizeSmall
-                    }
-                }
-                Row {
-                    Layout.alignment: Qt.AlignVCenter
-                    spacing: AppTheme.spaceXXS
-                    IconImage { source: "../icons/sparkle.svg"; width: 13; height: 13; color: shiftRow.holC }
-                    Text {
-                        text: "в праздничные дни " + (backend.monthSummary.shift_holiday || "—")
-                        color: shiftRow.holC
-                        font.family: AppTheme.fontFamily; font.pixelSize: AppTheme.sizeSmall
-                    }
-                }
-                Row {
-                    Layout.alignment: Qt.AlignVCenter
-                    spacing: AppTheme.spaceXXS
-                    IconImage { source: "../icons/help.svg"; width: 13; height: 13; color: AppTheme.textTertiary }
-                    Text {
-                        text: "норма часов " + (backend.monthSummary.norm_minutes || "0")
-                        color: AppTheme.textTertiary
-                        font.family: AppTheme.fontFamily; font.pixelSize: AppTheme.sizeSmall
-                    }
-                }
-                Item { Layout.fillWidth: true }
-            }
-
-            // ------------------------------------------
-            // ПОЯСНЯЮЩАЯ СТРОКА (год): статусы дней и денежные компенсации
-            // Буквы-кружки повторяют обозначения матрицы года.
-            // ------------------------------------------
-            RowLayout {
-                Layout.fillWidth: true
-                visible: root.isYearView
-                spacing: AppTheme.spaceM
-
-                Repeater {
-                    model: [
-                        { "letter": "Б", "soft": AppTheme.bgDangerSoft,  "accent": AppTheme.accentDanger,
-                          "value": backend.yearSummary.b_days || "—" },
-                        { "letter": "О", "soft": AppTheme.bgWarningSoft, "accent": AppTheme.accentWarning,
-                          "value": backend.yearSummary.o_days || "—" },
-                        { "letter": "К", "soft": AppTheme.bgPurpleSoft,  "accent": AppTheme.accentPurple,
-                          "value": backend.yearSummary.k_days || "—" }
-                    ]
 
                     RowLayout {
-                        Layout.alignment: Qt.AlignVCenter
-                        spacing: AppTheme.spaceXXS
+                        anchors.fill: parent
+                        spacing: AppTheme.spaceM
 
-                        Rectangle {
+                        Text {
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 150
                             Layout.alignment: Qt.AlignVCenter
-                            width: 18; height: 18
-                            radius: AppTheme.radiusPill
-                            color: modelData.soft
-                            Text {
-                                anchors.centerIn: parent
-                                text: modelData.letter
-                                color: modelData.accent
-                                font.family: AppTheme.fontFamily
-                                font.pixelSize: AppTheme.sizeMicro
-                                font.weight: AppTheme.weightBold
-                            }
+                            text: modelData.title
+                            color: rowHover.hovered ? AppTheme.textOnSoft : AppTheme.textPrimary
+                            font.family: AppTheme.fontFamily
+                            font.pixelSize: AppTheme.sizeBody
+                            font.weight: AppTheme.weightBold
+                            wrapMode: Text.WordWrap
+                            Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
                         }
                         Text {
+                            Layout.preferredWidth: root.colStart
                             Layout.alignment: Qt.AlignVCenter
-                            text: modelData.value
-                            color: AppTheme.textSecondary
+                            horizontalAlignment: Text.AlignRight
+                            text: root.fmtBucket(rowItem.bucket, rowItem.startValue)
+                            color: root.flowColor(rowItem.startValue)
                             font.family: AppTheme.fontFamily
-                            font.pixelSize: AppTheme.sizeSmall
+                            font.pixelSize: AppTheme.sizeBody
+                            font.features: {"tnum": 1}
+                            elide: Text.ElideRight
+                        }
+                        Text {
+                            Layout.preferredWidth: root.colWorked
+                            Layout.alignment: Qt.AlignVCenter
+                            horizontalAlignment: Text.AlignRight
+                            text: root.workedText(rowItem.bucket, modelData.accKey)
+                            color: root.flowColor(rowItem.accValue)
+                            font.family: AppTheme.fontFamily
+                            font.pixelSize: AppTheme.sizeBody
+                            font.features: {"tnum": 1}
+                            elide: Text.ElideRight
+                        }
+                        Text {
+                            Layout.preferredWidth: root.colComp
+                            Layout.alignment: Qt.AlignVCenter
+                            horizontalAlignment: Text.AlignRight
+                            text: root.compText(rowItem.bucket, modelData.compKey)
+                            color: root.flowColor(rowItem.compValue)
+                            font.family: AppTheme.fontFamily
+                            font.pixelSize: AppTheme.sizeBody
+                            font.features: {"tnum": 1}
+                            elide: Text.ElideRight
+                        }
+                        ColumnLayout {
+                            Layout.preferredWidth: root.colEnd
+                            Layout.alignment: Qt.AlignVCenter
+                            spacing: 0
+
+                            Text {
+                                Layout.fillWidth: true
+                                horizontalAlignment: Text.AlignRight
+                                text: root.fmtBucket(rowItem.bucket, rowItem.endValue)
+                                color: rowItem.endValue < 0
+                                        ? AppTheme.textDanger
+                                        : (rowHover.hovered ? AppTheme.textOnSoft : AppTheme.textPrimary)
+                                font.family: AppTheme.fontFamily
+                                font.pixelSize: AppTheme.sizeH4
+                                font.features: {"tnum": 1}
+                                font.weight: AppTheme.weightBold
+                                elide: Text.ElideRight
+                                Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
+                            }
+                            Text {
+                                visible: rowItem.prevValue !== 0
+                                Layout.fillWidth: true
+                                horizontalAlignment: Text.AlignRight
+                                text: root.prevYearLabel + ": "
+                                        + root.fmtBucket(rowItem.bucket, rowItem.prevValue)
+                                color: rowItem.prevValue < 0
+                                        ? AppTheme.textDanger : AppTheme.textTertiary
+                                font.family: AppTheme.fontFamily
+                                font.pixelSize: AppTheme.sizeMicro
+                                font.features: {"tnum": 1}
+                                elide: Text.ElideRight
+                            }
                         }
                     }
+
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.bottom: parent.bottom
+                        height: 1
+                        color: AppTheme.borderDivider
+                        opacity: 0.65
+                    }
+                }
+            }
+
+            // ------------------------------------------
+            // ВСЕГО: итог правой колонки одной строкой
+            // ------------------------------------------
+            Item {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 46
+
+                Rectangle {
+                    anchors.fill: parent
+                    radius: AppTheme.radiusSmall
+                    color: totalHover.hovered ? AppTheme.stateHover : "transparent"
+                    Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
+                }
+                HoverHandler {
+                    id: totalHover
+                    cursorShape: Qt.PointingHandCursor
+                }
+                TapHandler {
+                    onTapped: root.openExplain("total")
                 }
 
-                Item { Layout.fillWidth: true }
-
                 RowLayout {
-                    Layout.alignment: Qt.AlignVCenter
+                    anchors.fill: parent
+                    spacing: AppTheme.spaceM
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        Layout.minimumWidth: 150
+                        Layout.alignment: Qt.AlignVCenter
+                        spacing: 0
+
+                        Text {
+                            text: "Всего"
+                            color: totalHover.hovered ? AppTheme.textOnSoft : AppTheme.textPrimary
+                            font.family: AppTheme.fontFamily
+                            font.pixelSize: AppTheme.sizeBody
+                            font.weight: AppTheme.weightBold
+                            Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
+                        }
+                        Text {
+                            text: "все остатки в днях"
+                            color: AppTheme.textTertiary
+                            font.family: AppTheme.fontFamily
+                            font.pixelSize: AppTheme.sizeMicro
+                        }
+                    }
+                    Item { Layout.preferredWidth: root.colStart }
+                    Item { Layout.preferredWidth: root.colWorked }
+                    Item { Layout.preferredWidth: root.colComp }
+                    Text {
+                        Layout.preferredWidth: root.colEnd
+                        Layout.alignment: Qt.AlignVCenter
+                        horizontalAlignment: Text.AlignRight
+                        text: root.totalDays + " " + root.daysWord(root.totalDays)
+                        color: root.totalDays < 0
+                                ? AppTheme.textDanger
+                                : (totalHover.hovered ? AppTheme.textOnSoft : AppTheme.textPrimary)
+                        font.family: AppTheme.fontFamily
+                        font.pixelSize: AppTheme.sizeH4
+                        font.features: {"tnum": 1}
+                        font.weight: AppTheme.weightBold
+                        elide: Text.ElideRight
+                        Behavior on color { ColorAnimation { duration: AppTheme.durMicro } }
+                    }
+                }
+            }
+
+            // ------------------------------------------
+            // НИЗ: справочное мелким шрифтом + подсказка про нажатие
+            // ------------------------------------------
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.topMargin: AppTheme.spaceXXS
+                spacing: AppTheme.spaceM
+
+                Text {
+                    text: root.secondaryText()
+                    visible: text.length > 0
+                    color: AppTheme.textTertiary
+                    font.family: AppTheme.fontFamily
+                    font.pixelSize: AppTheme.sizeSmall
+                    elide: Text.ElideRight
+                }
+                Item { Layout.fillWidth: true }
+                RowLayout {
+                    visible: root.isYearView
                     spacing: AppTheme.spaceXXS
+
                     IconImage {
                         Layout.alignment: Qt.AlignVCenter
                         source: "../icons/ruble.svg"
@@ -503,15 +503,23 @@ Item {
                     }
                     Text {
                         Layout.alignment: Qt.AlignVCenter
-                        // длинные суммы («36 ч. (ноч.), 12 ч. (сверх), 3 дн.») не должны
-                        // выдавливать строку — обрываемся многоточием
-                        Layout.maximumWidth: 320
-                        text: "деньгами " + (backend.yearSummary.comp_money || "—")
+                        Layout.maximumWidth: 300
+                        text: "деньгами " + (root.summ.comp_money || "—")
                         color: AppTheme.textTertiary
                         font.family: AppTheme.fontFamily
                         font.pixelSize: AppTheme.sizeSmall
                         elide: Text.ElideRight
                     }
+                }
+                Text {
+                    Layout.alignment: Qt.AlignVCenter
+                    Layout.maximumWidth: 330
+                    text: "Нажмите строку — покажем дежурства и компенсации"
+                    color: AppTheme.textTertiary
+                    opacity: 0.75
+                    font.family: AppTheme.fontFamily
+                    font.pixelSize: AppTheme.sizeMicro
+                    elide: Text.ElideRight
                 }
             }
         }

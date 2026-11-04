@@ -2821,8 +2821,36 @@ class Backend(QObject):
                 summ["end_days"], summ["prev_d_end"],
             )
 
+            month_gen = ["января", "февраля", "марта", "апреля", "мая", "июня",
+                         "июля", "августа", "сентября", "октября", "ноября", "декабря"][
+                             self.current_month - 1]
+            month_acc = ["январь", "февраль", "март", "апрель", "май", "июнь",
+                         "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь"][
+                             self.current_month - 1]
+            last_day = calendar.monthrange(self.current_year, self.current_month)[1]
             self._month_summary = {
-                "is_shift": summ["is_shift"], 
+                "is_shift": summ["is_shift"],
+                # Подписи и сырые числа для строковой панели «Итоги»:
+                # этот год и прошлый показываются раздельно, без скобок.
+                "period_start_label": f"на 1 {month_gen}",
+                "period_flow_label": f"за {month_acc}",
+                "period_end_label": f"на {last_day} {month_gen}",
+                "prev_year_label": f"{self.current_year - 1} год",
+                "hours_start_value": int(summ["start_hours"] or 0),
+                "hours_acc_value": int(summ["acc_hours"] or 0),
+                "hours_comp_value": int(summ["comp_h_real"] or 0),
+                "hours_end_value": int(summ["end_hours"] or 0),
+                "hours_prev_end_value": int(summ["prev_h_end"] or 0),
+                "days_start_value": int(summ["start_days"] or 0),
+                "days_acc_value": int(summ["acc_days"] or 0),
+                "days_comp_value": int(summ["comp_d_real"] or 0),
+                "days_end_value": int(summ["end_days"] or 0),
+                "days_prev_end_value": int(summ["prev_d_end"] or 0),
+                "overtime_start_value": int(summ["start_overtime"] or 0),
+                "overtime_acc_value": int(summ["acc_overtime"] or 0),
+                "overtime_comp_value": int(summ["comp_o_real"] or 0),
+                "overtime_end_value": int(summ["end_overtime"] or 0),
+                "overtime_prev_end_value": int(summ["prev_o_end"] or 0),
                 "norm_minutes": fmt_minutes_ru_words(summ["norm_minutes"]),
                 "shift_minutes": fmt_minutes_ru_words(summ["shift_minutes"]),
                 
@@ -3038,6 +3066,28 @@ class Backend(QObject):
             money_txt = "—"
 
         self._year_summary = {
+            # Подписи и сырые числа для строковой панели «Итоги»:
+            # этот год и прошлый показываются раздельно, без скобок.
+            "period_start_label": "на 1 января",
+            "period_flow_label": f"за {self.current_year} год",
+            "period_end_label": "на 31 декабря",
+            "prev_year_label": f"{self.current_year - 1} год",
+            "hours_start_value": int(start_h or 0),
+            "hours_acc_value": int(t_acc_h or 0),
+            "hours_comp_value": int(t_comp_h or 0),
+            "hours_end_value": int(end_h or 0),
+            "hours_prev_end_value": int(prev_h_end or 0),
+            "days_start_value": int(start_d or 0),
+            "days_acc_value": int(t_acc_d or 0),
+            "days_comp_value": int(t_comp_d or 0),
+            "days_end_value": int(end_d or 0),
+            "days_prev_end_value": int(prev_d_end or 0),
+            "overtime_start_value": int(start_o or 0),
+            "overtime_acc_value": int(t_acc_o or 0),
+            "overtime_comp_value": int(t_comp_o or 0),
+            "overtime_end_value": int(end_o or 0),
+            "overtime_prev_end_value": int(prev_o_end or 0),
+
             # НА НАЧАЛО ГОДА: остаток на 1 января + серая скобка прошлого года
             "start_hours": fmt_dual(start_h, prev_h_start),
             "start_overtime": fmt_dual(start_o, prev_o_start),

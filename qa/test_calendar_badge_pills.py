@@ -278,7 +278,7 @@ def test_qml_pills(app):
 def test_summary_no_questions():
     panel = (ROOT / "components/AppSummaryPanel.qml").read_text(encoding="utf-8")
     assert 'text: "?"' not in panel
-    assert "onTapped: root.openExplain(card.bucket)" in panel
+    assert "onTapped: root.openExplain(rowItem.bucket)" in panel
     assert 'onTapped: root.openExplain("total")' in panel
     print("D: вопросиков нет, расшифровка по нажатию осталась ✓")
 
